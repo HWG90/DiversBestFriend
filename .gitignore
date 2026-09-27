@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.zip
+*.dll
+*.exe
+*.bin
+*.log
+*.patch_0
+*.stream
+*.gpu_resources
+.env
+.env.*
+.tools/
+research/
+captures/

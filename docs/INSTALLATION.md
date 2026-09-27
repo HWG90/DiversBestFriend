@@ -1,0 +1,75 @@
+# Installation and controls
+
+## Install
+
+Windows/Steam HELLDIVERS 2 build **25480438** is the documented target. The addon checks game.dll PE timestamp **1790161983** and native signatures. It is not a universal build-independent mod.
+
+Download and install these separately:
+
+1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
+2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
+3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `NativeStratagemRadial-r22-ViewportCentering.zip`.
+
+Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
+
+Restart the game after deployment. No separate app needs to be launched. Python and the test tools are for development only. The original Equipped Stratagems exporter, external wheel app, and CowboyBingus' gameplay megapack are not required.
+
+## Settings
+
+In the escape menu's **MODS** tab, select **Native Stratagem Radial**. Change settings and press the native **Apply** control.
+
+| Setting | Effect |
+| --- | --- |
+| Enable | Enables/disables the addon |
+| Selection mode | Native wheel, Keybindings — list, or Experimental |
+| Experimental layout | Cards — copied list rows, or Expanded wedges |
+| Full-color stratagem icons | Uses the native channel-mask colors for wheel icons; copied rows retain their native colors |
+| Radial vertical offset (down) | Fine adjustment after automatic centering; start at **0**. Positive moves down |
+
+An older saved fourth mode migrates to Experimental / Expanded wedges. Mode changes cancel pending code entry and require a fresh Confirm press. r22 preserves saved offsets; if you previously used 575 to compensate for placement, reset it to zero.
+
+## Bindings and selection
+
+Open the game's keyboard or controller bindings and its **MODS** tab. Under **Native Stratagem Radial**, assign:
+
+- **Next stratagem**
+- **Previous stratagem**
+- **Confirm stratagem**
+
+Use bindings that do not interfere with your other controls. Configure the controller mappings separately if you use a controller.
+
+Open the regular stratagem menu with your normal game binding:
+
+- **Native wheel:** point with mouse/stick and press Confirm. There are eight slots per page. Next/Previous changes pages when needed.
+- **Keybindings — list:** Next moves down the list, Previous moves up, and both wrap. Press Confirm for the highlighted entry. Camera control remains available.
+- **Experimental / Cards:** point at a copied native row card and Confirm. Up to 16 cards, no pages.
+- **Experimental / Expanded wedges:** point at a sector and Confirm. Up to 16 entries on one wheel, no pages.
+
+In radial modes, pointing owns camera input while the menu is open. Closing the menu releases it. The original list remains visible at top left. Pointer selection near the center/dead zone may select nothing.
+
+Keep the menu open while Confirm enters the code. The game then equips the beacon through its normal input path; **you still throw it yourself**. Normal cooldowns and availability restrictions apply. The addon does not assign a matched stratagem ID or invoke throw/spawn functions.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| No settings or binding rows | Verify all three dependency versions, enable/deploy them, and restart |
+| Highlight moves but Confirm does nothing | Assign Confirm, use a fresh press, choose an available entry, and keep the menu open for the sequence |
+| Pending/partial code after a mode change | Close/reopen the stratagem menu before retrying |
+| Menu is too high/low | Reset the saved vertical offset to **0** on r22; report the viewport size and HUD scale if still wrong |
+| Nothing loads after a game update | Check the supported build and logs; native addresses/signatures need revalidation |
+| Crash when opening the menu | Disable this addon, retain its logs, and report the exact build/mode/layout and other UI mods |
+| Input bindings disappear or conflict | Check Mod Bindings Menu deployment; it owns a build-specific input resource and has a finite shared action capacity |
+
+Logs live in `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/`:
+
+- `NativeStratagemRadial.log` — status, selected mode/layout, last confirmation, centering, and offset.
+- `NativeStratagemRadial-native.log` — native-call checkpoints, useful after a crash.
+- `BingusSharedLoader.log` — loading/dependency diagnostics.
+
+Review logs before attaching them publicly. Include the release revision, game build, resolution, HUD scale, mode/layout, and steps to reproduce. r21 modes were author-tested in-game; r22's centering change is regression-tested but awaits a specific live placement check.
+
+## Remove
+
+Close the game, disable/remove the DiversBestFriend / Native Stratagem Radial addon in your manager, and redeploy. Keep shared dependencies installed if other mods use them. Follow your manager's documented purge process if deployed files remain.

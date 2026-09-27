@@ -1,0 +1,52 @@
+Native Stratagem Radial r22 - Viewport Centering
+
+Close the game, import this ZIP into Arsenal, deploy and restart.
+The stable addon GUID and bindings are retained. Enable only one revision.
+Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
+
+Mod Options > Native Stratagem Radial > Selection mode:
+
+1. Native wheel
+   Existing eight-slot native wheel with mouse/stick pointing and Confirm.
+   Next/Previous switch pages when more than eight entries are available.
+
+2. Keybindings - list
+   Original native list: Next moves down, Previous moves up, both wrap.
+   Confirm enters the highlighted code; camera remains available.
+
+3. Experimental
+   Experimental layout chooses between:
+   - Cards - copied list rows: original radial with up to sixteen full row
+     cards, including names/status/arrows. Point and press Confirm.
+   - Expanded wedges: all entries on one wheel, up to sixteen sectors.
+     Point and press Confirm. No paging in either experimental layout.
+
+The separate fourth mode and redundant experimental native-wheel layout
+have been removed. Saved mode 4 migrates to Experimental / Expanded wedges.
+An existing Experimental layout value 2 now means Expanded wedges.
+Native wheel and list retain their saved mode numbers 1 and 2.
+
+Full-color stratagem icons remains enabled by default for wedge displays;
+turn it off to restore raw texture rendering. Copied cards retain native
+colors. The wedge rotation correction remains.
+
+r22 fixes automatic vertical centering using the native GUI X/Z transform.
+All radial layouts now center on both viewport axes, accounting for inherited
+HUD scale and translation. Set Radial vertical offset (down) to 0 for centered
+placement. Its default is now 0; existing saved preferences are retained.
+Remove any older 575-unit workaround if it is still saved.
+
+Apply changes. Changing active mode/layout cancels pending code input and
+gates held Confirm. Close/reopen after a partial sequence. Keep the menu open
+while the code enters, then throw normally. There is no auto-throw.
+Radial layouts retain the original top-left list and native cursor tracking;
+camera control returns when the menu closes. List mode does not capture it.
+
+Verification: isolated adapter checks cover X/Z matrix extraction, both screen
+axes, viewport heights, HUD scales, translated/rotated transforms and singular
+transforms. Native rendering and placement still require an in-game check.
+Earlier release ZIPs remain available; r21 was confirmed working before this
+centering correction.
+
+Logs: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\NativeStratagemRadial.log
+Native checkpoints: same directory, NativeStratagemRadial-native.log
