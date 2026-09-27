@@ -12,6 +12,8 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 
 [Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) · [Installation and controls](docs/INSTALLATION.md) · [Credits](CREDITS.md) · [Development](docs/DEVELOPMENT.md)
 
+R25 adds an optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R25 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r25) needs in-game controller validation.
+
 ## What it does
 
 | Mode | Selection | Layout |

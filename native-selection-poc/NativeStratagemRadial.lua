@@ -238,6 +238,12 @@ native_guards[#native_guards+1]={name='cooldown_field',rva=0x1836bea,bytes='\xf3
 native_guards[#native_guards+1]={name='cooldown_format',rva=0x18377e2,bytes='\x49\x8d\x8f\xb8\x25\x00\x00\xf3\x0f\x5e\x05\x4f\xff\xb8\x00\x41\xb9\x20\x30\x00\x00\xba\x97\xe6\xd1\x51\xf3\x0f\x2c\xd8\x44\x8b\xc3\xe8\xc8\x51\xc0\xff\x66\x0f\x6e\xd3\x49\x8d\x8f\xb8\x25\x00\x00\x0f\x5b\xd2\xba\xd3\xb0\x83\x45\x41\xb9\x20\x30\x00\x00\xf3\x0f\x59\x15\x17\xff\xb8\x00\xf3\x0f\x5c\xe2\xf3\x44\x0f\x2c\xc4\xe8\x99\x51\xc0\xff'}
 native_guards[#native_guards+1]={name='cooldown_hint_type',rva=0x182a1e4,bytes='\x49\x8d\x9f\x50\x0f\x00\x00\x48\x8b\xcb\xe8\xad\x0d\xc1\xff'}
 
+-- Native Hold-release and guarded reopen witnesses.
+native_guards[#native_guards+1]={name='release_guarded_open',rva=0xa8e850,bytes='\x40\x53\x48\x83\xec\x20\x48\x8b\xd9\xe8\x22\xff\xff\xff\x84\xc0\x75\x1c\x48\x8b\xcb\xe8\x56\x00\x00\x00\x84\xc0\x74\x10\x48\x8b\xcb\xe8\xfa\x0c\x00\x00\xb0\x01\x48\x83\xc4\x20\x5b\xc3\x32\xc0\x48\x83\xc4\x20\x5b\xc3'}
+native_guards[#native_guards+1]={name='release_close',rva=0xa8fb50,bytes='\x48\x89\x5c\x24\x08\x48\x89\x6c\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xec\x60\x48\x8b\x05\x9d'}
+native_guards[#native_guards+1]={name='release_hold_test',rva=0xa8ed4e,bytes='\xb9\x05\x00\x00\x00\xe8\x28\x6e\xaf\xff\x44\x8b\xc8\x49\x8d\x81\xff\x01\x00\x00\x48\xc1\xe0\x05\x42\x8b\x8c\x38\x50\x01\x00\x00\x83\xf9\x02\x74\x26\x83\xf9\x09\x74\x21\x32\xc0\xeb\x1f\x3b\xc8\x0f\x85\x4c\xff\xff\xff\x43\x8b\x4c\xc3\x04\xe9\x44\xff\xff\xff\x3b\xc8\x75\x9e\x43\x8b\x44\xc3\x04\xeb\x99\xb0\x01\x49\xc1\xe1\x05\x43\x3a\x84\x39\x18\x41\x00\x00\x74\x05\x39\x75\x14\x74\x59'}
+native_guards[#native_guards+1]={name='release_match_survives',rva=0xa8eda7,bytes='\x74\x05\x39\x75\x14\x74\x59'}
+
 -- Supported-build adapter. All drawing remains in the game's native HUD.
 local function native_backend()
     local ffi = require('ffi')
@@ -413,6 +419,12 @@ local function native_backend()
             and tonumber(received[0])==1,'Native action write failed')
     end
     function backend.invoke_input(component) input_handler(component) end
+    function backend.open_input(component)
+        return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
+    end
+    function backend.close_input(component)
+        ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+    end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end
     ffi.cdef [[
@@ -488,12 +500,13 @@ local function input_backend(b)
         end
         error('Local ownership mapping unavailable')
     end
-    local function context(activation)
+    local function context(activation,allow_closed)
         local state=ptr(base+0x3326340)
         assert(num(state+0xac21c)==4,'Not in gameplay')
         local hud=ptr(base+0x346d538)
         assert(b.valid(hud),'HUD hierarchy changed')
-        assert(read(hud+0x395100+0x38769,1)=='\1','Keep the stratagem menu open')
+        local hud_open=read(hud+0x395100+0x38769,1)=='\1'
+        assert(allow_closed or hud_open,'Keep the stratagem menu open')
         local pm=ptr(base+0x3326468)
         assert(num(pm+0x88)>0,'No local player')
         local network=num(pm+0x3a8)
@@ -510,7 +523,8 @@ local function input_backend(b)
         local component=avatar+0x8d0
         assert(num(component+0x28)==key,'Input owner mismatch')
         -- Same menu-active bit tested by A8E780; HUD visibility alone is insufficient.
-        assert(math.floor(num(avatar+0xfd8)/512)%2==1,'Native input menu is inactive')
+        local menu_active=math.floor(num(avatar+0xfd8)/512)%2==1
+        assert(allow_closed or menu_active,'Native input menu is inactive')
         if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are unsupported in this prototype') end
         local player_context=num(avatar+0x110c)
         -- The matching routine dereferences the corresponding mission payload.
@@ -530,7 +544,8 @@ local function input_backend(b)
         end
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
-            key=key,payload=payload,context=player_context,identity=manager..':'..key}
+            key=key,payload=payload,context=player_context,identity=manager..':'..key,
+            hud=hud,hud_open=hud_open,menu_active=menu_active}
     end
     local function code(kind)
         assert(selectable_kind(kind),'Invalid stratagem kind')
@@ -622,6 +637,58 @@ local function input_backend(b)
         end
         assert(n==job.sent and matched==0,'Game rejected the code prefix or availability')
         return false,'Entering native code '..job.sent..'/'..#job.code
+    end
+    function out.release_state()
+        local c=context(true,true)
+        -- The native menu updater reads action 5:0, its evaluated byte and
+        -- trigger type at +24. Only Hold/LongHold (2/9) have release semantics.
+        local trigger=num(c.actions+24)
+        c.hold=trigger==2 or trigger==9
+        local down=read(c.actions,1)
+        assert(down=='\0' or down=='\1','Invalid stratagem menu action')
+        c.down=down=='\1'
+        c.clean=num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0
+        for a=1,4 do if read(c.actions+32*a,1)~='\0' then c.clean=false end end
+        local ui=ptr(base+0x347ce28)
+        c.unobstructed=num(ui+0x429c+20)==0
+        return c
+    end
+    function out.select_released(kind,armed)
+        local c=out.release_state()
+        assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
+            'Release owner changed')
+        assert(c.hold and not c.down and c.unobstructed,'Not an unobstructed Hold release')
+        assert(num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0,
+            'Manual input or completed selection cancels release')
+        idle_actions(c)
+        -- Revalidate membership/descriptor before asking the normal guarded
+        -- native opener to resume a menu already closed by this frame's update.
+        local n=num(c.payload+0x788);assert(n<=32,'Invalid stratagem entry count')
+        local found=false
+        for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
+        assert(found,'Released stratagem no longer belongs to the mission')
+        code(kind)
+        local reopened=false
+        if not c.menu_active then
+            if b.checkpoint then b.checkpoint('release native opener enter') end
+            assert(b.open_input(c.component),'Native game state rejected release selection')
+            reopened=true
+            if b.checkpoint then b.checkpoint('release native opener returned') end
+        end
+        local ok,result=pcall(function()
+            local job=out.begin(kind)
+            -- Finish within this release frame; the ordinary update can then
+            -- equip the matched beacon even though the Hold action is up.
+            local done,message
+            for i=1,#job.code do done,message=out.advance(job) end
+            assert(done,'Release code did not complete')
+            return message
+        end)
+        if not ok then
+            if reopened then b.close_input(c.component) end
+            error(result)
+        end
+        return result
     end
     return out
 end
@@ -1351,12 +1418,57 @@ local function selection_controller(input,report)
     return self
 end
 
-local api={api=1,revision=24,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+-- Only a sampled Hold falling edge can confirm. A disappearing HUD alone
+-- never confirms, and explicit Confirm suppresses release for this opening.
+local function release_controller(input,report)
+    local armed,blocked
+    local self={status='Disabled'}
+    function self.reset() armed=nil;blocked=nil end
+    function self.step(enabled,snapshot,selected,now,explicit)
+        if not enabled or not snapshot then self.status='Disabled or no valid radial snapshot';self.reset();return end
+        local ok,state=pcall(input.release_state)
+        if not ok then self.status=tostring(state);self.reset();return end
+        if not state.unobstructed or not state.hold then
+            self.status=not state.hold and 'Requires a Hold menu binding' or 'Blocked by native UI overlay'
+            self.reset();return
+        end
+        self.status='Waiting for a highlighted Hold release'
+        if not state.clean then blocked=true;armed=nil end
+        if explicit then blocked=true;armed=nil end
+        local previous=armed
+        armed=nil
+        if not state.down then
+            local skip=blocked;blocked=nil
+            if not skip and previous and now>=previous.time and now-previous.time<=250
+                and snapshot.identity==previous.snapshot_identity
+                and state.identity==previous.identity and state.component==previous.component
+                and state.hud==previous.hud then
+                local called,message=pcall(input.select_released,previous.kind,previous)
+                self.status=tostring(message)
+                report((called and 'Release: ' or 'Release cancelled: ')..tostring(message))
+            end
+            return
+        end
+        if blocked or not snapshot.open or not state.menu_active then return end
+        for _,row in ipairs(snapshot.rows) do
+            if row.address==selected and selectable_kind(row.kind) then
+                armed={kind=row.kind,time=now,snapshot_identity=snapshot.identity,
+                    identity=state.identity,component=state.component,hud=state.hud}
+                self.status='Armed kind '..row.kind
+                return
+            end
+        end
+    end
+    return self
+end
+
+local api={api=1,revision=25,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
-local wheel,expanded
+local wheel,expanded,release_selection,release_registered
+local select_on_release=false
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -1367,7 +1479,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r24 - Cooldown Indicators\n'..table.concat(native_events,'\n')..'\n')
+    file:write('Native Stratagem Radial r25 - Select on Release\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1398,7 +1510,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('NativeStratagemRadial.log')
         if file then
-            file:write('Native Stratagem Radial r24 - Cooldown Indicators\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write('Native Stratagem Radial r25 - Select on Release\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1407,6 +1519,7 @@ local function report(status,force)
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
             file:write('last_confirmation='..tostring(api.last_confirmation)..'\n')
+            file:write('select_on_release='..tostring(select_on_release)..'; release_status='..tostring(release_selection and release_selection.status)..'\n')
             file:write('last_open='..tostring(api.last_open)..'\nlast_block='..tostring(api.last_block)..'\n')
             file:write(table.concat(selection_events,'\n')..'\n')
             file:close()
@@ -1416,6 +1529,14 @@ end
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
+    if release_registered~=menu then
+        if menu.register_option('native_stratagem_radial.select_on_release',{
+            type='toggle',mod='Native Stratagem Radial',label='Select on Release',default=false,
+            description='Radial modes only: use a Hold stratagem-menu binding, point, then release to select. No separate Confirm binding required. Center the pointer to cancel. List mode still requires Confirm.'}) then release_registered=menu end
+    end
+    if release_registered==menu then
+        select_on_release=menu.get('native_stratagem_radial.select_on_release')==true
+    end
     if migration_checked~=menu then
         migration_checked=menu
         migrate_expanded=menu.get('native_stratagem_radial.selection_mode')==4
@@ -1539,6 +1660,7 @@ local function step()
             camera=camera_capture(backend)
             input=input_backend(backend)
             selection=selection_controller(input,selection_report)
+            release_selection=release_controller(input,selection_report)
             duplicates=duplicate_cards(backend)
             pointing=native_pointing(backend)
             wheel=emote_wheel(backend,duplicates,input)
@@ -1553,6 +1675,7 @@ local function step()
         if active_mode~=active_key then
             controller.restore();list_controller.restore();duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
             selection.step(nil,nil,now)
+            release_selection.reset()
             active_mode=active_key
         end
         local buttons=bindings()
@@ -1608,6 +1731,8 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.step(snapshot,buttons,now,vector)
+        release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
+            snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then

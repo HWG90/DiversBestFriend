@@ -2,12 +2,15 @@ local function source(name)
     local f=assert(io.open('native-selection-poc/'..name,'rb'));local s=f:read('*a');f:close();return s
 end
 local make_selection=assert(loadstring(source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn selection_controller'))()
+local make_release=assert(loadstring(source('input.lua')..'\n'..source('release.lua')..'\nreturn release_controller'))()
 local now,focus,draws,starts,advances=0,true,0,0,0
 local buttons={next=false,previous=false,confirm=false}
 local snapshot={identity=1,open=true,rows={{address=10,kind=3},{address=20,kind=33}}}
 local logs={}
 local mode,enabled,experimental_layout=2,true,1
 local full_color=true
+local release_enabled=false
+local release_down,release_calls=true,0
 local wedge_darkness,wedge_opacity=70,75
 local wedge_registrations=0
 local copies,cursor_only,last_target=0,false,nil
@@ -17,12 +20,14 @@ local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
+env.release_controller=make_release
 env.radial.controller=function()
     return {step=function() draws=draws+1 end,restore=function() end,count=2,status='drawing'}
 end
 env.radial.list_controller=env.radial.controller
 env.camera_capture=function() return {capture=function() captured=true end,release=function() captured=false end} end
 env.ModOptionsMenu={api=1,register_option=function(id,spec)
+    if id:find('select_on_release',1,true) then assert(spec.default==false and spec.type=='toggle') end
     if id:find('.wedge_',1,true) then
         assert(spec.type=='slider' and spec.min==0 and spec.max==100 and spec.step==5)
         assert(spec.default==(id:find('darkness',1,true) and 70 or 75))
@@ -31,6 +36,7 @@ env.ModOptionsMenu={api=1,register_option=function(id,spec)
     if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3 and spec.default==1) end
     return true
 end,get=function(id)
+    if id:find('select_on_release',1,true) then return release_enabled end
     if id:find('selection_mode',1,true) then return mode end
     if id:find('enabled',1,true) then return enabled end
     if id:find('full_color_icons',1,true) then return full_color end
@@ -44,6 +50,8 @@ env.native_backend=function()
 end
 env.input_backend=function()
     return {view_context=function() return {} end,decorate=function() end,begin=function(kind) starts=starts+1;return {kind=kind} end,
+        release_state=function() return {identity=1,component=2,hud=3,hold=true,down=release_down,unobstructed=true,menu_active=true,clean=true} end,
+        select_released=function() release_calls=release_calls+1;return 'matched' end,
         advance=function() advances=advances+1;return true,'Native matched; equip pending' end}
 end
 env.duplicate_cards=function() return {prepare=function(s)
@@ -159,3 +167,13 @@ assert(mode==3 and experimental_layout==2 and env.NativeStratagemRadial.mode==3)
 assert(migrated['native_stratagem_radial.selection_mode']==3 and migrated['native_stratagem_radial.experimental_layout']==2)
 experimental_layout=1;tick();assert(env.NativeStratagemRadial.experimental_layout==1,'migration must not override later edits')
 print('Legacy mode migration passed: mode 4 becomes Experimental/Expanded once, then respects edits.')
+mode=3;experimental_layout=2;enabled=true;focus=true;buttons.confirm=false;vector={1,0}
+snapshot.open=true;release_down=true;tick();release_down=false;snapshot.open=false;tick()
+assert(release_calls==0,'release remains disabled by default')
+release_enabled=true;release_down=true;snapshot.open=true;tick()
+release_down=false;snapshot.open=false;tick()
+assert(release_calls==1,'opt-in survives closed snapshot and cleared selection')
+tick();assert(release_calls==1,'no repeated selection on closed frames')
+mode=2;release_down=true;snapshot.open=true;tick();release_down=false;snapshot.open=false;tick()
+assert(release_calls==1,'list mode never confirms on release')
+print('Select on Release integration passed: opt-in default, closed-frame delivery, once-only and list exclusion.')

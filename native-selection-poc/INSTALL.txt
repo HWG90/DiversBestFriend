@@ -2,9 +2,16 @@ Diver's Best Friend - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.
+Revision 25 - Select on Release (optional; disabled by default).
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
 
 Mod Options > Native Stratagem Radial > Selection mode:
+
+Optional: enable Select on Release in the same options page and Apply.
+Use a Hold binding for the game's stratagem menu. Hold, point, then release
+to select without a separate Confirm button. Return to the center before
+releasing to cancel. Applies to all radial layouts, not the keybindings list.
+Throw the beacon normally. Native release timing needs an in-game test.
 
 1. Native wheel
    Existing eight-slot native wheel with mouse/stick pointing and Confirm.

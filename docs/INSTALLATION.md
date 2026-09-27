@@ -88,3 +88,7 @@ Review logs before attaching them publicly. Include the release revision, game b
 ## Remove
 
 Close the game, disable/remove the DiversBestFriend / Native Stratagem Radial addon in your manager, and redeploy. Keep shared dependencies installed if other mods use them. Follow your manager's documented purge process if deployed files remain.
+
+## Optional Select on Release (R25)
+
+Install the [R25 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r25), `DiversBestFriend-R25-SelectOnRelease.zip`. In MODS > Native Stratagem Radial, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.

@@ -319,3 +319,7 @@ values, stale kinds, grayscale alpha preservation, raw-mode restoration,
 minute rollover, expiry, expanded selection preservation, and entry routing.
 Mocks do not establish native renderer safety or visual placement; live
 verification of the hint text and positioning remains pending.
+
+## R25: optional release selection
+
+A8ED4E..A8EDAC reads native action 5:0 and trigger types 2/9; A8EDA9 permits a matched component to survive release. A8E850 is the guarded native opener (A8E780 active test, A8E8C0 eligibility, A8F570 open). Release detection uses a sampled falling edge with a 250 ms freshness limit, unchanged HUD/local avatar, clean component, and no native UI stack. Closed sessions are resumed through this opener. Existing begin/advance validation and direction restoration are reused, completing at most 12 directions synchronously so the ordinary update can equip the match. A8FB50 closes a reopened session on failure. No matched ID or avatar flag is directly written. This new native call path and same-frame input timing require live testing; fixtures alone cannot verify renderer/gameplay safety. The option defaults off.

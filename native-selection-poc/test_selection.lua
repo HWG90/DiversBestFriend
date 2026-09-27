@@ -133,6 +133,37 @@ reset();job=input.begin(33);num(component+0x28,99);before=writes
 assert(not pcall(input.advance,job));assert(before==writes);num(component+0x28,42)
 reset();job=input.begin(33);put(hud+0x395100+0x38769,'\0');assert(not pcall(input.advance,job));put(hud+0x395100+0x38769,'\1')
 -- UI state machine: held confirm, missing bindings, membership and timeouts.
+local ui=0x31000000
+ptr(base+0x347ce28,ui);num(ui+0x429c+20,0);num(actions+24,2)
+local reopened,closed_count=0,0
+function b.open_input(at)
+    assert(at==component);reopened=reopened+1
+    num(avatar+0xfd8,512);put(hud+0x395100+0x38769,'\1');return true
+end
+function b.close_input(at)
+    assert(at==component);closed_count=closed_count+1
+    num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+end
+local function release_fixture()
+    reset();expected=cases[5];num(avatar+0xfd8,512);put(hud+0x395100+0x38769,'\1')
+    put(actions,'\1');local armed=input.release_state();assert(armed.hold and armed.down and armed.clean)
+    put(actions,'\0');num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+    return armed
+end
+local armed=release_fixture()
+assert(input.select_released(33,armed):find('matched kind 33',1,true))
+assert(reopened==1 and u32(read(component+0x14,4),0)==33,'closed release resumes and matches native code')
+armed=release_fixture();fail=true
+assert(not pcall(input.select_released,33,armed));fail=false
+assert(closed_count==1 and read(actions+96,1)=='\0','failed reopened release closes and restores input')
+armed=release_fixture();local opened_before=reopened
+num(ui+0x429c+20,1);assert(not pcall(input.select_released,33,armed));num(ui+0x429c+20,0)
+num(actions+24,0);assert(not pcall(input.select_released,33,armed));num(actions+24,2)
+armed.identity='other';assert(not pcall(input.select_released,33,armed))
+assert(reopened==opened_before,'overlay, non-hold and stale ownership never reopen')
+armed=release_fixture();assert(not pcall(input.select_released,149,armed))
+assert(reopened==opened_before,'missing mission member never reopens')
+print('Native release adapter passed: reopen/match, failure cleanup, pulse restoration, overlay/trigger/ownership/membership guards.')
 local starts,advances=0,0
 local fake={begin=function(kind) starts=starts+1;return {kind=kind} end,
     advance=function() advances=advances+1;return true,'matched' end}

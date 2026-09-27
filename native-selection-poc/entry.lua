@@ -1,9 +1,10 @@
-local api={api=1,revision=24,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=25,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
-local wheel,expanded
+local wheel,expanded,release_selection,release_registered
+local select_on_release=false
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -14,7 +15,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r24 - Cooldown Indicators\n'..table.concat(native_events,'\n')..'\n')
+    file:write('Native Stratagem Radial r25 - Select on Release\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -45,7 +46,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('NativeStratagemRadial.log')
         if file then
-            file:write('Native Stratagem Radial r24 - Cooldown Indicators\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write('Native Stratagem Radial r25 - Select on Release\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -54,6 +55,7 @@ local function report(status,force)
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
             file:write('last_confirmation='..tostring(api.last_confirmation)..'\n')
+            file:write('select_on_release='..tostring(select_on_release)..'; release_status='..tostring(release_selection and release_selection.status)..'\n')
             file:write('last_open='..tostring(api.last_open)..'\nlast_block='..tostring(api.last_block)..'\n')
             file:write(table.concat(selection_events,'\n')..'\n')
             file:close()
@@ -63,6 +65,14 @@ end
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
+    if release_registered~=menu then
+        if menu.register_option('native_stratagem_radial.select_on_release',{
+            type='toggle',mod='Native Stratagem Radial',label='Select on Release',default=false,
+            description='Radial modes only: use a Hold stratagem-menu binding, point, then release to select. No separate Confirm binding required. Center the pointer to cancel. List mode still requires Confirm.'}) then release_registered=menu end
+    end
+    if release_registered==menu then
+        select_on_release=menu.get('native_stratagem_radial.select_on_release')==true
+    end
     if migration_checked~=menu then
         migration_checked=menu
         migrate_expanded=menu.get('native_stratagem_radial.selection_mode')==4
@@ -186,6 +196,7 @@ local function step()
             camera=camera_capture(backend)
             input=input_backend(backend)
             selection=selection_controller(input,selection_report)
+            release_selection=release_controller(input,selection_report)
             duplicates=duplicate_cards(backend)
             pointing=native_pointing(backend)
             wheel=emote_wheel(backend,duplicates,input)
@@ -200,6 +211,7 @@ local function step()
         if active_mode~=active_key then
             controller.restore();list_controller.restore();duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
             selection.step(nil,nil,now)
+            release_selection.reset()
             active_mode=active_key
         end
         local buttons=bindings()
@@ -255,6 +267,8 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.step(snapshot,buttons,now,vector)
+        release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
+            snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then

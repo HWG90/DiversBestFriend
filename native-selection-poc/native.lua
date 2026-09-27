@@ -173,6 +173,12 @@ local function native_backend()
             and tonumber(received[0])==1,'Native action write failed')
     end
     function backend.invoke_input(component) input_handler(component) end
+    function backend.open_input(component)
+        return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
+    end
+    function backend.close_input(component)
+        ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+    end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end
     ffi.cdef [[

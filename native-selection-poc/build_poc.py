@@ -8,10 +8,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 24
+REVISION = 25
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'CooldownIndicators'
+RECENT_FEATURE = 'SelectOnRelease'
 OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
@@ -22,13 +22,14 @@ def build():
     source = ('-- HD2-Addon: ' + RESOURCE + '\n'
               "if rawget(_G,'NativeStratagemRadial') then return end\n")
     source += '\n'.join((ROOT / name).read_text(encoding='utf-8')
-                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'entry.lua'))
+                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'release.lua', 'entry.lua'))
     body = source.encode('utf-8')
     assert f'revision={REVISION},' in source, 'Runtime revision must match release metadata'
     assert (ROOT / 'INSTALL.txt').read_text().splitlines()[0] == DISPLAY_NAME, 'Install title must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f'Revision {REVISION}: native and expanded wheels gray and dim icons during cooldown or delivery. '
+    description = (f'Revision {REVISION}: optional Select on Release for radial modes (off by default), using the native Hold menu binding. '
+                   'Native and expanded wheels gray and dim icons during cooldown or delivery. '
                    'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '
                    'Uses the original HUD timer state, including native special cases. Retains all layouts, wedge appearance controls and centering. '
                    'Requires Mod Options Menu, Mod Bindings Menu v2 and Bingus Shared Loader API 1.')

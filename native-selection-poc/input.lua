@@ -56,12 +56,13 @@ local function input_backend(b)
         end
         error('Local ownership mapping unavailable')
     end
-    local function context(activation)
+    local function context(activation,allow_closed)
         local state=ptr(base+0x3326340)
         assert(num(state+0xac21c)==4,'Not in gameplay')
         local hud=ptr(base+0x346d538)
         assert(b.valid(hud),'HUD hierarchy changed')
-        assert(read(hud+0x395100+0x38769,1)=='\1','Keep the stratagem menu open')
+        local hud_open=read(hud+0x395100+0x38769,1)=='\1'
+        assert(allow_closed or hud_open,'Keep the stratagem menu open')
         local pm=ptr(base+0x3326468)
         assert(num(pm+0x88)>0,'No local player')
         local network=num(pm+0x3a8)
@@ -78,7 +79,8 @@ local function input_backend(b)
         local component=avatar+0x8d0
         assert(num(component+0x28)==key,'Input owner mismatch')
         -- Same menu-active bit tested by A8E780; HUD visibility alone is insufficient.
-        assert(math.floor(num(avatar+0xfd8)/512)%2==1,'Native input menu is inactive')
+        local menu_active=math.floor(num(avatar+0xfd8)/512)%2==1
+        assert(allow_closed or menu_active,'Native input menu is inactive')
         if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are unsupported in this prototype') end
         local player_context=num(avatar+0x110c)
         -- The matching routine dereferences the corresponding mission payload.
@@ -98,7 +100,8 @@ local function input_backend(b)
         end
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
-            key=key,payload=payload,context=player_context,identity=manager..':'..key}
+            key=key,payload=payload,context=player_context,identity=manager..':'..key,
+            hud=hud,hud_open=hud_open,menu_active=menu_active}
     end
     local function code(kind)
         assert(selectable_kind(kind),'Invalid stratagem kind')
@@ -190,6 +193,58 @@ local function input_backend(b)
         end
         assert(n==job.sent and matched==0,'Game rejected the code prefix or availability')
         return false,'Entering native code '..job.sent..'/'..#job.code
+    end
+    function out.release_state()
+        local c=context(true,true)
+        -- The native menu updater reads action 5:0, its evaluated byte and
+        -- trigger type at +24. Only Hold/LongHold (2/9) have release semantics.
+        local trigger=num(c.actions+24)
+        c.hold=trigger==2 or trigger==9
+        local down=read(c.actions,1)
+        assert(down=='\0' or down=='\1','Invalid stratagem menu action')
+        c.down=down=='\1'
+        c.clean=num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0
+        for a=1,4 do if read(c.actions+32*a,1)~='\0' then c.clean=false end end
+        local ui=ptr(base+0x347ce28)
+        c.unobstructed=num(ui+0x429c+20)==0
+        return c
+    end
+    function out.select_released(kind,armed)
+        local c=out.release_state()
+        assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
+            'Release owner changed')
+        assert(c.hold and not c.down and c.unobstructed,'Not an unobstructed Hold release')
+        assert(num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0,
+            'Manual input or completed selection cancels release')
+        idle_actions(c)
+        -- Revalidate membership/descriptor before asking the normal guarded
+        -- native opener to resume a menu already closed by this frame's update.
+        local n=num(c.payload+0x788);assert(n<=32,'Invalid stratagem entry count')
+        local found=false
+        for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
+        assert(found,'Released stratagem no longer belongs to the mission')
+        code(kind)
+        local reopened=false
+        if not c.menu_active then
+            if b.checkpoint then b.checkpoint('release native opener enter') end
+            assert(b.open_input(c.component),'Native game state rejected release selection')
+            reopened=true
+            if b.checkpoint then b.checkpoint('release native opener returned') end
+        end
+        local ok,result=pcall(function()
+            local job=out.begin(kind)
+            -- Finish within this release frame; the ordinary update can then
+            -- equip the matched beacon even though the Hold action is up.
+            local done,message
+            for i=1,#job.code do done,message=out.advance(job) end
+            assert(done,'Release code did not complete')
+            return message
+        end)
+        if not ok then
+            if reopened then b.close_input(c.component) end
+            error(result)
+        end
+        return result
     end
     return out
 end

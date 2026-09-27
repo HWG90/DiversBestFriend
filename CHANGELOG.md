@@ -1,5 +1,12 @@
 # Changelog
 
+## R25 - Select on Release
+
+- Optional, default-off release selection for all radial layouts using the native Hold menu action.
+- Default controls and list behavior remain unchanged; explicit Confirm suppresses duplicate release.
+- Guards stale frames, UI overlays, ownership changes and manual input. Native opener resumes closed input sessions and rejection closes reopened menus.
+- Isolated tests pass; native reopening and controller timing await in-game validation.
+
 ## r24 - Cooldown Indicators
 
 - Gray/dim Native wheel and Expanded wedge icons while the native HUD reports cooldown or incoming delivery.
