@@ -11,7 +11,8 @@ ARCHIVE = '9ba626afa44a3aa3.patch_0'
 REVISION = 24
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-OUTPUT = ROOT / 'NativeStratagemRadial-r24-CooldownIndicators.zip'
+RECENT_FEATURE = 'CooldownIndicators'
+OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
 def build():
