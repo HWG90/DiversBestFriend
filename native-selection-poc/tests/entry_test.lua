@@ -81,7 +81,7 @@ env.CowboyBingusModLoader={log_directory='native-selection-poc/tests/no-saved-se
 end}
 local registered={}
 env.ModBindingsMenu={api=1,version=2,register_binding=function(id,label,slot,options)
-    assert(slot==nil and options.category=='Native Stratagem Radial');registered[id]=label;return true
+    assert(slot==nil and options.category=="Diver's Best Friend");registered[id]=label;return true
 end,is_down=function(id) return buttons[id:match('%.([^%.]+)$')] end}
 env.update=function(a,b) assert(a=='a' and b=='b');return 1,nil,3 end
 local chunk=assert(loadstring(source('entry.lua')));setfenv(chunk,env);chunk()

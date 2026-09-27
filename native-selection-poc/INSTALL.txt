@@ -2,10 +2,10 @@ Diver's Best Friend - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Revision 25 - Select on Release (optional; disabled by default).
+Revision 26 - Polish. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
 
-Mod Options > Native Stratagem Radial > Selection mode:
+Mod Options > Diver's Best Friend > Selection mode:
 
 Optional: enable Select on Release in the same options page and Apply.
 Use a Hold binding for the game's stratagem menu. Hold, point, then release
@@ -79,5 +79,5 @@ transforms. Native rendering and placement still require an in-game check.
 Earlier release ZIPs remain available; r21 was confirmed working before this
 centering correction.
 
-Logs: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\NativeStratagemRadial.log
-Native checkpoints: same directory, NativeStratagemRadial-native.log
+Logs: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\DiversBestFriend.log
+Native checkpoints: same directory, DiversBestFriend-native.log

@@ -50,3 +50,5 @@ The r22 centering correction projects the native 4x4 GUI matrix onto its X/Z scr
 ## Contributing
 
 Small, focused changes and reproducible bug reports are welcome. Keep native calls guarded, preserve ownership/cleanup behavior, and separate isolated-test claims from in-game evidence. Don't commit game captures, game DLLs, access tokens, personal logs, or dependency packages. Project code is MIT licensed; game assets and third-party projects are not covered by that license.
+
+Display names use Diver's Best Friend. The legacy `native_stratagem_radial.*` IDs, addon resource path, and `NativeStratagemRadial` runtime alias are compatibility identifiers; preserve them across upgrades. `DiversBestFriend` is the current runtime alias and both names refer to the same API table. Historical release notes retain the names used by those releases.

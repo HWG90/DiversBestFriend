@@ -1,5 +1,12 @@
 # Changelog
 
+## R26 - Polish
+
+- Rename options and bindings sections to Diver's Best Friend and simplify setting descriptions.
+- Rename new logs to DiversBestFriend.log and DiversBestFriend-native.log; expose DiversBestFriend as a runtime alias.
+- Preserve the mod GUID, resource identity, existing runtime alias, saved settings and binding IDs.
+- Refresh installation instructions and package metadata. Select on Release stays off by default and still needs live validation.
+
 ## R25 - Select on Release
 
 - Configurable Confirm input interval: 0-250 ms, default 70 ms, fixed per sequence with a scaled timeout. Release sequences remain immediate.

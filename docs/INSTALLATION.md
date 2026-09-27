@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `DiversBestFriend-R24-CooldownIndicators.zip`.
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R26 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r26) is `DiversBestFriend-R26-Polish.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -17,7 +17,7 @@ Restart the game after deployment. No separate app needs to be launched. Python 
 
 ## Settings
 
-In the escape menu's **MODS** tab, select **Native Stratagem Radial**. Change settings and press the native **Apply** control.
+In the escape menu's **MODS** tab, select **Diver's Best Friend**. Change settings and press the native **Apply** control.
 
 | Setting | Effect |
 | --- | --- |
@@ -35,7 +35,7 @@ An older saved fourth mode migrates to Experimental / Expanded wedges. Mode chan
 
 ## Bindings and selection
 
-Open the game's keyboard or controller bindings and its **MODS** tab. Under **Native Stratagem Radial**, assign:
+Open the game's keyboard or controller bindings and its **MODS** tab. Under **Diver's Best Friend**, assign:
 
 - **Next stratagem**
 - **Previous stratagem**
@@ -79,20 +79,22 @@ No separate setting is needed. Countdown seconds are rounded up to avoid showing
 
 Logs live in `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/`:
 
-- `NativeStratagemRadial.log` — status, selected mode/layout, last confirmation, centering, and offset.
-- `NativeStratagemRadial-native.log` — native-call checkpoints, useful after a crash.
+- `DiversBestFriend.log` — status, selected mode/layout, last confirmation, centering, and offset.
+- `DiversBestFriend-native.log` — native-call checkpoints, useful after a crash.
 - `BingusSharedLoader.log` — loading/dependency diagnostics.
 
 Review logs before attaching them publicly. Include the release revision, game build, resolution, HUD scale, mode/layout, and steps to reproduce. r21 modes were author-tested in-game; r22's centering change is regression-tested but awaits a specific live placement check.
 
 ## Remove
 
-Close the game, disable/remove the DiversBestFriend / Native Stratagem Radial addon in your manager, and redeploy. Keep shared dependencies installed if other mods use them. Follow your manager's documented purge process if deployed files remain.
+Close the game, disable/remove the Diver's Best Friend addon in your manager, and redeploy. Keep shared dependencies installed if other mods use them. Follow your manager's documented purge process if deployed files remain.
 
-## Optional Select on Release (R25)
+## Optional Select on Release
 
-Install the [R25 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r25), `DiversBestFriend-R25-SelectOnRelease.zip`. In MODS > Native Stratagem Radial, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
+Install the [R26 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r26), `DiversBestFriend-R26-Polish.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
 
 ### Input interval (ms)
 
 Set the minimum delay between directions for Confirm-driven sequences: 0-250 ms in 5 ms steps, default 70 ms. At 0, one direction is sent per frame. Actual spacing is frame-limited. A running sequence keeps its starting value. Select on Release remains immediate and ignores this delay; paced release sequences need further native-session work.
+
+R26 names the options and bindings section **Diver's Best Friend**. Older builds show **Native Stratagem Radial** and write `NativeStratagemRadial*.log`. Saved setting and binding IDs are unchanged.

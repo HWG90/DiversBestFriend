@@ -1,4 +1,7 @@
-local api={api=1,revision=25,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=26,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local MOD_NAME = "Diver's Best Friend"
+rawset(_G,'DiversBestFriend',api)
+-- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
@@ -14,9 +17,9 @@ local function native_checkpoint(message)
     -- bypasses pcall and the ordinary end-of-frame status logger.
     if native_seen[message] then return end
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
-    local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
+    local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r25 - Select on Release\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R26 - Polish\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -45,9 +48,9 @@ local function report(status,force)
     pcall(function()
         local loader=rawget(_G,'CowboyBingusModLoader')
         if not loader or type(loader.open_log)~='function' then return end
-        local file=loader.open_log('NativeStratagemRadial.log')
+        local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write('Native Stratagem Radial r25 - Select on Release\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R26 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -69,7 +72,7 @@ local function options()
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
     if interval_registered~=menu then
         if menu.register_option('native_stratagem_radial.input_interval_ms',{
-            type='slider',mod='Native Stratagem Radial',label='Input interval (ms)',min=0,max=250,step=5,default=70,
+            type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
             description='Delay between directions for Confirm-driven codes. 0 sends one direction per frame. Changes apply to the next code. Select on Release sends its code immediately and does not use this delay.'}) then interval_registered=menu end
     end
     if interval_registered==menu then
@@ -78,7 +81,7 @@ local function options()
     end
     if release_registered~=menu then
         if menu.register_option('native_stratagem_radial.select_on_release',{
-            type='toggle',mod='Native Stratagem Radial',label='Select on Release',default=false,
+            type='toggle',mod=MOD_NAME,label='Select on Release',default=false,
             description='Radial modes only: use a Hold stratagem-menu binding, point, then release to select. No separate Confirm binding required. Center the pointer to cancel. List mode still requires Confirm.'}) then release_registered=menu end
     end
     if release_registered==menu then
@@ -108,15 +111,15 @@ local function options()
     end
     if registered~=menu then
         local ok=menu.register_option('native_stratagem_radial.enabled',{
-            type='toggle',mod='Native Stratagem Radial',label='Stratagem menu selection',default=true,
+            type='toggle',mod=MOD_NAME,label='Enable menu selection',default=true,
             description='Enable the selected menu mode. Confirm enters the highlighted stratagem code.'})
         if ok then registered=menu end
     end
     if mode_registered~=menu then
         if menu.register_option('native_stratagem_radial.selection_mode',{
-            type='choice',mod='Native Stratagem Radial',label='Selection mode',
+            type='choice',mod=MOD_NAME,label='Selection mode',
             choices={'Native wheel','Keybindings - list','Experimental'},default=1,
-            description='Native wheel: proven eight-slot mouse/stick wheel. List: Next/Previous and Confirm, camera remains available. Experimental: choose a layout below. Choose copied cards or expanded wedges in Experimental layout.'}) then mode_registered=menu end
+            description='Native wheel: eight slots with mouse or stick selection. List: Next/Previous and Confirm with camera control. Experimental: choose Cards or Expanded wedges below.'}) then mode_registered=menu end
     end
     if mode_registered==menu then
         local value=menu.get('native_stratagem_radial.selection_mode')
@@ -124,9 +127,9 @@ local function options()
     end
     if layout_registered~=menu then
         if menu.register_option('native_stratagem_radial.experimental_layout',{
-            type='choice',mod='Native Stratagem Radial',label='Experimental layout',
+            type='choice',mod=MOD_NAME,label='Experimental layout',
             choices={'Cards - copied list rows','Expanded wedges'},default=1,
-            description='Experimental only: copied native row cards or up to sixteen expanded wedges. Both use mouse/stick pointing and Confirm.'}) then layout_registered=menu end
+            description='Experimental mode: up to 16 Cards or Expanded wedges. Point with the mouse or stick, then Confirm or use Select on Release.'}) then layout_registered=menu end
     end
     if layout_registered==menu then
         local value=menu.get('native_stratagem_radial.experimental_layout')
@@ -141,8 +144,8 @@ local function options()
     end
     if color_registered~=menu then
         if menu.register_option('native_stratagem_radial.full_color_icons',{
-            type='toggle',mod='Native Stratagem Radial',label='Full-color stratagem icons',default=true,
-            description='Use the native stratagem material and category colors in wedge modes. Off restores the previous raw red/green textures. Copied rows retain their native colors.'}) then color_registered=menu end
+            type='toggle',mod=MOD_NAME,label='Full-color stratagem icons',default=true,
+            description='Use full-color icons on the wheels. Off shows the raw red/green icons. Cards keep their original colors; cooldown icons remain gray.'}) then color_registered=menu end
     end
     if color_registered==menu then
         local value=menu.get('native_stratagem_radial.full_color_icons')
@@ -151,7 +154,7 @@ local function options()
     for _,spec in ipairs(wedge_options) do
         local id='native_stratagem_radial.'..spec.key
         if wedge_registered[id]~=menu then
-            if menu.register_option(id,{type='slider',mod='Native Stratagem Radial',
+            if menu.register_option(id,{type='slider',mod=MOD_NAME,
                 label=spec.label,min=0,max=100,step=5,default=spec.default,
                 description=spec.description}) then wedge_registered[id]=menu end
         end
@@ -162,7 +165,7 @@ local function options()
     end
     if offset_registered~=menu then
         if menu.register_option('native_stratagem_radial.vertical_offset',{
-            type='slider',mod='Native Stratagem Radial',label='Radial vertical offset (down)',
+            type='slider',mod=MOD_NAME,label='Radial vertical offset (down)',
             min=-600,max=600,step=25,default=0,
             description='Fine-tune automatic viewport centering. Leave at 0 for screen center; positive values move downward. Apply after adjusting.'}) then offset_registered=menu end
     end
@@ -185,7 +188,7 @@ local function bindings()
     for _,key in ipairs({'next','previous','confirm'}) do
         local id=binding_ids[key]
         if binding_owner[id]~=menu then
-            local ok,why=menu.register_binding(id,labels[key],nil,{category='Native Stratagem Radial'})
+            local ok,why=menu.register_binding(id,labels[key],nil,{category=MOD_NAME})
             if not ok then api.selection_status='Binding unavailable: '..tostring(why); return nil end
             binding_owner[id]=menu
         end

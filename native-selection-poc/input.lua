@@ -81,7 +81,7 @@ local function input_backend(b)
         -- Same menu-active bit tested by A8E780; HUD visibility alone is insufficient.
         local menu_active=math.floor(num(avatar+0xfd8)/512)%2==1
         assert(allow_closed or menu_active,'Native input menu is inactive')
-        if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are unsupported in this prototype') end
+        if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are not supported') end
         local player_context=num(avatar+0x110c)
         -- The matching routine dereferences the corresponding mission payload.
         -- Verify that its context-to-peer resolution maps to this session first.

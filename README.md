@@ -12,7 +12,7 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 
 [Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) · [Installation and controls](docs/INSTALLATION.md) · [Credits](CREDITS.md) · [Development](docs/DEVELOPMENT.md)
 
-R25 adds an optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R25 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r25) needs in-game controller validation.
+R26 polishes in-game names, setting descriptions and logs. It includes the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R26 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r26) needs in-game controller validation.
 
 ## What it does
 
@@ -47,11 +47,11 @@ Install the dependencies separately; they are not bundled. CowboyBingus' other g
 
 1. Close the game. Install the three dependencies above and the ZIP from [Releases](https://github.com/HWG90/DiversBestFriend/releases/latest).
 2. Enable them in Arsenal and deploy. Follow the loader's priority instructions: with Arsenal's default priority, Shared Loader goes last; with first-mod priority enabled, it goes first.
-3. Restart. In the **MODS** options tab, open **Native Stratagem Radial**, choose a selection mode, and Apply.
+3. Restart. In the **MODS** options tab, open **Diver's Best Friend**, choose a selection mode, and Apply.
 4. In the native keyboard/controller bindings **MODS** tab, assign **Next stratagem**, **Previous stratagem**, and **Confirm stratagem**.
 5. Open the normal stratagem menu in a mission, select an available entry, and Confirm. Once the code completes, throw normally.
 
-Arsenal displays **Diver's Best Friend - Automated Stratagem System (ASS)**, with the current revision in its description. Release ZIPs use `DiversBestFriend-R#-RecentFeature.zip`. The mod keeps its development name **Native Stratagem Radial** in settings and logs. Its stable mod GUID and setting IDs are preserved so existing installations update correctly.
+Arsenal displays **Diver's Best Friend - Automated Stratagem System (ASS)**, with the current revision in its description. Release ZIPs use `DiversBestFriend-R#-RecentFeature.zip`. In-game options and bindings use **Diver's Best Friend**; logs use `DiversBestFriend.log` and `DiversBestFriend-native.log`. Its stable mod GUID and setting IDs are preserved so existing installations update correctly.
 
 ## Status
 
