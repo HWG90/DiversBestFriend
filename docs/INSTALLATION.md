@@ -92,3 +92,7 @@ Close the game, disable/remove the DiversBestFriend / Native Stratagem Radial ad
 ## Optional Select on Release (R25)
 
 Install the [R25 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r25), `DiversBestFriend-R25-SelectOnRelease.zip`. In MODS > Native Stratagem Radial, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
+
+### Input interval (ms)
+
+Set the minimum delay between directions for Confirm-driven sequences: 0-250 ms in 5 ms steps, default 70 ms. At 0, one direction is sent per frame. Actual spacing is frame-limited. A running sequence keeps its starting value. Select on Release remains immediate and ignores this delay; paced release sequences need further native-session work.

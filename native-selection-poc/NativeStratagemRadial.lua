@@ -1329,7 +1329,7 @@ end
 
 -- Pointing and discrete navigation share the proven explicit-confirm path.
 local function selection_controller(input,report)
-    local self={selected=nil,status='Open the native stratagem menu',job=nil}
+    local self={selected=nil,status='Open the native stratagem menu',job=nil,interval_ms=70}
     local previous,opened={},false
     local owner,next_at,last_vector,point_mode
     function self.step(snapshot,buttons,now,vector)
@@ -1380,7 +1380,7 @@ local function selection_controller(input,report)
                 local ok,done,message=pcall(input.advance,self.job)
                 if not ok then self.job=nil; report('Stopped: '..tostring(done)); return end
                 report(message)
-                if done then self.job=nil else next_at=now+70 end
+                if done then self.job=nil else next_at=now+self.job.interval_ms end
             end
             return
         end
@@ -1411,7 +1411,12 @@ local function selection_controller(input,report)
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
-            if ok then self.job=result; self.job.deadline=now+3000; next_at=now; report('Started native input for kind '..row.kind)
+            if ok then
+                local interval=self.interval_ms
+                if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                self.job=result;self.job.interval_ms=interval
+                self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
+                next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')
             else report('Not started: '..tostring(result)) end
         end
     end
@@ -1469,6 +1474,7 @@ local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
 local wheel,expanded,release_selection,release_registered
 local select_on_release=false
+local interval_registered,input_interval_ms=nil,70
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -1520,6 +1526,7 @@ local function report(status,force)
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
             file:write('last_confirmation='..tostring(api.last_confirmation)..'\n')
             file:write('select_on_release='..tostring(select_on_release)..'; release_status='..tostring(release_selection and release_selection.status)..'\n')
+            file:write('input_interval_ms='..tostring(input_interval_ms)..'\n')
             file:write('last_open='..tostring(api.last_open)..'\nlast_block='..tostring(api.last_block)..'\n')
             file:write(table.concat(selection_events,'\n')..'\n')
             file:close()
@@ -1529,6 +1536,15 @@ end
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
+    if interval_registered~=menu then
+        if menu.register_option('native_stratagem_radial.input_interval_ms',{
+            type='slider',mod='Native Stratagem Radial',label='Input interval (ms)',min=0,max=250,step=5,default=70,
+            description='Delay between directions for Confirm-driven codes. 0 sends one direction per frame. Changes apply to the next code. Select on Release sends its code immediately and does not use this delay.'}) then interval_registered=menu end
+    end
+    if interval_registered==menu then
+        local value=menu.get('native_stratagem_radial.input_interval_ms')
+        if type(value)=='number' and value==value and value>=0 and value<=250 then input_interval_ms=value end
+    end
     if release_registered~=menu then
         if menu.register_option('native_stratagem_radial.select_on_release',{
             type='toggle',mod='Native Stratagem Radial',label='Select on Release',default=false,
@@ -1730,6 +1746,7 @@ local function step()
         end
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
+        selection.interval_ms=input_interval_ms
         selection.step(snapshot,buttons,now,vector)
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))

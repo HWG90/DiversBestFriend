@@ -27,6 +27,7 @@ end
 env.radial.list_controller=env.radial.controller
 env.camera_capture=function() return {capture=function() captured=true end,release=function() captured=false end} end
 env.ModOptionsMenu={api=1,register_option=function(id,spec)
+    if id:find('input_interval_ms',1,true) then assert(spec.default==70 and spec.min==0 and spec.max==250 and spec.step==5) end
     if id:find('select_on_release',1,true) then assert(spec.default==false and spec.type=='toggle') end
     if id:find('.wedge_',1,true) then
         assert(spec.type=='slider' and spec.min==0 and spec.max==100 and spec.step==5)

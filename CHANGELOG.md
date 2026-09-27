@@ -2,6 +2,7 @@
 
 ## R25 - Select on Release
 
+- Configurable Confirm input interval: 0-250 ms, default 70 ms, fixed per sequence with a scaled timeout. Release sequences remain immediate.
 - Optional, default-off release selection for all radial layouts using the native Hold menu action.
 - Default controls and list behavior remain unchanged; explicit Confirm suppresses duplicate release.
 - Guards stale frames, UI overlays, ownership changes and manual input. Native opener resumes closed input sessions and rejection closes reopened menus.

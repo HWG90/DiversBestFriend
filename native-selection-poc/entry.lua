@@ -5,6 +5,7 @@ local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
 local wheel,expanded,release_selection,release_registered
 local select_on_release=false
+local interval_registered,input_interval_ms=nil,70
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -56,6 +57,7 @@ local function report(status,force)
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
             file:write('last_confirmation='..tostring(api.last_confirmation)..'\n')
             file:write('select_on_release='..tostring(select_on_release)..'; release_status='..tostring(release_selection and release_selection.status)..'\n')
+            file:write('input_interval_ms='..tostring(input_interval_ms)..'\n')
             file:write('last_open='..tostring(api.last_open)..'\nlast_block='..tostring(api.last_block)..'\n')
             file:write(table.concat(selection_events,'\n')..'\n')
             file:close()
@@ -65,6 +67,15 @@ end
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
+    if interval_registered~=menu then
+        if menu.register_option('native_stratagem_radial.input_interval_ms',{
+            type='slider',mod='Native Stratagem Radial',label='Input interval (ms)',min=0,max=250,step=5,default=70,
+            description='Delay between directions for Confirm-driven codes. 0 sends one direction per frame. Changes apply to the next code. Select on Release sends its code immediately and does not use this delay.'}) then interval_registered=menu end
+    end
+    if interval_registered==menu then
+        local value=menu.get('native_stratagem_radial.input_interval_ms')
+        if type(value)=='number' and value==value and value>=0 and value<=250 then input_interval_ms=value end
+    end
     if release_registered~=menu then
         if menu.register_option('native_stratagem_radial.select_on_release',{
             type='toggle',mod='Native Stratagem Radial',label='Select on Release',default=false,
@@ -266,6 +277,7 @@ local function step()
         end
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
+        selection.interval_ms=input_interval_ms
         selection.step(snapshot,buttons,now,vector)
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))

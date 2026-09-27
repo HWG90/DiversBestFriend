@@ -1,6 +1,6 @@
 -- Pointing and discrete navigation share the proven explicit-confirm path.
 local function selection_controller(input,report)
-    local self={selected=nil,status='Open the native stratagem menu',job=nil}
+    local self={selected=nil,status='Open the native stratagem menu',job=nil,interval_ms=70}
     local previous,opened={},false
     local owner,next_at,last_vector,point_mode
     function self.step(snapshot,buttons,now,vector)
@@ -51,7 +51,7 @@ local function selection_controller(input,report)
                 local ok,done,message=pcall(input.advance,self.job)
                 if not ok then self.job=nil; report('Stopped: '..tostring(done)); return end
                 report(message)
-                if done then self.job=nil else next_at=now+70 end
+                if done then self.job=nil else next_at=now+self.job.interval_ms end
             end
             return
         end
@@ -82,7 +82,12 @@ local function selection_controller(input,report)
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
-            if ok then self.job=result; self.job.deadline=now+3000; next_at=now; report('Started native input for kind '..row.kind)
+            if ok then
+                local interval=self.interval_ms
+                if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                self.job=result;self.job.interval_ms=interval
+                self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
+                next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')
             else report('Not started: '..tostring(result)) end
         end
     end

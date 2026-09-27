@@ -13,6 +13,11 @@ to select without a separate Confirm button. Return to the center before
 releasing to cancel. Applies to all radial layouts, not the keybindings list.
 Throw the beacon normally. Native release timing needs an in-game test.
 
+Input interval (ms): 0-250 in 5 ms steps, default 70. Applies to codes started
+with Confirm; 0 means one direction per frame. A running code keeps the
+interval it started with. Select on Release remains immediate and ignores
+this delay so the code can finish within the native release frame.
+
 1. Native wheel
    Existing eight-slot native wheel with mouse/stick pointing and Confirm.
    Next/Previous switch pages when more than eight entries are available.

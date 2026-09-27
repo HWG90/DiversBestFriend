@@ -29,6 +29,7 @@ def build():
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
     description = (f'Revision {REVISION}: optional Select on Release for radial modes (off by default), using the native Hold menu binding. '
+                   'Configurable Confirm input interval (0-250 ms, default 70); release sequences remain immediate. '
                    'Native and expanded wheels gray and dim icons during cooldown or delivery. '
                    'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '
                    'Uses the original HUD timer state, including native special cases. Retains all layouts, wedge appearance controls and centering. '
