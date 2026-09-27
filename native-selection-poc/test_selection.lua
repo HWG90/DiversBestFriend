@@ -73,6 +73,30 @@ local input=make_input(b)
 local cards={open=true,rows={{address=123,entry=0},{address=456,entry=4},{address=789,entry=20}}}
 input.decorate(cards)
 assert(cards.rows[1].kind==3 and cards.rows[2].kind==33 and cards.rows[3].kind==nil,'cards use local payload index')
+-- Native card cache already contains the HUD's special-case countdowns.
+local ffi=require('ffi')
+local function cached(row,kind,state,seconds)
+    put(row.address+0x3718,string.rep('\0',0x44))
+    num(row.address+0x374c,kind);num(row.address+0x3758,state)
+    local value=ffi.new('float[1]',seconds)
+    put(row.address+(state==3 and 0x3718 or 0x3720),ffi.string(value,4))
+end
+cached(cards.rows[1],3,4,61.25);cached(cards.rows[2],33,3,9.2)
+input.decorate(cards)
+assert(cards.rows[1].timer_kind=='cooldown' and cards.rows[1].timer_seconds==62)
+assert(cards.rows[2].timer_kind=='incoming' and cards.rows[2].timer_seconds==10)
+for _,seconds in ipairs({0,-1,0/0,math.huge,86401}) do
+    cached(cards.rows[1],3,4,seconds);input.decorate(cards)
+    assert(cards.rows[1].timer_seconds==nil,'expired/invalid timer never remains stale')
+end
+cached(cards.rows[1],136,4,60);input.decorate(cards)
+assert(cards.rows[1].timer_seconds==nil,'stale native kind rejected')
+cached(cards.rows[1],3,5,60);input.decorate(cards)
+assert(cards.rows[1].timer_seconds==nil,'other unavailability is not mislabeled cooldown')
+cards.rows[1].entry=5;cached(cards.rows[1],124,4,22.1);input.decorate(cards)
+assert(cards.rows[1].kind==124 and cards.rows[1].timer_seconds==23,'shared Reinforce native countdown preserved')
+cards.rows[1].entry=0;cached(cards.rows[1],3,1,0);input.decorate(cards)
+assert(cards.rows[1].timer_seconds==nil and cards.rows[1].timer_kind==nil,'ready state clears previous cooldown')
 local function reset() num(component,0);num(component+0x14,0);num(component+0x2c,0) end
 for _,c in ipairs(cases) do
     reset(); expected=c

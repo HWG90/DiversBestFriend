@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `NativeStratagemRadial-r23-WedgeAppearance.zip`.
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `NativeStratagemRadial-r24-CooldownIndicators.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -53,6 +53,17 @@ Open the regular stratagem menu with your normal game binding:
 In radial modes, pointing owns camera input while the menu is open. Closing the menu releases it. The original list remains visible at top left. Pointer selection near the center/dead zone may select nothing.
 
 Keep the menu open while Confirm enters the code. The game then equips the beacon through its normal input path; **you still throw it yourself**. Normal cooldowns and availability restrictions apply. The addon does not assign a matched stratagem ID or invoke throw/spawn functions.
+
+## Cooldown indicators
+
+Native wheel and Expanded wedges automatically display cooldown and incoming/delivery state from the original HUD:
+
+- A timed-out icon turns grayscale and dim, including when full-color icons are switched off.
+- Pointing at it shows the remaining minutes/seconds below the center name. The selected wedge remains highlighted so you can inspect it.
+- At expiry, the timer hides and the icon restores its normal appearance automatically.
+- Native list and copied Cards keep their built-in status/countdown rows.
+
+No separate setting is needed. Countdown seconds are rounded up to avoid showing zero while time remains. The native HUD handles special cases such as Reinforce; the addon reads its displayed timer rather than assuming a fixed cooldown duration. An unreadable or stale card produces no timer, not a claim that it is ready. Other restrictions (charges, jamming, etc.) are still decided by the game on Confirm.
 
 ## Troubleshooting
 

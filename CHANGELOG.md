@@ -1,5 +1,13 @@
 # Changelog
 
+## r24 - Cooldown Indicators
+
+- Gray/dim Native wheel and Expanded wedge icons while the native HUD reports cooldown or incoming delivery.
+- Reuse the owned wheel hint for a selected-item minute/second countdown beneath the name; restore colors at expiry.
+- Preserve selection, paging, native availability checks, and existing list/card timers.
+- Validate native cached-kind identity, timer state, finite bounded seconds, and stale-data clearing.
+- Add guarded native formatted-label setters and regression tests for gray palettes, raw-mode restoration, minute rollover, and expiry. In-game visual validation remains pending.
+
 ## r23 — Wedge Appearance
 
 - Add independent Expanded wedge darkness and opacity sliders, each 0–100% in 5% steps.

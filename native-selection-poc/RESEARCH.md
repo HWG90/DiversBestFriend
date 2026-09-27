@@ -286,3 +286,36 @@ Local read-only DSAR inspection followed the public format descriptions in
 https://github.com/xypwn/filediver/blob/master/patterns/dsar.hexpat and
 https://github.com/xypwn/filediver/blob/master/stingray/slim_edition.go .
 No extractor, game resource, capture, or new dependency is shipped.
+
+
+## r24: cooldown/delivery presentation
+
+Read a bounded 0x44-byte block from original card+0x3718 after matching its
+cached kind (+0x374C) to the local mission entry. Native state +0x3758 == 3
+selects incoming seconds +0x3718; state 4 selects cooldown +0x3720. The
+native update computes special cases itself, including shared Reinforce
+(18368CC..1836908). Reject unknown kinds, other states, unreadable blocks,
+nonfinite, expired, or over-one-day values. Round positive seconds up for
+display; this is not a generic readiness or charges test.
+
+Native and expanded icon caches include timer kind, not seconds, so the
+material changes only when its presentation state changes. Decode the native
+channel-mask material and desaturate A,R,G,B vectors' RGB components while
+preserving alpha, even if the user's normal icon mode is raw. Dim timed
+icons to 0.30 (0.55 selected); preserve the yellow selected wedge. Do not
+remove timed entries, reorder them, reset paging, or bypass the matcher.
+
+The owned wheel's +0xF50 hint is type 7, constructed by 143AFA0 at 182A1EE.
+Reuse that existing object; do not run native emote gameplay activation.
+Set the native row timer template 0xA851371B with 143BF90 and minute/second
+parameters 0x51D1E697 / 0x4583B0D3 through 143C9D0 (uint32 parameter,
+int32 value, uint32 formatting flags 0x3020). Native row evidence is
+18360F2..18360FA and 18377E2..1837832. Position the hint at local (0,-75)
+under the center name; keep it hidden when no timed item is selected, or in
+copied-row mode. New call signatures and layout witnesses have byte guards.
+
+Tests cover both timer states, shared-Reinforce cached state, invalid/expired
+values, stale kinds, grayscale alpha preservation, raw-mode restoration,
+minute rollover, expiry, expanded selection preservation, and entry routing.
+Mocks do not establish native renderer safety or visual placement; live
+verification of the hint text and positioning remains pending.

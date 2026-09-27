@@ -1,4 +1,4 @@
-Native Stratagem Radial r23 - Wedge Appearance
+Native Stratagem Radial r24 - Cooldown Indicators
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.
@@ -29,6 +29,16 @@ Native wheel and list retain their saved mode numbers 1 and 2.
 Full-color stratagem icons remains enabled by default for wedge displays;
 turn it off to restore raw texture rendering. Copied cards retain native
 colors. The wedge rotation correction remains.
+
+Cooldown indicators (Native wheel and Expanded wedges):
+- Icons become grayscale and dim while the original HUD reports cooldown
+  or an incoming/delivery countdown, even with full-color icons switched off.
+- Point at the stratagem to show its remaining time below the center name.
+- Colors restore automatically when its native timer expires.
+- List and copied Cards keep their original native countdown display.
+This is a timer indicator, not a complete readiness test for charges/jamming.
+Confirm still uses the normal game checks. New timer rendering needs an
+in-game visual check; isolated tests cover timer expiry and selection.
 
 Expanded wedges now have two independent settings (Apply after changing):
 - Expanded wedge darkness (%): 0 original gray to 100 black; default 70.

@@ -9,6 +9,8 @@ local function emote_wheel(b,scope,input)
     local opacity=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ad0)
     local rotation=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ef0)
     local label=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x1441720)
+    local timer_label=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x143bf90)
+    local timer_number=ffi.cast('void (*)(uintptr_t, uint32_t, int32_t, uint32_t)',b.base+0x143c9d0)
     local storage,address,identity,parent,signature
     local retired,content={},{}
     local previous={}
@@ -87,11 +89,11 @@ local function emote_wheel(b,scope,input)
                 local icon=address+0x1208+i*0x158
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('wheel stratagem texture enter')
-                    configure_stratagem_icon(b,icon,info)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
                     checkpoint('wheel stratagem texture returned')
                     content[i]=content_key
                 end
@@ -127,11 +129,33 @@ local function emote_wheel(b,scope,input)
                 checkpoint('wheel label returned')
             end
             for i=0,7 do
-                opacity(address+0x1208+i*0x158,cursor_only and 0 or (i==index and 1 or 0.65))
+                local timed=rows and rows[i+1] and rows[i+1].timer_seconds
+                opacity(address+0x1208+i*0x158,cursor_only and 0 or
+                    (timed and (i==index and 0.55 or 0.3) or (i==index and 1 or 0.65)))
             end
             -- Same widget, vector and radius as native update 182ADA[A..EF].
             visible(address+0xb40,vector and 1 or 0)
             if vector then b.set(address+0xb40,'position',{vector[1]*240,vector[2]*240}) end
+            bounds()
+        end)
+    end
+    -- The owned native emote hint is a type-7 formatted label. Reuse it for
+    -- the list's minute/second template; no new widget or raw text allocation.
+    function self.timer(row)
+        if not owned() then return end
+        scope.context_scope(parent,function()
+            local seconds=row and row.timer_seconds
+            local hint=address+0xf50
+            visible(hint,seconds and 1 or 0)
+            if seconds then
+                checkpoint('wheel cooldown timer enter')
+                timer_label(hint,0xa851371b)
+                timer_number(hint,0x51d1e697,math.floor(seconds/60),0x3020)
+                timer_number(hint,0x4583b0d3,seconds%60,0x3020)
+                b.set(hint,'position',{0,-75})
+                opacity(hint,1)
+                checkpoint('wheel cooldown timer returned')
+            end
             bounds()
         end)
     end

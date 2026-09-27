@@ -231,6 +231,13 @@ native_guards[#native_guards+1]={name='icon_material_parameter',rva=0x14498c0,by
 native_guards[#native_guards+1]={name='icon_material_source',rva=0x18398be,bytes='\xe8\xed\x51\xc0\xff\x45\x33\xc0\x48\x8b\xd3\x48\x8b\xcf\xe8\x2f\x5f\xc1\xff\xc7\x45\xc0\x00\x00'}
 native_guards[#native_guards+1]={name='icon_channel_palette',rva=0x183a1fb,bytes='\x48\x8b\xcf\xe8\xdd\x54\xc1\xff\x48\x85\xc0\x74\x1f\x45\x8b\x86\xb8\x00\x00\x00\x48\x8d\x05\x2a\xde\xad\x01\x49\xc1\xe0\x04\xba\x4d\x3f\x72\x28\x4c\x03\xc0\xe8\x99\xf6\xc0\xff\x48\x8b\xcf\xe8\xb1\x54\xc1\xff\x48\x85\xc0\x74\x11\x4c\x8d\x05\xf5\x8a\x9a\x00\xba\xfd\xd4\x1f\x85\xe8\x7b\xf6\xc0\xff\x48\x8b\xcf\xe8\x93\x54\xc1\xff\x48\x85\xc0\x74\x11\x4c\x8d\x05\x07\x8b\x9a\x00\xba\xaf\x53\xc3\x10\xe8\x5d\xf6\xc0\xff'}
 
+-- r24 native row timer fields and formatted-label setters.
+native_guards[#native_guards+1]={name='cooldown_label',rva=0x143bf90,bytes='\x48\x83\xec\x28\x4c\x8b\xd9\x39\x91\x10\x01\x00\x00\x0f\x84\x80\x00\x00\x00\x89\x91\x10\x01\x00\x00\x48\x8b\x91\x70\x02\x00\x00'}
+native_guards[#native_guards+1]={name='cooldown_number',rva=0x143c9d0,bytes='\x40\x53\x48\x83\xec\x20\x48\x8b\xd9\x48\x81\xc1\x10\x01\x00\x00\xe8\x1b\xd9\xff\xff\x84\xc0\x74\x5b\x8b\x93\xb8\x00\x00\x00\x8b'}
+native_guards[#native_guards+1]={name='cooldown_field',rva=0x1836bea,bytes='\xf3\x41\x0f\x10\x87\x20\x37\x00\x00\x41\x0f\x2f\xc3\x76\x0a\xc7\x44\x24\x54\x04\x00\x00\x00'}
+native_guards[#native_guards+1]={name='cooldown_format',rva=0x18377e2,bytes='\x49\x8d\x8f\xb8\x25\x00\x00\xf3\x0f\x5e\x05\x4f\xff\xb8\x00\x41\xb9\x20\x30\x00\x00\xba\x97\xe6\xd1\x51\xf3\x0f\x2c\xd8\x44\x8b\xc3\xe8\xc8\x51\xc0\xff\x66\x0f\x6e\xd3\x49\x8d\x8f\xb8\x25\x00\x00\x0f\x5b\xd2\xba\xd3\xb0\x83\x45\x41\xb9\x20\x30\x00\x00\xf3\x0f\x59\x15\x17\xff\xb8\x00\xf3\x0f\x5c\xe2\xf3\x44\x0f\x2c\xc4\xe8\x99\x51\xc0\xff'}
+native_guards[#native_guards+1]={name='cooldown_hint_type',rva=0x182a1e4,bytes='\x49\x8d\x9f\x50\x0f\x00\x00\x48\x8b\xcb\xe8\xad\x0d\xc1\xff'}
+
 -- Supported-build adapter. All drawing remains in the game's native HUD.
 local function native_backend()
     local ffi = require('ffi')
@@ -431,6 +438,24 @@ local function selectable_kind(kind)
 end
 local function input_backend(b)
     local base=b.base
+    local ffi=require('ffi')
+    local timer_float=ffi.new('float[1]')
+    local function decorate_timer(row)
+        row.timer_seconds,row.timer_kind=nil,nil
+        -- Read the same cached seconds/state the original HUD renders. This
+        -- includes native special cases (shared Reinforce and Eagle timers).
+        -- An unreadable or not-yet-updated card means unknown, never "ready".
+        local bytes=b.read(row.address+0x3718,0x44)
+        if not bytes or #bytes~=0x44 or b.u32(bytes,0x34)~=row.kind then return end
+        local state=b.u32(bytes,0x40)
+        if state~=3 and state~=4 then return end
+        local offset=state==3 and 0 or 8
+        ffi.copy(timer_float,bytes:sub(offset+1,offset+4),4)
+        local seconds=tonumber(timer_float[0])
+        if seconds~=seconds or seconds<=0 or seconds>86400 then return end
+        row.timer_seconds=math.ceil(seconds)
+        row.timer_kind=state==3 and 'incoming' or 'cooldown'
+    end
     local function read(p,n)
         local s=b.read(p,n); assert(s and #s==n,'Selection memory unavailable'); return s
     end
@@ -556,6 +581,8 @@ local function input_backend(b)
             -- cached arrow progress, not a stratagem kind (1837B14/183856B).
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
+            row.timer_seconds,row.timer_kind=nil,nil
+            if selectable_kind(row.kind) then decorate_timer(row) end
         end
     end
     function out.begin(kind)
@@ -696,11 +723,11 @@ local function camera_capture(b)
 end
 
 -- Called within the owner's HUD resource scope, only for separately owned icons.
-local function configure_stratagem_icon(b,icon,info)
+local function configure_stratagem_icon(b,icon,info,cooling)
     local ffi=require('ffi')
     local texture=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint8_t)',b.base+0x1450230)
     local hash=ffi.new('uint64_t[1]');ffi.copy(hash,info.texture,8)
-    if radial.full_color==false then
+    if radial.full_color==false and not cooling then
         texture(icon,0x57fcf14ad069020bULL,hash[0],0)
         return
     end
@@ -719,6 +746,14 @@ local function configure_stratagem_icon(b,icon,info)
     local accent=rgba(0x3318040+category*16)
     local foreground=rgba(0x21e2d30)
     local background=rgba(0x21e2d60)
+    if cooling then
+        -- Native palette vectors are A,R,G,B. Keep alpha and desaturate all
+        -- three texture-mask channels, including raw-icon display mode.
+        for _,v in ipairs({accent,foreground,background}) do
+            local gray=0.2126*v[1]+0.7152*v[2]+0.0722*v[3]
+            v[1],v[2],v[3]=gray,gray,gray
+        end
+    end
     texture(icon,0xaf73e09d6d725398ULL,hash[0],0)
     local material=ffi.cast('uintptr_t (*)(uintptr_t)',b.base+0x144f6e0)
     local parameter=ffi.cast('void (*)(uintptr_t, uint32_t, const float *)',b.base+0x14498c0)
@@ -881,6 +916,8 @@ local function emote_wheel(b,scope,input)
     local opacity=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ad0)
     local rotation=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ef0)
     local label=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x1441720)
+    local timer_label=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x143bf90)
+    local timer_number=ffi.cast('void (*)(uintptr_t, uint32_t, int32_t, uint32_t)',b.base+0x143c9d0)
     local storage,address,identity,parent,signature
     local retired,content={},{}
     local previous={}
@@ -959,11 +996,11 @@ local function emote_wheel(b,scope,input)
                 local icon=address+0x1208+i*0x158
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('wheel stratagem texture enter')
-                    configure_stratagem_icon(b,icon,info)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
                     checkpoint('wheel stratagem texture returned')
                     content[i]=content_key
                 end
@@ -999,11 +1036,33 @@ local function emote_wheel(b,scope,input)
                 checkpoint('wheel label returned')
             end
             for i=0,7 do
-                opacity(address+0x1208+i*0x158,cursor_only and 0 or (i==index and 1 or 0.65))
+                local timed=rows and rows[i+1] and rows[i+1].timer_seconds
+                opacity(address+0x1208+i*0x158,cursor_only and 0 or
+                    (timed and (i==index and 0.55 or 0.3) or (i==index and 1 or 0.65)))
             end
             -- Same widget, vector and radius as native update 182ADA[A..EF].
             visible(address+0xb40,vector and 1 or 0)
             if vector then b.set(address+0xb40,'position',{vector[1]*240,vector[2]*240}) end
+            bounds()
+        end)
+    end
+    -- The owned native emote hint is a type-7 formatted label. Reuse it for
+    -- the list's minute/second template; no new widget or raw text allocation.
+    function self.timer(row)
+        if not owned() then return end
+        scope.context_scope(parent,function()
+            local seconds=row and row.timer_seconds
+            local hint=address+0xf50
+            visible(hint,seconds and 1 or 0)
+            if seconds then
+                checkpoint('wheel cooldown timer enter')
+                timer_label(hint,0xa851371b)
+                timer_number(hint,0x51d1e697,math.floor(seconds/60),0x3020)
+                timer_number(hint,0x4583b0d3,seconds%60,0x3020)
+                b.set(hint,'position',{0,-75})
+                opacity(hint,1)
+                checkpoint('wheel cooldown timer returned')
+            end
             bounds()
         end)
     end
@@ -1154,11 +1213,11 @@ local function expanded_wheel(b,scope,input)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
                 local row=rows[i]
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('expanded icon texture enter')
-                    configure_stratagem_icon(b,icon,info)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
                     checkpoint('expanded icon texture returned')
                     content[i]=content_key
                 end
@@ -1186,8 +1245,9 @@ local function expanded_wheel(b,scope,input)
                 local chosen=row and row.address==selected
                 color(wedge,chosen and yellow or gray)
                 opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
-                color(icon,(chosen and radial.full_color==false) and yellow or white)
-                opacity(icon,chosen and 1 or 0.8)
+                local timed=row and row.timer_seconds
+                color(icon,(chosen and radial.full_color==false and not timed) and yellow or white)
+                opacity(icon,timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8))
                 if chosen then kind=row.kind end
             end
             bounds();checkpoint('expanded highlight returned')
@@ -1291,7 +1351,7 @@ local function selection_controller(input,report)
     return self
 end
 
-local api={api=1,revision=23,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=24,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
@@ -1307,7 +1367,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r23 - Wedge Appearance\n'..table.concat(native_events,'\n')..'\n')
+    file:write('Native Stratagem Radial r24 - Cooldown Indicators\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1338,7 +1398,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('NativeStratagemRadial.log')
         if file then
-            file:write('Native Stratagem Radial r23 - Wedge Appearance\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write('Native Stratagem Radial r24 - Cooldown Indicators\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1553,7 +1613,7 @@ local function step()
         if was_open then
             local rows={}
             for _,row in ipairs(snapshot and snapshot.rows or {}) do
-                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)
+                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.timer_seconds or '-')
             end
             api.last_open=api.selection_status..'; cards='..table.concat(rows,',')..
                 '; selected='..tostring(selection.selected)..'; buttons='..
@@ -1569,6 +1629,13 @@ local function step()
         if api.mode~=2 and snapshot and snapshot.open then
             wheel.draw(selection.selected,vector,snapshot.rows,legacy or expanded_layout)
             if expanded_layout then wheel.caption(expanded.draw(selection.selected,snapshot.rows)) end
+            local selected_row
+            if not legacy then
+                for _,row in ipairs(snapshot.rows) do
+                    if row.address==selection.selected then selected_row=row;break end
+                end
+            end
+            wheel.timer(selected_row)
         end
         display.step(api.enabled,snapshot or {open=false})
         if was_open then native_checkpoint('layout returned') end

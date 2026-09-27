@@ -1,4 +1,4 @@
-local api={api=1,revision=23,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=24,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
@@ -14,7 +14,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r23 - Wedge Appearance\n'..table.concat(native_events,'\n')..'\n')
+    file:write('Native Stratagem Radial r24 - Cooldown Indicators\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -45,7 +45,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('NativeStratagemRadial.log')
         if file then
-            file:write('Native Stratagem Radial r23 - Wedge Appearance\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write('Native Stratagem Radial r24 - Cooldown Indicators\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -260,7 +260,7 @@ local function step()
         if was_open then
             local rows={}
             for _,row in ipairs(snapshot and snapshot.rows or {}) do
-                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)
+                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.timer_seconds or '-')
             end
             api.last_open=api.selection_status..'; cards='..table.concat(rows,',')..
                 '; selected='..tostring(selection.selected)..'; buttons='..
@@ -276,6 +276,13 @@ local function step()
         if api.mode~=2 and snapshot and snapshot.open then
             wheel.draw(selection.selected,vector,snapshot.rows,legacy or expanded_layout)
             if expanded_layout then wheel.caption(expanded.draw(selection.selected,snapshot.rows)) end
+            local selected_row
+            if not legacy then
+                for _,row in ipairs(snapshot.rows) do
+                    if row.address==selection.selected then selected_row=row;break end
+                end
+            end
+            wheel.timer(selected_row)
         end
         display.step(api.enabled,snapshot or {open=false})
         if was_open then native_checkpoint('layout returned') end

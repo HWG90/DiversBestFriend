@@ -12,6 +12,7 @@ local wedge_darkness,wedge_opacity=70,75
 local wedge_registrations=0
 local copies,cursor_only,last_target=0,false,nil
 local expanded_prepares,caption=0,nil
+local timer_row
 local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
@@ -53,7 +54,7 @@ end,hide=function() end} end
 env.emote_wheel=function()
     return {prepare=function(s)
         prepares=prepares+1;return {identity=s.identity,open=s.open,rows=s.rows,pointer_only=true},false
-    end,caption=function(kind) caption=kind end,address=12345,draw=function(_,_,_,only) cursor_only=only==true end,hide=function() end,step=function() draws=draws+1 end,count=2,status='drawing'}
+    end,caption=function(kind) caption=kind end,timer=function(row) timer_row=row end,address=12345,draw=function(_,_,_,only) cursor_only=only==true end,hide=function() end,step=function() draws=draws+1 end,count=2,status='drawing'}
 end
 env.expanded_wheel=function()
     return {prepare=function(s)
@@ -123,6 +124,7 @@ print('Experimental modes passed: copied-row routing, cursor-only native wheel, 
 mode=3;experimental_layout=2;buttons.confirm=true;local before=starts;local previous_expanded=expanded_prepares;tick()
 assert(expanded_prepares==previous_expanded+1 and captured and cursor_only and last_target==nil)
 assert(env.radial.selected==20 and caption==33 and starts==before,'expanded layout routes independent expanded selection and caption; held Confirm gated')
+assert(timer_row==snapshot.rows[2],'expanded selected row also feeds native timer hint')
 buttons.confirm=false;tick();buttons.confirm=true;tick();assert(starts==before+1)
 mode=1;tick();assert(starts==before+1 and not cursor_only and last_target==12345,'return to native mode cancels expanded job and restores native input state')
 print('Expanded layout passed: expanded routing, cursor/caption reuse, held Confirm and return to native mode.')

@@ -23,6 +23,8 @@ native[0x14491f0]=function(p,v) assert(in_scope);props[p].order=v end
 native[0x1448690]=function(p,v) assert(in_scope);props[p].color={v[0],v[1],v[2]} end
 native[0x144f800]=function(p,hash,flag) assert(in_scope and flag==0);props[p].asset=hash end
 native[0x1450230]=function(p,material,hash,flag) assert(in_scope and flag==0);props[p].texture=tonumber(hash) end
+native[0x144f6e0]=function() return 65536 end
+native[0x14498c0]=function() assert(in_scope) end
 local proxy=setmetatable({}, {__index=ffi})
 proxy.cast=function(t,v)
     if t:find('(*)',1,true) then return assert(native[v-base],'unexpected native call') end
@@ -35,7 +37,7 @@ local scope={context_scope=function(p,fn)
     assert(p==parent and not in_scope);in_scope=true
     local ok,value=pcall(fn,resource);in_scope=false;assert(ok,value);return value
 end}
-local input={presentation=function(k) return {label=k,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
+local input={presentation=function(k) return {label=k,category=0,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
 local env=setmetatable({require=function() return proxy end,radial={vertical_offset=575,full_color=false}},{__index=_G})
 local chunk=assert(loadstring(source('input.lua')..source('icon_colors.lua')..source('expanded.lua')..source('selection.lua')..'\nreturn expanded_wheel,expanded_index,expanded_geometry,selection_controller'))
 setfenv(chunk,env);local make,point,geometry,make_selection=chunk()
@@ -120,6 +122,17 @@ env.radial.wedge_darkness,env.radial.wedge_opacity=0,30
 w.draw(original_selection,prepared.rows)
 assert(props[wedge].color[1]==0.5 and props[wedge].opacity==0.3,'legacy appearance remains available')
 prepared,changed=w.prepare(snap);assert(not changed and sprites==32,'reuse owned widgets')
+prepared.rows[16].timer_seconds,prepared.rows[16].timer_kind=35,'cooldown'
+-- This fixture's palette reader only represents pointers; use valid palette bytes.
+local old_read=b.read
+b.read=function(p,n) if n==16 then return ffi.string(ffi.new('float[4]',{1,1,1,1}),16) end;return old_read(p,n) end
+prepared,changed=w.prepare(snap)
+assert(not changed,'cooldown does not reorder membership or reset selection')
+assert(w.draw(original_selection,prepared.rows)==1)
+assert(props[last_wedge+0x160].opacity==0.55 and props[last_wedge+0x160].color[2]==1,'raw-mode cooldown icon stays grayscale, not yellow')
+prepared.rows[16].timer_seconds,prepared.rows[16].timer_kind=nil,nil
+w.prepare(snap);w.draw(original_selection,prepared.rows)
+assert(props[last_wedge+0x160].opacity==1,'expired expanded cooldown restores visibility')
 local started
 local selection=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
 local idle={next=false,previous=false,confirm=false}

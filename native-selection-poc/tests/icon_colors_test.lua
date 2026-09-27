@@ -21,6 +21,16 @@ apply(b,12345,info)
 assert(material==0xaf73e09d6d725398ULL and texture==999)
 assert(math.abs(uniforms[0x28723f4d][3]-0.6)<1e-6)
 assert(uniforms[0x851fd4fd][2]==1 and uniforms[0x10c353af][2]==0)
+for _,mode in ipairs({true,false}) do
+    env.radial.full_color=mode;apply(b,12345,info,true)
+    assert(material==0xaf73e09d6d725398ULL,'cooldown desaturates even raw icon mode')
+    for _,v in pairs(uniforms) do
+        assert(math.abs(v[2]-v[3])<1e-6 and math.abs(v[3]-v[4])<1e-6,'all RGB channels become grayscale')
+    end
+    assert(uniforms[0x28723f4d][1]==1,'alpha channel preserved')
+end
+env.radial.full_color=true;apply(b,12345,info,false)
+assert(math.abs(uniforms[0x28723f4d][2]-0.2)<1e-6,'ready state restores original palette')
 env.radial.full_color=false;uniforms={};apply(b,12345,info)
 assert(material==0x57fcf14ad069020bULL and next(uniforms)==nil,'off restores raw material')
 env.radial.full_color=true;apply(b,12345,info)

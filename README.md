@@ -21,7 +21,7 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 | Experimental: Cards | Mouse/stick pointing + Confirm | Up to 16 copied native stratagem rows arranged radially |
 | Experimental: Expanded wedges | Mouse/stick pointing + Confirm | Up to 16 entries on one wheel, without paging |
 
-The radial layouts retain the original stratagem list at the top left. Other features include native cursor tracking, an optional full-color icon mode, adjustable expanded-wedge darkness/opacity, dynamic mission entries, and an adjustable vertical offset. Radial pointing takes camera control while the menu is open; closing it restores camera control.
+The radial layouts retain the original stratagem list at the top left. Other features include native cursor tracking, an optional full-color icon mode, adjustable expanded-wedge darkness/opacity, dynamic mission entries, cooldown/delivery indicators, and an adjustable vertical offset. Radial pointing takes camera control while the menu is open; closing it restores camera control.
 
 This is a **native in-game implementation**: it runs inside HELLDIVERS 2 through Bingus Shared Loader, uses the game's UI widgets and live stratagem definitions, and feeds the normal stratagem input path. There is **no external application to run while playing**: no OCR engine, overlay helper, AutoHotkey script, external input sender, or companion executable. A mod manager is used to install/deploy it, and the in-game dependencies below are required.
 
@@ -53,9 +53,11 @@ The mod currently keeps its development name **Native Stratagem Radial** in sett
 
 ## Status
 
-The current build is **r23 - Wedge Appearance**. Expanded wedges default to **70% darkness / 75% opacity** for better contrast. Both are adjustable in Mod Options; **0% darkness / 30% opacity** restores the earlier look. Selected wedges remain yellow and at least 95% opaque. Row-card blur is not included because its native background material has no wedge-mask texture binding.
+The current build is **r24 - Cooldown Indicators**. Native wheel and Expanded wedges gray out and dim icons during cooldown or incoming delivery; pointing at one shows its remaining time below the name. Colors restore at expiry. This also works when full-color icons are off. List and copied Cards retain their original native timer displays. It is a cooldown/delivery indicator, not a complete check for every restriction such as charges or jamming.
 
-The r21 modes/layouts were confirmed working in-game by the author. r22 centering and r23 appearance pass isolated regression tests but still need specific in-game verification. Leave **Radial vertical offset (down)** at **0** for automatic centering; remove any previously saved 575-unit workaround.
+ Expanded wedges default to **70% darkness / 75% opacity** for better contrast. Both are adjustable in Mod Options; **0% darkness / 30% opacity** restores the earlier look. Selected wedges remain yellow and at least 95% opaque. Row-card blur is not included because its native background material has no wedge-mask texture binding.
+
+The r21 modes/layouts were confirmed working in-game by the author. r22 centering, r23 appearance, and r24 cooldown indicators pass isolated regression tests but still need specific in-game visual verification. Leave **Radial vertical offset (down)** at **0** for automatic centering; remove any previously saved 575-unit workaround.
 
 Native addresses are build-specific. Updates can require a new release. [Troubleshooting](docs/INSTALLATION.md#troubleshooting) explains the logs and known limitations.
 

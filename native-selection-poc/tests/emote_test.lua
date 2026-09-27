@@ -21,6 +21,13 @@ native[0x1450230]=function(p,material,hash,flag)
     assert(in_scope and flag==0 and tonumber(hash)>0)
 end
 local label_kind
+local timer_values={}
+native[0x143bf90]=function(p,hash) assert(in_scope and p==wheel_address+0xf50 and hash==0xa851371b) end
+native[0x143c9d0]=function(p,key,value,flags)
+    assert(in_scope and p==wheel_address+0xf50 and flags==0x3020);timer_values[key]=value
+end
+native[0x144f6e0]=function() return 65536 end
+native[0x14498c0]=function() assert(in_scope) end
 native[0x1441720]=function(p,hash) assert(in_scope and p==wheel_address+0xc98);label_kind=hash end
 native[0x12f9540]=function() return 0x50000000 end
 local desired=3
@@ -47,7 +54,7 @@ local scope={context_scope=function(original,fn)
     assert(original==parent and not in_scope);in_scope=true
     local ok,value=pcall(fn,resource);in_scope=false;assert(ok,value);return value
 end}
-local input={presentation=function(k) return {label=k,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
+local input={presentation=function(k) return {label=k,category=0,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
 local env=setmetatable({require=function() return proxy end,radial={vertical_offset=575,full_color=false}},{__index=_G})
 local chunk=assert(loadstring(source('input.lua')..source('icon_colors.lua')..source('emote.lua')..source('pointing.lua')..source('selection.lua')..'\nreturn emote_wheel,native_pointing,selection_controller'))
 setfenv(chunk,env);local make,make_point,make_selection=chunk()
@@ -70,6 +77,15 @@ w.draw(page.rows[4].address,v,page.rows)
 assert(label_kind==13 and angles[wheel_address+0x890]==112.5)
 assert(positions[(wheel_address+0xb40)..'position'][1]==120)
 assert(positions[(wheel_address+0xb40)..'position'][2]==-60)
+page.rows[4].timer_seconds,page.rows[4].timer_kind=62,'cooldown'
+w.prepare(snap,idle,false);w.draw(page.rows[4].address,v,page.rows);w.timer(page.rows[4])
+assert(opacities[wheel_address+0x1208+3*0x158]==0.55,'selected cooldown icon remains dim')
+assert(shown[wheel_address+0xf50]==1 and timer_values[0x51d1e697]==1 and timer_values[0x4583b0d3]==2,'native timer receives minute/second values')
+page.rows[4].timer_seconds=59;w.timer(page.rows[4])
+assert(timer_values[0x51d1e697]==0 and timer_values[0x4583b0d3]==59,'countdown crosses minute boundary')
+page.rows[4].timer_seconds,page.rows[4].timer_kind=nil,nil
+w.prepare(snap,idle,false);w.draw(page.rows[4].address,v,page.rows);w.timer(page.rows[4])
+assert(shown[wheel_address+0xf50]==0 and opacities[wheel_address+0x1208+3*0x158]==1,'expiry restores icon and hides timer')
 page,changed=w.prepare(snap,next_button,false)
 assert(changed and w.page==2 and page.rows[1].kind==8 and page.rows[8].kind==1)
 page,changed=w.prepare(snap,next_button,false);assert(not changed and w.page==2,'held next does not repeat')

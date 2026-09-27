@@ -6,6 +6,24 @@ local function selectable_kind(kind)
 end
 local function input_backend(b)
     local base=b.base
+    local ffi=require('ffi')
+    local timer_float=ffi.new('float[1]')
+    local function decorate_timer(row)
+        row.timer_seconds,row.timer_kind=nil,nil
+        -- Read the same cached seconds/state the original HUD renders. This
+        -- includes native special cases (shared Reinforce and Eagle timers).
+        -- An unreadable or not-yet-updated card means unknown, never "ready".
+        local bytes=b.read(row.address+0x3718,0x44)
+        if not bytes or #bytes~=0x44 or b.u32(bytes,0x34)~=row.kind then return end
+        local state=b.u32(bytes,0x40)
+        if state~=3 and state~=4 then return end
+        local offset=state==3 and 0 or 8
+        ffi.copy(timer_float,bytes:sub(offset+1,offset+4),4)
+        local seconds=tonumber(timer_float[0])
+        if seconds~=seconds or seconds<=0 or seconds>86400 then return end
+        row.timer_seconds=math.ceil(seconds)
+        row.timer_kind=state==3 and 'incoming' or 'cooldown'
+    end
     local function read(p,n)
         local s=b.read(p,n); assert(s and #s==n,'Selection memory unavailable'); return s
     end
@@ -131,6 +149,8 @@ local function input_backend(b)
             -- cached arrow progress, not a stratagem kind (1837B14/183856B).
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
+            row.timer_seconds,row.timer_kind=nil,nil
+            if selectable_kind(row.kind) then decorate_timer(row) end
         end
     end
     function out.begin(kind)

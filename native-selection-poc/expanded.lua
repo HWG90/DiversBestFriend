@@ -127,11 +127,11 @@ local function expanded_wheel(b,scope,input)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
                 local row=rows[i]
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('expanded icon texture enter')
-                    configure_stratagem_icon(b,icon,info)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
                     checkpoint('expanded icon texture returned')
                     content[i]=content_key
                 end
@@ -159,8 +159,9 @@ local function expanded_wheel(b,scope,input)
                 local chosen=row and row.address==selected
                 color(wedge,chosen and yellow or gray)
                 opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
-                color(icon,(chosen and radial.full_color==false) and yellow or white)
-                opacity(icon,chosen and 1 or 0.8)
+                local timed=row and row.timer_seconds
+                color(icon,(chosen and radial.full_color==false and not timed) and yellow or white)
+                opacity(icon,timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8))
                 if chosen then kind=row.kind end
             end
             bounds();checkpoint('expanded highlight returned')
