@@ -1,4 +1,4 @@
-local api={api=1,revision=22,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=23,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,registered,last_status
 local frames=0
@@ -14,7 +14,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('NativeStratagemRadial-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write('Native Stratagem Radial r22 - Viewport Centering\n'..table.concat(native_events,'\n')..'\n')
+    file:write('Native Stratagem Radial r23 - Wedge Appearance\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -27,6 +27,13 @@ local function selection_report(message)
     api.last_selection=message
 end
 local offset_registered,mode_registered,layout_registered,color_registered
+local wedge_registered={}
+local wedge_options={
+    {key='wedge_darkness',label='Expanded wedge darkness (%)',default=70,
+        description='Expanded wedges only. Darkens the unselected background; 0 keeps the original gray, 100 makes it black. The selected sector stays yellow.'},
+    {key='wedge_opacity',label='Expanded wedge opacity (%)',default=75,
+        description='Expanded wedges only. Background opacity: 0 is transparent, 100 is opaque. Empty sectors stay fainter and the selected sector stays visible. Original appearance: darkness 0, opacity 30.'},
+}
 local migration_checked,migrate_expanded
 local mode_names={'Native wheel','Keybindings - list','Experimental'}
 local function report(status,force)
@@ -38,8 +45,9 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('NativeStratagemRadial.log')
         if file then
-            file:write('Native Stratagem Radial r22 - Viewport Centering\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write('Native Stratagem Radial r23 - Wedge Appearance\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
+            file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
             file:write('pointing='..tostring(api.pointing_status)..'\n')
             file:write('mode='..mode_names[api.mode]..'; experimental_layout='..api.experimental_layout..'\n')
@@ -118,6 +126,18 @@ local function options()
     if color_registered==menu then
         local value=menu.get('native_stratagem_radial.full_color_icons')
         if type(value)=='boolean' then radial.full_color=value end
+    end
+    for _,spec in ipairs(wedge_options) do
+        local id='native_stratagem_radial.'..spec.key
+        if wedge_registered[id]~=menu then
+            if menu.register_option(id,{type='slider',mod='Native Stratagem Radial',
+                label=spec.label,min=0,max=100,step=5,default=spec.default,
+                description=spec.description}) then wedge_registered[id]=menu end
+        end
+        if wedge_registered[id]==menu then
+            local value=menu.get(id)
+            if type(value)=='number' and value>=0 and value<=100 then radial[spec.key]=value end
+        end
     end
     if offset_registered~=menu then
         if menu.register_option('native_stratagem_radial.vertical_offset',{

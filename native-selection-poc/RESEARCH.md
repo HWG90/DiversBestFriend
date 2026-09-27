@@ -260,3 +260,29 @@ a distinct depth axis and checks both screen coordinates over viewport
 heights, scales, translations and mixed bases, plus a singular screen plane.
 Offset defaults to zero; the existing option ID and saved preferences remain.
 The user already reset their offset to zero. Live rendering remains to test.
+
+
+## r23: expanded-wedge contrast and blur investigation
+
+Expanded backgrounds previously used RGB (0.5,0.55,0.6), alpha 0.3. Two
+independent percent sliders now control RGB darkening and alpha, defaulting
+to darkness 70 / opacity 75. Selected yellow stays at least 0.95 opaque,
+icons are unchanged, and empty-sector alpha retains the 0.08/0.3 ratio.
+Original appearance is darkness 0 / opacity 30. No extra native calls or
+widget allocations are introduced.
+
+Row constructor 0x1835BB9 invokes background constructor 0x18166C0 with
+flag 1. It selects material 0x597EC34016C4F4BE (alternative
+0x2391483ABBDA5A58). Local material metadata has zero texture bindings for
+both. Expanded sector material 0x9C16BF1BB2D8DE88 has one binding,
+0x3AA8B87E, referring to the same-hash texture. Shader identifiers differ:
+row 0x6830E3B8 / alternative 0x05A4CA9E, sector 0xBA25DE35. The row
+material cannot accept the existing sector mask through its texture table;
+applying it directly is not a demonstrated wedge-clipped blur solution.
+Blur is deferred until a suitable native masked material or clipping path
+is established, instead of exposing a speculative toggle.
+
+Local read-only DSAR inspection followed the public format descriptions in
+https://github.com/xypwn/filediver/blob/master/patterns/dsar.hexpat and
+https://github.com/xypwn/filediver/blob/master/stingray/slim_edition.go .
+No extractor, game resource, capture, or new dependency is shipped.

@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `NativeStratagemRadial-r22-ViewportCentering.zip`.
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), currently named `NativeStratagemRadial-r23-WedgeAppearance.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -25,7 +25,11 @@ In the escape menu's **MODS** tab, select **Native Stratagem Radial**. Change se
 | Selection mode | Native wheel, Keybindings — list, or Experimental |
 | Experimental layout | Cards — copied list rows, or Expanded wedges |
 | Full-color stratagem icons | Uses the native channel-mask colors for wheel icons; copied rows retain their native colors |
+| Expanded wedge darkness (%) | Expanded wedges only: 0 original gray to 100 black; default **70** |
+| Expanded wedge opacity (%) | Expanded wedges only: 0 transparent to 100 opaque; default **75** |
 | Radial vertical offset (down) | Fine adjustment after automatic centering; start at **0**. Positive moves down |
+
+For the old expanded-wheel appearance, use darkness **0** and opacity **30**. The selected wedge remains yellow and at least 95% opaque, icons are unaffected, and empty sectors stay fainter. Changes apply through the normal Apply button without reopening the menu. Native wheel/list/copied Cards retain their existing appearance. Blur is not offered in this build: the row-card material has no texture slot for the wedge mask.
 
 An older saved fourth mode migrates to Experimental / Expanded wedges. Mode changes cancel pending code entry and require a fresh Confirm press. r22 preserves saved offsets; if you previously used 575 to compensate for placement, reset it to zero.
 

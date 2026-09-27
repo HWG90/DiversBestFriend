@@ -8,6 +8,8 @@ local snapshot={identity=1,open=true,rows={{address=10,kind=3},{address=20,kind=
 local logs={}
 local mode,enabled,experimental_layout=2,true,1
 local full_color=true
+local wedge_darkness,wedge_opacity=70,75
+local wedge_registrations=0
 local copies,cursor_only,last_target=0,false,nil
 local expanded_prepares,caption=0,nil
 local prepares,samples,captured=0,0,false
@@ -20,6 +22,11 @@ end
 env.radial.list_controller=env.radial.controller
 env.camera_capture=function() return {capture=function() captured=true end,release=function() captured=false end} end
 env.ModOptionsMenu={api=1,register_option=function(id,spec)
+    if id:find('.wedge_',1,true) then
+        assert(spec.type=='slider' and spec.min==0 and spec.max==100 and spec.step==5)
+        assert(spec.default==(id:find('darkness',1,true) and 70 or 75))
+        wedge_registrations=wedge_registrations+1
+    end
     if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3 and spec.default==1) end
     return true
 end,get=function(id)
@@ -27,6 +34,8 @@ end,get=function(id)
     if id:find('enabled',1,true) then return enabled end
     if id:find('full_color_icons',1,true) then return full_color end
     if id:find('experimental_layout',1,true) then return experimental_layout end
+    if id:find('wedge_darkness',1,true) then return wedge_darkness end
+    if id:find('wedge_opacity',1,true) then return wedge_opacity end
     return 575
 end}
 env.native_backend=function()
@@ -121,6 +130,17 @@ print('Expanded layout passed: expanded routing, cursor/caption reuse, held Conf
 full_color=false;tick();assert(env.radial.full_color==false)
 full_color=true;tick();assert(env.radial.full_color==true)
 print('Icon option routing passed: live off/on setting reaches render configuration.')
+
+assert(env.radial.wedge_darkness==70 and env.radial.wedge_opacity==75 and wedge_registrations==2)
+wedge_darkness,wedge_opacity=0,100;tick()
+assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'valid appearance endpoints apply')
+wedge_darkness,wedge_opacity=101,-1;tick()
+assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'out-of-range values rejected')
+wedge_darkness,wedge_opacity=0/0,'75';tick()
+assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'NaN and nonnumeric settings rejected')
+wedge_darkness,wedge_opacity=70,75;tick()
+assert(wedge_registrations==2,'settings are registered once per options menu instance')
+print('Wedge option routing passed: defaults, live changes, endpoints and invalid values.')
 
 -- A saved legacy mode 4 migrates using set after both choices register.
 mode=4;experimental_layout=1

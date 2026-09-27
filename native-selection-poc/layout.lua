@@ -1,5 +1,5 @@
 -- Pure layout/controller. Native widgets retain their own content and input.
-local radial = {vertical_offset=0,full_color=true}
+local radial = {vertical_offset=0,full_color=true,wedge_darkness=70,wedge_opacity=75}
 -- Matrix columns follow the native widget transform at +0x64. Resolve the
 -- viewport midpoint in list-local coordinates, then subtract the card anchor.
 function radial.center(viewport,list)

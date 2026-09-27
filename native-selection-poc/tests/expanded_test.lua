@@ -102,7 +102,23 @@ assert(point(eight,{-1,1})==8,'screenshot NW cursor selects NW Autocannon slot')
 
 assert(w.draw(prepared.rows[16].address,prepared.rows)==1,'last slot caption kind')
 local last_wedge=root+0x110+15*0x4e0+0x220
-assert(props[last_wedge].opacity==0.95 and props[turn+0x220].opacity==0.3,'only selected wedge bright')
+assert(props[last_wedge].opacity==0.95 and props[turn+0x220].opacity==0.75,'darker defaults preserve selection')
+assert(math.abs(props[turn+0x220].color[1]-0.15)<1e-6,'default darkness reduces background RGB')
+local wedge=turn+0x220
+local original_selection=prepared.rows[16].address
+for _,darkness in ipairs({0,70,100}) do
+    for _,alpha in ipairs({0,30,75,100}) do
+        env.radial.wedge_darkness,env.radial.wedge_opacity=darkness,alpha
+        assert(w.draw(original_selection,prepared.rows)==1,'appearance never changes selected kind')
+        assert(math.abs(props[wedge].color[1]-0.5*(1-darkness/100))<1e-6,'darkness independently controls RGB')
+        assert(math.abs(props[wedge].opacity-alpha/100)<1e-6,'opacity independently controls alpha')
+        assert(props[last_wedge].color[1]==1 and props[last_wedge].opacity>=0.95,'selection stays visible at every setting')
+        assert(props[turn+0x380].opacity==0.8,'background settings do not fade icons')
+    end
+end
+env.radial.wedge_darkness,env.radial.wedge_opacity=0,30
+w.draw(original_selection,prepared.rows)
+assert(props[wedge].color[1]==0.5 and props[wedge].opacity==0.3,'legacy appearance remains available')
 prepared,changed=w.prepare(snap);assert(not changed and sprites==32,'reuse owned widgets')
 local started
 local selection=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
@@ -117,6 +133,9 @@ prepared,changed=w.prepare(snap);assert(changed and w.count==9)
 assert(shown[root+0x110+9*0x4e0]==0,'removed sectors hidden')
 for i=9,4,-1 do table.remove(rows,i) end
 prepared=w.prepare(snap)
+local empty=root+0x110+3*0x4e0+0x220
+w.draw(nil,prepared.rows)
+assert(math.abs(props[empty].opacity-0.08)<1e-6,'empty sectors preserve relative dimming')
 assert(shown[root+0x110+3*0x4e0]==1 and shown[root+0x110+3*0x4e0+0x380]==0,'empty sectors have no icon')
 assert(point(prepared.rows,{-1,0})==nil,'empty sector cannot select')
 w.hide();assert(shown[root]==0)

@@ -146,6 +146,11 @@ local function expanded_wheel(b,scope,input)
     function self.draw(selected,rows)
         if not owned() then return nil end
         local kind
+        -- Independent controls: darkness changes RGB, opacity changes coverage.
+        -- Keep the selected sector conspicuous even with a transparent background.
+        local brightness=1-(radial.wedge_darkness or 70)/100
+        local alpha=(radial.wedge_opacity or 75)/100
+        gray[0],gray[1],gray[2]=0.5*brightness,0.55*brightness,0.6*brightness
         scope.context_scope(parent,function()
             checkpoint('expanded highlight enter')
             for i=1,16 do
@@ -153,7 +158,7 @@ local function expanded_wheel(b,scope,input)
                 local row=rows[i]
                 local chosen=row and row.address==selected
                 color(wedge,chosen and yellow or gray)
-                opacity(wedge,chosen and 0.95 or (row and 0.3 or 0.08))
+                opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
                 color(icon,(chosen and radial.full_color==false) and yellow or white)
                 opacity(icon,chosen and 1 or 0.8)
                 if chosen then kind=row.kind end

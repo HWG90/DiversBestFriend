@@ -1,5 +1,13 @@
 # Changelog
 
+## r23 — Wedge Appearance
+
+- Add independent Expanded wedge darkness and opacity sliders, each 0–100% in 5% steps.
+- Darker defaults: 70% darkness, 75% opacity; old appearance available at 0% / 30%.
+- Preserve yellow selection, icon visibility, and fainter empty sectors. Other layouts are unchanged.
+- Investigate native row-card blur: its material has no wedge-mask texture binding, so a direct material swap is unsuitable. No nonfunctional blur toggle is exposed.
+- Regression checks cover appearance endpoints, setting updates, invalid values, and selection preservation. In-game appearance still needs validation.
+
 ## r22 — Viewport Centering
 
 - Correct native GUI matrix projection from X/Y to X/Z for automatic vertical centering across radial layouts.

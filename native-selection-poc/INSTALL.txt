@@ -1,4 +1,4 @@
-Native Stratagem Radial r22 - Viewport Centering
+Native Stratagem Radial r23 - Wedge Appearance
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.
@@ -30,7 +30,16 @@ Full-color stratagem icons remains enabled by default for wedge displays;
 turn it off to restore raw texture rendering. Copied cards retain native
 colors. The wedge rotation correction remains.
 
-r22 fixes automatic vertical centering using the native GUI X/Z transform.
+Expanded wedges now have two independent settings (Apply after changing):
+- Expanded wedge darkness (%): 0 original gray to 100 black; default 70.
+- Expanded wedge opacity (%): 0 transparent to 100 opaque; default 75.
+These affect unselected wedge backgrounds only. Selection stays yellow and
+at least 95% opaque, icons stay readable, and empty sectors remain fainter.
+For the previous look, use darkness 0 and opacity 30. Other layouts retain
+their appearance. Row-card blur is not included: that native material has no
+wedge-mask texture binding and cannot simply replace the sector material.
+
+The retained r22 fix provides automatic vertical centering using the native GUI X/Z transform.
 All radial layouts now center on both viewport axes, accounting for inherited
 HUD scale and translation. Set Radial vertical offset (down) to 0 for centered
 placement. Its default is now 0; existing saved preferences are retained.

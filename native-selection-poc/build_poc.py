@@ -8,10 +8,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 22
-DISPLAY_NAME = 'Native Stratagem Radial r22 - Viewport Centering'
+REVISION = 23
+DISPLAY_NAME = 'Native Stratagem Radial r23 - Wedge Appearance'
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-OUTPUT = ROOT / 'NativeStratagemRadial-r22-ViewportCentering.zip'
+OUTPUT = ROOT / 'NativeStratagemRadial-r23-WedgeAppearance.zip'
 
 
 def build():
@@ -27,9 +27,9 @@ def build():
     assert (ROOT / 'INSTALL.txt').read_text().splitlines()[0] == DISPLAY_NAME, 'Install title must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f'Revision {REVISION}: fixes vertical centering for all radial layouts by projecting the native GUI X/Z matrix. '
-                   'Both axes now use the viewport midpoint and inverse list transform. Vertical offset defaults to zero; saved preferences are preserved. '
-                   'Retains three selection modes, Cards/Expanded wedges layouts, full-color icons, native cursor tracking and Confirm. '
+    description = (f'Revision {REVISION}: adds independent darkness and opacity settings for Experimental Expanded wedges. '
+                   'Defaults to 70 percent darkness and 75 percent opacity; the selected sector remains yellow and icons retain their visibility. '
+                   'Original appearance remains available at darkness 0 and opacity 30. Retains viewport centering, all selection modes and native input. '
                    'Requires Mod Options Menu, Mod Bindings Menu v2 and Bingus Shared Loader API 1.')
     # Version is Arsenal's schema version, NOT the release revision. Keep the
     # same GUID for every radial release so imports retain the mod identity.
