@@ -1,4 +1,4 @@
-Native Stratagem Radial r24 - Cooldown Indicators
+Diver's Best Friend - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.

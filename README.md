@@ -49,7 +49,7 @@ Install the dependencies separately; they are not bundled. CowboyBingus' other g
 4. In the native keyboard/controller bindings **MODS** tab, assign **Next stratagem**, **Previous stratagem**, and **Confirm stratagem**.
 5. Open the normal stratagem menu in a mission, select an available entry, and Confirm. Once the code completes, throw normally.
 
-The mod currently keeps its development name **Native Stratagem Radial** in settings, logs, and release ZIPs. Its stable mod GUID and setting IDs are preserved so existing installations update correctly.
+Arsenal displays **Diver's Best Friend - Automated Stratagem System (ASS)**, with the current revision in its description. The mod keeps its development name **Native Stratagem Radial** in settings, logs, and release ZIPs. Its stable mod GUID and setting IDs are preserved so existing installations update correctly.
 
 ## Status
 
