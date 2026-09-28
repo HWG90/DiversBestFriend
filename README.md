@@ -55,7 +55,7 @@ Arsenal displays **Diver's Best Friend - Automated Stratagem System (ASS)**, wit
 
 ## Status
 
-The current build is **r24 - Cooldown Indicators**. Native wheel and Expanded wedges gray out and dim icons during cooldown or incoming delivery; pointing at one shows its remaining time below the name. Colors restore at expiry. This also works when full-color icons are off. List and copied Cards retain their original native timer displays. It is a cooldown/delivery indicator, not a complete check for every restriction such as charges or jamming.
+The current build is **r33 - Polish & Feedback**. Native wheel and Expanded wedges gray out and dim icons during cooldown or incoming delivery; pointing at one shows its remaining time below the name. Colors restore at expiry. This also works when full-color icons are off. List and copied Cards retain their original native timer displays. It is a cooldown/delivery indicator, not a complete check for every restriction such as charges or jamming.
 
  Expanded wedges default to **70% darkness / 75% opacity** for better contrast. Both are adjustable in Mod Options; **0% darkness / 30% opacity** restores the earlier look. Selected wedges remain yellow and at least 95% opaque. Row-card blur is not included because its native background material has no wedge-mask texture binding.
 
