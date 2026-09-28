@@ -419,6 +419,13 @@ local function native_backend()
             and tonumber(received[0])==1,'Native action write failed')
     end
     function backend.invoke_input(component) input_handler(component) end
+    function backend.replace_bytes(address,expected,replacement)
+        assert((#expected==4 or #expected==20) and #replacement==#expected,'Invalid binding edit size')
+        if read(address,#expected)~=expected then return false end
+        assert(kernel.WriteProcessMemory(process,ffi.cast('void *',address),replacement,#replacement,received)~=0
+            and tonumber(received[0])==#replacement,'Native binding edit failed')
+        return true
+    end
     function backend.open_input(component)
         return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
     end
@@ -440,6 +447,94 @@ local function native_backend()
         return foreground_pid[0]==kernel.GetCurrentProcessId()
     end
     return backend
+end
+
+-- Temporarily give Display Stratagem List Press/toggle semantics. Unlike a
+-- transient evaluated button byte, its live mapping survives input evaluation.
+-- Only the live map is edited; defaults and persisted bindings are untouched.
+local function native_menu_latch(b)
+    local ffi=require('ffi')
+    local function read(at,n) local s=b.read(at,n);assert(s and #s==n,'Menu mapping unavailable');return s end
+    local function num(at) return b.u32(read(at,4),0) end
+    local function packed(value) local v=ffi.new('uint32_t[1]',value);return ffi.string(v,4) end
+    local function bucket(owner)
+        assert(b.pointer(b.base+0x347cf18)==owner,'Native controls owner changed')
+        local map=owner+686800
+        assert(num(map+8)==256,'Unexpected native binding map capacity')
+        local table_address=assert(b.pointer(map),'Native binding map unavailable')
+        for i=0,255 do
+            local at=table_address+i*328
+            if num(at)==0x50000 then
+                local count=num(at+4);assert(count<=16,'Invalid Display Stratagem List mappings')
+                return at,count
+            end
+        end
+        error('Display Stratagem List mapping missing')
+    end
+    local self={}
+    function self.acquire(owner,actions)
+        local lease={owner=owner,actions=actions,records={},types={}}
+        function lease.restore(avatar_valid)
+            if b.pointer(b.base+0x347cf18)~=owner then return end
+            local at,count=bucket(owner)
+            -- Resolve the current map again: a config reload may relocate it.
+            -- Restore only exact values we installed, never a user's new edit.
+            for _,record in ipairs(lease.records) do
+                local p=at+8+record.index*20
+                if record.index<count and read(p,20)==record.patched then
+                    assert(b.replace_bytes(p,record.patched,record.original),'Menu mapping restoration failed')
+                end
+            end
+            for _,record in ipairs(lease.types) do
+                if record.at==owner+808+32*(97*5)+24 or avatar_valid then
+                    if b.read(record.at,4)==packed(0) then
+                        assert(b.replace_bytes(record.at,packed(0),record.original),'Menu trigger restoration failed')
+                    end
+                end
+            end
+        end
+        function lease.refresh()
+            local at,count=bucket(owner)
+            for _,record in ipairs(lease.records) do
+                assert(record.index<count and read(at+8+record.index*20,20)==record.patched,
+                    'Display Stratagem List binding changed during selection')
+            end
+            -- The current frame may still contain the old Hold trigger. Match
+            -- the Press mapping now; future native evaluations derive it.
+            for _,p in ipairs({owner+808+32*(97*5)+24,actions+24}) do
+                local original=read(p,4);local trigger=b.u32(original,0)
+                assert(trigger==0 or trigger==2 or trigger==9,'Unexpected menu trigger state')
+                if trigger~=0 then
+                    lease.types[#lease.types+1]={at=p,original=original}
+                    assert(b.replace_bytes(p,original,packed(0)),'Menu trigger latch failed')
+                end
+            end
+        end
+        local ok,why=pcall(function()
+            local at,count=bucket(owner)
+            for i=0,count-1 do
+                local p=at+8+i*20;local original=read(p,20)
+                local trigger=b.u32(original,8)
+                if trigger==2 or trigger==9 then
+                    local flags=b.u32(original,0)
+                    assert(math.floor(flags/16)%16==4 and math.floor(flags/65536)%16==trigger,
+                        'Unexpected Hold mapping format')
+                    local patched=packed(flags-trigger*65536)..original:sub(5,8)..packed(0)..original:sub(13)
+                    lease.records[#lease.records+1]={index=i,original=original,patched=patched}
+                    assert(b.replace_bytes(p,original,patched),'Menu mapping latch failed')
+                end
+            end
+            assert(#lease.records>0,'No Hold mapping available for release selection')
+            lease.refresh()
+        end)
+        if not ok then
+            local restored,reason=pcall(lease.restore,true)
+            assert(restored,'Menu latch rollback failed: '..tostring(reason))
+            error(why)
+        end
+        return lease
+    end
+    return self
 end
 
 -- Native input adapter. Only one evaluated direction byte is temporarily
@@ -671,15 +766,19 @@ local function input_backend(b)
         local controls=ptr(base+0x347cf18)
         local menu_action=read(controls+808+32*(97*5),1)
         assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')
+        local lease=native_menu_latch(b).acquire(controls,c.actions)
         local reopened=false
-        if not c.menu_active then
-            if b.checkpoint then b.checkpoint('release native opener enter') end
-            assert(b.open_input(c.component),'Native game state rejected release selection')
-            reopened=true
-            if b.checkpoint then b.checkpoint('release native opener returned') end
-        end
-        local ok,result=pcall(out.begin,kind)
+        local ok,result=pcall(function()
+            if not c.menu_active then
+                if b.checkpoint then b.checkpoint('release native opener enter') end
+                assert(b.open_input(c.component),'Native game state rejected release selection')
+                reopened=true
+                if b.checkpoint then b.checkpoint('release native opener returned') end
+            end
+            return out.begin(kind)
+        end)
         if not ok then
+            lease.restore(true)
             if reopened then b.close_input(c.component) end
             error(result)
         end
@@ -687,42 +786,23 @@ local function input_backend(b)
         result.actions=c.actions
         result.controls=controls
         result.reopened=reopened
+        result.latch=lease
         return result
     end
     function out.hold_release(job)
         local c=out.release_state()
         assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
             'Release owner changed')
-        assert(c.unobstructed and c.hold,'Release interrupted by UI or changed menu binding')
+        assert(c.unobstructed,'Release interrupted by native UI')
         assert(c.menu_active,'Native menu closed before release code completed')
-        assert(ptr(base+0x347cf18)==job.controls,'Native controls changed')
-        -- Hold both evaluated copies: the controls owner and the local avatar.
-        -- These transient bytes are not saved bindings or OS key events.
-        local addresses={job.controls+808+32*(97*5),c.actions}
-        job.held=job.held or {}
-        for _,address in ipairs(addresses) do
-            local value=read(address,1)
-            assert(value=='\0' or value=='\1','Invalid native Hold action')
-            if value=='\0' then
-                job.held[address]=true
-                b.pulse_byte(address,1)
-            end
-        end
+        assert(not c.down,'Manual menu activation cancels release selection')
+        job.latch.refresh()
     end
     function out.end_release(job,cancelled)
-        -- Re-resolve owners before touching cached action addresses. Clean up
-        -- the controls copy even when the avatar/HUD has gone away.
-        local controls_ok,controls=pcall(ptr,base+0x347cf18)
         local current_ok,c=pcall(context,false,true)
-        for address in pairs(job.held or {}) do
-            local controls_owned=controls_ok and controls==job.controls and address==controls+808+32*(97*5)
-            local avatar_owned=current_ok and c.identity==job.identity and c.component==job.component and address==c.actions
-            if (controls_owned or avatar_owned) and b.read(address,1)=='\1' then b.pulse_byte(address,0) end
-        end
-        job.held=nil
-        if cancelled and current_ok and c.identity==job.identity and c.component==job.component and c.menu_active then
-            b.close_input(c.component)
-        end
+        local avatar_valid=current_ok and c.identity==job.identity and c.component==job.component
+        job.latch.restore(avatar_valid)
+        if cancelled and avatar_valid and c.menu_active then b.close_input(c.component) end
     end
     function out.advance_release(job)
         out.hold_release(job)
@@ -1483,7 +1563,7 @@ local function release_controller(input,report)
             if job.finished then
                 local ok,why=pcall(input.end_release,job,false)
                 self.job=nil;blocked=true
-                self.status=ok and 'Release code complete; temporary Hold released' or 'Release cleanup failed: '..tostring(why)
+                self.status=ok and 'Release code complete; original menu trigger restored' or 'Release cleanup failed: '..tostring(why)
                 report(self.status);return
             end
             local ok,why=pcall(function()
@@ -1522,7 +1602,7 @@ local function release_controller(input,report)
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job
                     local held,why=pcall(input.hold_release,job)
-                    if held then self.status='Holding menu for kind '..previous.kind..'; interval='..interval..'ms'
+                    if held then self.status='Latched native menu for kind '..previous.kind..'; interval='..interval..'ms'
                     else self.status='Release cancelled: '..tostring(why);self.reset() end
                 else self.status='Release cancelled: '..tostring(job) end
                 report(self.status)
@@ -1542,7 +1622,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=27,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=28,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1563,7 +1643,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R27 - Release Hold\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R28 - Release Latch\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1594,7 +1674,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R27 - Release Hold\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R28 - Release Latch\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')

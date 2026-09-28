@@ -1,7 +1,7 @@
 local function source(name)
     local f=assert(io.open('native-selection-poc/'..name,'rb')); local s=f:read('*a'); f:close(); return s
 end
-local factory=assert(loadstring(source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn input_backend,selection_controller'))
+local factory=assert(loadstring(source('menu_latch.lua')..'\n'..source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn input_backend,selection_controller'))
 local make_input,make_selection=factory()
 local memory={}
 local function put(at,s) for i=1,#s do memory[at+i-1]=s:sub(i,i) end end
@@ -56,6 +56,10 @@ function b.pointer(at) local s=read(at,8); if not s then return nil end; return 
 function b.pulse_byte(at,value)
     assert(at==actions or at==0x32000000+808+32*(97*5) or at==actions+32 or at==actions+64 or at==actions+96 or at==actions+128)
     assert(value==0 or value==1); writes=writes+1;put(at,string.char(value))
+end
+function b.replace_bytes(at,expected,replacement)
+    if read(at,#expected)~=expected then return false end
+    put(at,replacement);return true
 end
 function b.invoke_input(at)
     assert(at==component);calls=calls+1
@@ -135,6 +139,13 @@ reset();job=input.begin(33);put(hud+0x395100+0x38769,'\0');assert(not pcall(inpu
 -- UI state machine: held confirm, missing bindings, membership and timeouts.
 local controls=0x32000000
 ptr(base+0x347cf18,controls);put(controls+808+32*(97*5),"\0")
+local mapping_table=0x33000000
+ptr(controls+686800,mapping_table);num(controls+686808,256)
+put(mapping_table,string.rep('\255',256*328));num(mapping_table,0x50000);num(mapping_table+4,2)
+local hold_mapping=string.char(0x41,0xff,2,0,10,0,0,0,2,0,0,0)..string.rep('\0',8)
+local press_mapping=string.char(0x43,0xff,0x20,10,0xd3,0,0,0,0,0,0,0)..string.rep('\0',8)
+put(mapping_table+8,hold_mapping);put(mapping_table+28,press_mapping)
+num(controls+808+32*(97*5)+24,2)
 local ui=0x31000000
 ptr(base+0x347ce28,ui);num(ui+0x429c+20,0);num(actions+24,2)
 local reopened,closed_count=0,0
@@ -155,11 +166,12 @@ end
 local armed=release_fixture()
 local held_job=input.begin_release(33,armed)
 input.hold_release(held_job)
-assert(read(actions,1)=='\1' and read(controls+808+32*(97*5),1)=='\1','both native evaluated actions held')
+assert(read(actions,1)=='\0' and u32(read(actions+24,4),0)==0,'Press latch does not inject a menu activation')
+assert(u32(read(mapping_table+16,4),0)==0 and read(mapping_table+28,20)==press_mapping,'Hold converted, existing Press untouched')
 for i=1,#held_job.code do input.advance_release(held_job) end
 assert(reopened==1 and u32(read(component+0x14,4),0)==33,'paced release matches native code')
 input.end_release(held_job,false)
-assert(read(actions,1)=='\0' and read(controls+808+32*(97*5),1)=='\0','temporary hold restored')
+assert(read(mapping_table+8,20)==hold_mapping and u32(read(actions+24,4),0)==2,'live Hold mapping and evaluated type restored')
 armed=release_fixture();held_job=input.begin_release(33,armed);input.hold_release(held_job);fail=true
 assert(not pcall(input.advance_release,held_job));fail=false;input.end_release(held_job,true)
 assert(closed_count==1 and read(actions+96,1)=='\0','failed release closes and restores input')

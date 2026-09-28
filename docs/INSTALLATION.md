@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R27 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r27) is `DiversBestFriend-R27-ReleaseHold.zip`.
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R28 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r28) is `DiversBestFriend-R28-ReleaseLatch.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -91,10 +91,10 @@ Close the game, disable/remove the Diver's Best Friend addon in your manager, an
 
 ## Optional Select on Release
 
-Install the [R27 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r27), `DiversBestFriend-R27-ReleaseHold.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
+Install the [R28 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r28), `DiversBestFriend-R28-ReleaseLatch.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
 
 ### Input interval (ms)
 
-Set the minimum delay between directions for Confirm and release sequences: 0-250 ms in 5 ms steps, default 70 ms. At 0, one direction is sent per frame. Actual spacing is frame-limited. A running sequence keeps its starting value. Select on Release uses this interval while temporarily holding the native menu action. The hold is cleared on the update after the final matched direction, or on cancellation.
+Set the minimum delay between directions for Confirm and release sequences: 0-250 ms in 5 ms steps, default 70 ms. At 0, one direction is sent per frame. Actual spacing is frame-limited. A running sequence keeps its starting value. Select on Release uses this interval while temporarily using native Press behavior for Display Stratagem List. The original trigger is restored on the update after the final matched direction, or on cancellation. Key/button assignments are unchanged.
 
 R26 names the options and bindings section **Diver's Best Friend**. Older builds show **Native Stratagem Radial** and write `NativeStratagemRadial*.log`. Saved setting and binding IDs are unchanged.

@@ -173,6 +173,13 @@ local function native_backend()
             and tonumber(received[0])==1,'Native action write failed')
     end
     function backend.invoke_input(component) input_handler(component) end
+    function backend.replace_bytes(address,expected,replacement)
+        assert((#expected==4 or #expected==20) and #replacement==#expected,'Invalid binding edit size')
+        if read(address,#expected)~=expected then return false end
+        assert(kernel.WriteProcessMemory(process,ffi.cast('void *',address),replacement,#replacement,received)~=0
+            and tonumber(received[0])==#replacement,'Native binding edit failed')
+        return true
+    end
     function backend.open_input(component)
         return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
     end

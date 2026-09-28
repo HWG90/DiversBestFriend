@@ -1,5 +1,12 @@
 # Changelog
 
+## R28 - Release Latch
+
+- Replace R27's overwritten evaluated-button hold with a temporary Press trigger for Display Stratagem List in the native live binding map.
+- Keep configured input pacing, then restore the original trigger after completion or cancellation; no key/button reassignment.
+- Guard exact mapping restoration, partial setup rollback, user edits, relocated maps and owner changes.
+- R27 logs confirmed early native menu closure. R28 fixtures pass; in-game validation is still required.
+
 ## R27 - Release Hold
 
 - Replace the same-frame release burst with a paced job that temporarily holds the native menu action through completion.

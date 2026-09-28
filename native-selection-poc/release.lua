@@ -20,7 +20,7 @@ local function release_controller(input,report)
             if job.finished then
                 local ok,why=pcall(input.end_release,job,false)
                 self.job=nil;blocked=true
-                self.status=ok and 'Release code complete; temporary Hold released' or 'Release cleanup failed: '..tostring(why)
+                self.status=ok and 'Release code complete; original menu trigger restored' or 'Release cleanup failed: '..tostring(why)
                 report(self.status);return
             end
             local ok,why=pcall(function()
@@ -59,7 +59,7 @@ local function release_controller(input,report)
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job
                     local held,why=pcall(input.hold_release,job)
-                    if held then self.status='Holding menu for kind '..previous.kind..'; interval='..interval..'ms'
+                    if held then self.status='Latched native menu for kind '..previous.kind..'; interval='..interval..'ms'
                     else self.status='Release cancelled: '..tostring(why);self.reset() end
                 else self.status='Release cancelled: '..tostring(job) end
                 report(self.status)

@@ -227,15 +227,19 @@ local function input_backend(b)
         local controls=ptr(base+0x347cf18)
         local menu_action=read(controls+808+32*(97*5),1)
         assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')
+        local lease=native_menu_latch(b).acquire(controls,c.actions)
         local reopened=false
-        if not c.menu_active then
-            if b.checkpoint then b.checkpoint('release native opener enter') end
-            assert(b.open_input(c.component),'Native game state rejected release selection')
-            reopened=true
-            if b.checkpoint then b.checkpoint('release native opener returned') end
-        end
-        local ok,result=pcall(out.begin,kind)
+        local ok,result=pcall(function()
+            if not c.menu_active then
+                if b.checkpoint then b.checkpoint('release native opener enter') end
+                assert(b.open_input(c.component),'Native game state rejected release selection')
+                reopened=true
+                if b.checkpoint then b.checkpoint('release native opener returned') end
+            end
+            return out.begin(kind)
+        end)
         if not ok then
+            lease.restore(true)
             if reopened then b.close_input(c.component) end
             error(result)
         end
@@ -243,42 +247,23 @@ local function input_backend(b)
         result.actions=c.actions
         result.controls=controls
         result.reopened=reopened
+        result.latch=lease
         return result
     end
     function out.hold_release(job)
         local c=out.release_state()
         assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
             'Release owner changed')
-        assert(c.unobstructed and c.hold,'Release interrupted by UI or changed menu binding')
+        assert(c.unobstructed,'Release interrupted by native UI')
         assert(c.menu_active,'Native menu closed before release code completed')
-        assert(ptr(base+0x347cf18)==job.controls,'Native controls changed')
-        -- Hold both evaluated copies: the controls owner and the local avatar.
-        -- These transient bytes are not saved bindings or OS key events.
-        local addresses={job.controls+808+32*(97*5),c.actions}
-        job.held=job.held or {}
-        for _,address in ipairs(addresses) do
-            local value=read(address,1)
-            assert(value=='\0' or value=='\1','Invalid native Hold action')
-            if value=='\0' then
-                job.held[address]=true
-                b.pulse_byte(address,1)
-            end
-        end
+        assert(not c.down,'Manual menu activation cancels release selection')
+        job.latch.refresh()
     end
     function out.end_release(job,cancelled)
-        -- Re-resolve owners before touching cached action addresses. Clean up
-        -- the controls copy even when the avatar/HUD has gone away.
-        local controls_ok,controls=pcall(ptr,base+0x347cf18)
         local current_ok,c=pcall(context,false,true)
-        for address in pairs(job.held or {}) do
-            local controls_owned=controls_ok and controls==job.controls and address==controls+808+32*(97*5)
-            local avatar_owned=current_ok and c.identity==job.identity and c.component==job.component and address==c.actions
-            if (controls_owned or avatar_owned) and b.read(address,1)=='\1' then b.pulse_byte(address,0) end
-        end
-        job.held=nil
-        if cancelled and current_ok and c.identity==job.identity and c.component==job.component and c.menu_active then
-            b.close_input(c.component)
-        end
+        local avatar_valid=current_ok and c.identity==job.identity and c.component==job.component
+        job.latch.restore(avatar_valid)
+        if cancelled and avatar_valid and c.menu_active then b.close_input(c.component) end
     end
     function out.advance_release(job)
         out.hold_release(job)
