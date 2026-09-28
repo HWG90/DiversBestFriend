@@ -54,7 +54,7 @@ local expected
 local b={base=base,read=read,u32=u32,valid=function(p) return p==hud end}
 function b.pointer(at) local s=read(at,8); if not s then return nil end; return u32(s,0)+u32(s,4)*4294967296 end
 function b.pulse_byte(at,value)
-    assert(at==actions+32 or at==actions+64 or at==actions+96 or at==actions+128)
+    assert(at==actions or at==0x32000000+808+32*(97*5) or at==actions+32 or at==actions+64 or at==actions+96 or at==actions+128)
     assert(value==0 or value==1); writes=writes+1;put(at,string.char(value))
 end
 function b.invoke_input(at)
@@ -133,6 +133,8 @@ reset();job=input.begin(33);num(component+0x28,99);before=writes
 assert(not pcall(input.advance,job));assert(before==writes);num(component+0x28,42)
 reset();job=input.begin(33);put(hud+0x395100+0x38769,'\0');assert(not pcall(input.advance,job));put(hud+0x395100+0x38769,'\1')
 -- UI state machine: held confirm, missing bindings, membership and timeouts.
+local controls=0x32000000
+ptr(base+0x347cf18,controls);put(controls+808+32*(97*5),"\0")
 local ui=0x31000000
 ptr(base+0x347ce28,ui);num(ui+0x429c+20,0);num(actions+24,2)
 local reopened,closed_count=0,0
@@ -151,17 +153,22 @@ local function release_fixture()
     return armed
 end
 local armed=release_fixture()
-assert(input.select_released(33,armed):find('matched kind 33',1,true))
-assert(reopened==1 and u32(read(component+0x14,4),0)==33,'closed release resumes and matches native code')
-armed=release_fixture();fail=true
-assert(not pcall(input.select_released,33,armed));fail=false
-assert(closed_count==1 and read(actions+96,1)=='\0','failed reopened release closes and restores input')
+local held_job=input.begin_release(33,armed)
+input.hold_release(held_job)
+assert(read(actions,1)=='\1' and read(controls+808+32*(97*5),1)=='\1','both native evaluated actions held')
+for i=1,#held_job.code do input.advance_release(held_job) end
+assert(reopened==1 and u32(read(component+0x14,4),0)==33,'paced release matches native code')
+input.end_release(held_job,false)
+assert(read(actions,1)=='\0' and read(controls+808+32*(97*5),1)=='\0','temporary hold restored')
+armed=release_fixture();held_job=input.begin_release(33,armed);input.hold_release(held_job);fail=true
+assert(not pcall(input.advance_release,held_job));fail=false;input.end_release(held_job,true)
+assert(closed_count==1 and read(actions+96,1)=='\0','failed release closes and restores input')
 armed=release_fixture();local opened_before=reopened
-num(ui+0x429c+20,1);assert(not pcall(input.select_released,33,armed));num(ui+0x429c+20,0)
-num(actions+24,0);assert(not pcall(input.select_released,33,armed));num(actions+24,2)
-armed.identity='other';assert(not pcall(input.select_released,33,armed))
+num(ui+0x429c+20,1);assert(not pcall(input.begin_release,33,armed));num(ui+0x429c+20,0)
+num(actions+24,0);assert(not pcall(input.begin_release,33,armed));num(actions+24,2)
+armed.identity='other';assert(not pcall(input.begin_release,33,armed))
 assert(reopened==opened_before,'overlay, non-hold and stale ownership never reopen')
-armed=release_fixture();assert(not pcall(input.select_released,149,armed))
+armed=release_fixture();assert(not pcall(input.begin_release,149,armed))
 assert(reopened==opened_before,'missing mission member never reopens')
 print('Native release adapter passed: reopen/match, failure cleanup, pulse restoration, overlay/trigger/ownership/membership guards.')
 local starts,advances=0,0

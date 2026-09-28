@@ -52,7 +52,8 @@ end
 env.input_backend=function()
     return {view_context=function() return {} end,decorate=function() end,begin=function(kind) starts=starts+1;return {kind=kind} end,
         release_state=function() return {identity=1,component=2,hud=3,hold=true,down=release_down,unobstructed=true,menu_active=true,clean=true} end,
-        select_released=function() release_calls=release_calls+1;return 'matched' end,
+        begin_release=function() release_calls=release_calls+1;return {code={1},kind=33} end,
+        hold_release=function() end,end_release=function() end,advance_release=function() return true,'matched' end,
         advance=function() advances=advances+1;return true,'Native matched; equip pending' end}
 end
 env.duplicate_cards=function() return {prepare=function(s)

@@ -4,9 +4,9 @@ end
 local make=assert(loadstring(source('input.lua')..'\n'..source('release.lua')..'\nreturn release_controller'))()
 local state={identity='player',component=5,hud=9,hold=true,down=true,unobstructed=true,menu_active=true,clean=true}
 local calls,logs=0,{}
-local input={release_state=function() return state end,select_released=function(kind,armed)
-    assert(kind==33 and armed.component==5);calls=calls+1;return 'matched'
-end}
+local input={release_state=function() return state end,begin_release=function(kind,armed)
+    assert(kind==33 and armed.component==5);calls=calls+1;return {code={1,2},kind=kind}
+end,hold_release=function() end,end_release=function() end,advance_release=function() return true,'matched' end}
 local r=make(input,function(s) logs[#logs+1]=s end)
 local open={identity=9,open=true,rows={{address=10,kind=33}}}
 local closed={identity=9,open=false}
@@ -24,6 +24,27 @@ arm();state.unobstructed=false;release();assert(calls==1,'overlay cancels');stat
 arm();state.hold=false;release();assert(calls==1,'toggle binding does not release-select');state.hold=true
 arm();state.clean=false;r.step(true,open,10,8,false);state.clean=true;release();assert(calls==1,'manual input cancels session')
 arm();release(open);assert(calls==2,'release also works before HUD closes')
-arm();input.select_released=function() error('native rejection') end;release();release()
-assert(#logs==3 and logs[3]:find('Release cancelled:',1,true),'failure is reported once')
+arm();input.begin_release=function() error('native rejection') end;release();release()
+assert(logs[#logs]:find('Release cancelled:',1,true),'failure is reported')
 print('release controller checks passed')
+
+local sent,holds,ends=0,0,0
+input.begin_release=function() return {code={1,2},kind=33} end
+input.hold_release=function() holds=holds+1 end
+input.advance_release=function() sent=sent+1;return sent==2,'sent '..sent end
+input.end_release=function() ends=ends+1 end
+r.interval_ms=70;arm();release(closed,16)
+assert(r.job and sent==0,'release starts a held job rather than an instant burst')
+r.step(true,open,nil,17,false);assert(sent==1)
+r.step(true,open,nil,86,false);assert(sent==1,'no early second direction')
+r.step(true,open,nil,87,false);assert(sent==2 and r.job.finished and ends==0)
+r.step(true,open,nil,88,false);assert(not r.job and ends==1,'hold survives until the next update after match')
+arm();release(closed,100);r.step(false,open,nil,101,false);assert(not r.job and ends==2,'disable releases owned hold')
+print('Paced release checks passed: interval, final-frame hold and cancellation cleanup.')
+arm();release(closed,100)
+input.hold_release=function() error('native menu closed') end
+r.step(true,closed,nil,101,false)
+assert(not r.job and ends==3 and r.status:find('native menu closed',1,true),'early native closure cleans up without retry')
+input.hold_release=function() end
+arm();release(closed,100);r.step(true,open,nil,4000,false)
+assert(not r.job and ends==4,'timeout restores Hold')

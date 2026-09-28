@@ -1,4 +1,4 @@
-local api={api=1,revision=26,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=27,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -19,7 +19,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R26 - Polish\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R27 - Release Hold\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -50,7 +50,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R26 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R27 - Release Hold\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -73,7 +73,7 @@ local function options()
     if interval_registered~=menu then
         if menu.register_option('native_stratagem_radial.input_interval_ms',{
             type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
-            description='Delay between directions for Confirm-driven codes. 0 sends one direction per frame. Changes apply to the next code. Select on Release sends its code immediately and does not use this delay.'}) then interval_registered=menu end
+            description='Delay between directions for Confirm and Select on Release. 0 sends one direction per frame. Changes apply to the next code.'}) then interval_registered=menu end
     end
     if interval_registered==menu then
         local value=menu.get('native_stratagem_radial.input_interval_ms')
@@ -256,7 +256,7 @@ local function step()
                     wheel.prepare(original,nil,false)
                 else
                     local changed
-                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil)
+                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
                     if changed then pointing.reset();selection.step(nil,nil,now) end
                 end
                 snapshot.pointer_only=true
@@ -281,9 +281,11 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.interval_ms=input_interval_ms
-        selection.step(snapshot,buttons,now,vector)
+        if not release_selection.job then selection.step(snapshot,buttons,now,vector) end
+        release_selection.interval_ms=input_interval_ms
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
+        if release_selection.job then selection.selected=release_selection.job.address end
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -323,6 +325,7 @@ local function step()
     end)
     if not ok then
         failed=true
+        if release_selection then pcall(release_selection.reset) end
         if controller then pcall(controller.restore) end
         if list_controller then pcall(list_controller.restore) end
         if camera then pcall(camera.release) end

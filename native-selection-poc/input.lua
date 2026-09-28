@@ -209,7 +209,7 @@ local function input_backend(b)
         c.unobstructed=num(ui+0x429c+20)==0
         return c
     end
-    function out.select_released(kind,armed)
+    function out.begin_release(kind,armed)
         local c=out.release_state()
         assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
             'Release owner changed')
@@ -224,6 +224,9 @@ local function input_backend(b)
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Released stratagem no longer belongs to the mission')
         code(kind)
+        local controls=ptr(base+0x347cf18)
+        local menu_action=read(controls+808+32*(97*5),1)
+        assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')
         local reopened=false
         if not c.menu_active then
             if b.checkpoint then b.checkpoint('release native opener enter') end
@@ -231,20 +234,55 @@ local function input_backend(b)
             reopened=true
             if b.checkpoint then b.checkpoint('release native opener returned') end
         end
-        local ok,result=pcall(function()
-            local job=out.begin(kind)
-            -- Finish within this release frame; the ordinary update can then
-            -- equip the matched beacon even though the Hold action is up.
-            local done,message
-            for i=1,#job.code do done,message=out.advance(job) end
-            assert(done,'Release code did not complete')
-            return message
-        end)
+        local ok,result=pcall(out.begin,kind)
         if not ok then
             if reopened then b.close_input(c.component) end
             error(result)
         end
+        result.hud=c.hud
+        result.actions=c.actions
+        result.controls=controls
+        result.reopened=reopened
         return result
+    end
+    function out.hold_release(job)
+        local c=out.release_state()
+        assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
+            'Release owner changed')
+        assert(c.unobstructed and c.hold,'Release interrupted by UI or changed menu binding')
+        assert(c.menu_active,'Native menu closed before release code completed')
+        assert(ptr(base+0x347cf18)==job.controls,'Native controls changed')
+        -- Hold both evaluated copies: the controls owner and the local avatar.
+        -- These transient bytes are not saved bindings or OS key events.
+        local addresses={job.controls+808+32*(97*5),c.actions}
+        job.held=job.held or {}
+        for _,address in ipairs(addresses) do
+            local value=read(address,1)
+            assert(value=='\0' or value=='\1','Invalid native Hold action')
+            if value=='\0' then
+                job.held[address]=true
+                b.pulse_byte(address,1)
+            end
+        end
+    end
+    function out.end_release(job,cancelled)
+        -- Re-resolve owners before touching cached action addresses. Clean up
+        -- the controls copy even when the avatar/HUD has gone away.
+        local controls_ok,controls=pcall(ptr,base+0x347cf18)
+        local current_ok,c=pcall(context,false,true)
+        for address in pairs(job.held or {}) do
+            local controls_owned=controls_ok and controls==job.controls and address==controls+808+32*(97*5)
+            local avatar_owned=current_ok and c.identity==job.identity and c.component==job.component and address==c.actions
+            if (controls_owned or avatar_owned) and b.read(address,1)=='\1' then b.pulse_byte(address,0) end
+        end
+        job.held=nil
+        if cancelled and current_ok and c.identity==job.identity and c.component==job.component and c.menu_active then
+            b.close_input(c.component)
+        end
+    end
+    function out.advance_release(job)
+        out.hold_release(job)
+        return out.advance(job)
     end
     return out
 end

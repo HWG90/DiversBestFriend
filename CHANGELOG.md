@@ -1,5 +1,12 @@
 # Changelog
 
+## R27 - Release Hold
+
+- Replace the same-frame release burst with a paced job that temporarily holds the native menu action through completion.
+- Apply Input interval to release sequences as well as Confirm; keep the hold until the update after the final match.
+- Freeze the selected item and native wheel page during release input. Clear held actions on cancellation, timeout, focus loss or errors.
+- Report premature native closure explicitly. This is a test candidate; in-game hold persistence is not established by fixtures.
+
 ## R26 - Polish
 
 - Rename options and bindings sections to Diver's Best Friend and simplify setting descriptions.

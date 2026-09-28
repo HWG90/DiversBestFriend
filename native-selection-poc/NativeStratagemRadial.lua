@@ -653,7 +653,7 @@ local function input_backend(b)
         c.unobstructed=num(ui+0x429c+20)==0
         return c
     end
-    function out.select_released(kind,armed)
+    function out.begin_release(kind,armed)
         local c=out.release_state()
         assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
             'Release owner changed')
@@ -668,6 +668,9 @@ local function input_backend(b)
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Released stratagem no longer belongs to the mission')
         code(kind)
+        local controls=ptr(base+0x347cf18)
+        local menu_action=read(controls+808+32*(97*5),1)
+        assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')
         local reopened=false
         if not c.menu_active then
             if b.checkpoint then b.checkpoint('release native opener enter') end
@@ -675,20 +678,55 @@ local function input_backend(b)
             reopened=true
             if b.checkpoint then b.checkpoint('release native opener returned') end
         end
-        local ok,result=pcall(function()
-            local job=out.begin(kind)
-            -- Finish within this release frame; the ordinary update can then
-            -- equip the matched beacon even though the Hold action is up.
-            local done,message
-            for i=1,#job.code do done,message=out.advance(job) end
-            assert(done,'Release code did not complete')
-            return message
-        end)
+        local ok,result=pcall(out.begin,kind)
         if not ok then
             if reopened then b.close_input(c.component) end
             error(result)
         end
+        result.hud=c.hud
+        result.actions=c.actions
+        result.controls=controls
+        result.reopened=reopened
         return result
+    end
+    function out.hold_release(job)
+        local c=out.release_state()
+        assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
+            'Release owner changed')
+        assert(c.unobstructed and c.hold,'Release interrupted by UI or changed menu binding')
+        assert(c.menu_active,'Native menu closed before release code completed')
+        assert(ptr(base+0x347cf18)==job.controls,'Native controls changed')
+        -- Hold both evaluated copies: the controls owner and the local avatar.
+        -- These transient bytes are not saved bindings or OS key events.
+        local addresses={job.controls+808+32*(97*5),c.actions}
+        job.held=job.held or {}
+        for _,address in ipairs(addresses) do
+            local value=read(address,1)
+            assert(value=='\0' or value=='\1','Invalid native Hold action')
+            if value=='\0' then
+                job.held[address]=true
+                b.pulse_byte(address,1)
+            end
+        end
+    end
+    function out.end_release(job,cancelled)
+        -- Re-resolve owners before touching cached action addresses. Clean up
+        -- the controls copy even when the avatar/HUD has gone away.
+        local controls_ok,controls=pcall(ptr,base+0x347cf18)
+        local current_ok,c=pcall(context,false,true)
+        for address in pairs(job.held or {}) do
+            local controls_owned=controls_ok and controls==job.controls and address==controls+808+32*(97*5)
+            local avatar_owned=current_ok and c.identity==job.identity and c.component==job.component and address==c.actions
+            if (controls_owned or avatar_owned) and b.read(address,1)=='\1' then b.pulse_byte(address,0) end
+        end
+        job.held=nil
+        if cancelled and current_ok and c.identity==job.identity and c.component==job.component and c.menu_active then
+            b.close_input(c.component)
+        end
+    end
+    function out.advance_release(job)
+        out.hold_release(job)
+        return out.advance(job)
     end
     return out
 end
@@ -1427,10 +1465,38 @@ end
 -- never confirms, and explicit Confirm suppresses release for this opening.
 local function release_controller(input,report)
     local armed,blocked
-    local self={status='Disabled'}
-    function self.reset() armed=nil;blocked=nil end
+    local self={status='Disabled',job=nil,interval_ms=70}
+    function self.reset()
+        if self.job then
+            local ok,why=pcall(input.end_release,self.job,true)
+            if not ok then report('Release cleanup failed: '..tostring(why)) end
+        end
+        self.job=nil;armed=nil;blocked=nil
+    end
     function self.step(enabled,snapshot,selected,now,explicit)
         if not enabled or not snapshot then self.status='Disabled or no valid radial snapshot';self.reset();return end
+        if self.job then
+            local job=self.job
+            if snapshot.identity~=job.snapshot_identity or now>job.deadline or explicit then
+                self.status='Release cancelled: HUD changed, timeout or explicit input';report(self.status);self.reset();return
+            end
+            if job.finished then
+                local ok,why=pcall(input.end_release,job,false)
+                self.job=nil;blocked=true
+                self.status=ok and 'Release code complete; temporary Hold released' or 'Release cleanup failed: '..tostring(why)
+                report(self.status);return
+            end
+            local ok,why=pcall(function()
+                input.hold_release(job)
+                if now>=job.next_at then
+                    local done,message=input.advance_release(job)
+                    self.status=message;report('Release: '..message)
+                    job.finished=done;job.next_at=now+job.interval_ms
+                end
+            end)
+            if not ok then self.status='Release cancelled: '..tostring(why);report(self.status);self.reset() end
+            return
+        end
         local ok,state=pcall(input.release_state)
         if not ok then self.status=tostring(state);self.reset();return end
         if not state.unobstructed or not state.hold then
@@ -1448,16 +1514,25 @@ local function release_controller(input,report)
                 and snapshot.identity==previous.snapshot_identity
                 and state.identity==previous.identity and state.component==previous.component
                 and state.hud==previous.hud then
-                local called,message=pcall(input.select_released,previous.kind,previous)
-                self.status=tostring(message)
-                report((called and 'Release: ' or 'Release cancelled: ')..tostring(message))
+                local called,job=pcall(input.begin_release,previous.kind,previous)
+                if called then
+                    local interval=self.interval_ms
+                    if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                    job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity;job.address=previous.address
+                    job.deadline=now+math.max(3000,#job.code*interval+1500)
+                    self.job=job
+                    local held,why=pcall(input.hold_release,job)
+                    if held then self.status='Holding menu for kind '..previous.kind..'; interval='..interval..'ms'
+                    else self.status='Release cancelled: '..tostring(why);self.reset() end
+                else self.status='Release cancelled: '..tostring(job) end
+                report(self.status)
             end
             return
         end
         if blocked or not snapshot.open or not state.menu_active then return end
         for _,row in ipairs(snapshot.rows) do
             if row.address==selected and selectable_kind(row.kind) then
-                armed={kind=row.kind,time=now,snapshot_identity=snapshot.identity,
+                armed={kind=row.kind,address=row.address,time=now,snapshot_identity=snapshot.identity,
                     identity=state.identity,component=state.component,hud=state.hud}
                 self.status='Armed kind '..row.kind
                 return
@@ -1467,7 +1542,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=26,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=27,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1488,7 +1563,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R26 - Polish\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R27 - Release Hold\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1519,7 +1594,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R26 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R27 - Release Hold\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1542,7 +1617,7 @@ local function options()
     if interval_registered~=menu then
         if menu.register_option('native_stratagem_radial.input_interval_ms',{
             type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
-            description='Delay between directions for Confirm-driven codes. 0 sends one direction per frame. Changes apply to the next code. Select on Release sends its code immediately and does not use this delay.'}) then interval_registered=menu end
+            description='Delay between directions for Confirm and Select on Release. 0 sends one direction per frame. Changes apply to the next code.'}) then interval_registered=menu end
     end
     if interval_registered==menu then
         local value=menu.get('native_stratagem_radial.input_interval_ms')
@@ -1725,7 +1800,7 @@ local function step()
                     wheel.prepare(original,nil,false)
                 else
                     local changed
-                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil)
+                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
                     if changed then pointing.reset();selection.step(nil,nil,now) end
                 end
                 snapshot.pointer_only=true
@@ -1750,9 +1825,11 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.interval_ms=input_interval_ms
-        selection.step(snapshot,buttons,now,vector)
+        if not release_selection.job then selection.step(snapshot,buttons,now,vector) end
+        release_selection.interval_ms=input_interval_ms
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
+        if release_selection.job then selection.selected=release_selection.job.address end
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -1792,6 +1869,7 @@ local function step()
     end)
     if not ok then
         failed=true
+        if release_selection then pcall(release_selection.reset) end
         if controller then pcall(controller.restore) end
         if list_controller then pcall(list_controller.restore) end
         if camera then pcall(camera.release) end
