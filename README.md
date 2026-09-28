@@ -1,4 +1,4 @@
-![Diver's Best Friend banner](assets/banner.png)
+![Diver's Best Friend — DBF / Automated Stratagem System (ASS)](assets/banner-dbf.png)
 
 # Diver's Best Friend
 
@@ -79,3 +79,11 @@ Community modding tools make this native implementation possible. This is an ind
 The project code is [MIT licensed](LICENSE). The game and separately installed dependencies retain their own licenses and ownership.
 
 [Credits](CREDITS.md) | [Development guide](docs/DEVELOPMENT.md)
+
+## Project branding
+
+<p align="center">
+  <img src="assets/dbf-logo-4x3.png" width="320" alt="DBF — Diver's Best Friend, Automated Stratagem System (ASS)">
+</p>
+
+[Compact logo](assets/dbf-logo-4x3.png) | [Wide banner](assets/banner-dbf.png) | [Branding guide](assets/BRANDING.md)

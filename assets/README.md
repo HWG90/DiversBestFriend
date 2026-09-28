@@ -1,7 +1,14 @@
-# Project banner
+# Project branding assets
 
-`banner.png` is a 1600 x 500 ready-to-use banner. `banner.svg` is an editable vector version.
+The current identity uses a diver helmet inside a directional stratagem wheel, bold DBF lettering, and the Automated Stratagem System (ASS) badge in charcoal, yellow, and ivory.
 
-Original typography and schematic wheel artwork for DiversBestFriend. No game textures, screenshots, or official logos are used. Covered by the repository MIT license.
+- [Compact 4:3 logo](dbf-logo-4x3.png)
+- [Wide 3:1 banner](banner-dbf.png), used by the project README
+- [Branding guide](BRANDING.md): names, copy, palette, placement, and reuse guidance
+- [Logo prompt](dbf-logo-prompt.txt) and [banner prompt](banner-dbf-prompt.txt): built-in image generation provenance
 
-To rebuild, install Pillow and run `python assets/make_banner.py`. It uses Arial from the Windows Fonts directory, or DejaVu Sans on Linux. Set `DBF_FONT_DIR` to choose another directory containing `arial.ttf` and `arialbd.ttf`.
+The PNGs are raster artwork. Preserve their aspect ratios and keep all lettering readable.
+
+## Legacy artwork
+
+`banner.png` and `banner.svg` retain the earlier schematic-wheel identity. `make_banner.py` rebuilds that legacy banner only; it does not reproduce the current generated artwork. No existing legacy source has been replaced.
