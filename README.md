@@ -2,7 +2,7 @@
 
 # DiversBestFriend
 
-**Your stratagems. In the game. No OCR.**
+**Your stratagems. In the game. No OCR. No Python. No Autohotkey. Just a nice ASS.**
 
 Diver's Best Friend is a personal HELLDIVERS 2 project that brings stratagem selection into the game's own UI. Choose an emote-style native wheel, a keyboard-driven list, or an experimental radial layout. Point or navigate, press Confirm, and throw the beacon normally.
 
