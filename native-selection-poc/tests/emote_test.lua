@@ -110,6 +110,12 @@ w.draw(page.rows[1].address,{0,1},page.rows,false)
 assert(shown[w.address+0x488]==1 and shown[w.address+0x890]==1 and opacities[w.address+0x1208]==1,'native visuals restore after cursor-only mode')
 w.caption(149);assert(label_kind==149 and shown[w.address+0xc98]==1,'caption outside native eight slots')
 w.caption(nil);assert(shown[w.address+0xc98]==0)
+env.radial.wheel_scale=1.2;env.radial.icon_scale=0.8;env.radial.label_scale=1.1;env.radial.native_opacity=0.4
+page=w.prepare(snap,idle,false);w.draw(nil,nil,page.rows,false)
+assert(positions[wheel_address..'scale'][1]==1.2)
+assert(positions[(wheel_address+0x1208)..'scale'][1]==0.8)
+assert(positions[(wheel_address+0xc98)..'scale'][1]==1.1)
+assert(opacities[wheel_address+0x488]==0.4,'background opacity leaves independent icons/labels')
 id=id+8;w.hide();assert(shown[w.address]==1,'never touch stale HUD')
 print('Native wheel adapter passed: constructor ABI/scope, bounded paging/order, owned visuals, native cursor/sector state, empty-slot rejection, busy/held paging, offset, reuse and stale owner.')
 

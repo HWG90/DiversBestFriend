@@ -1,8 +1,8 @@
-![Diver's Best Friend — native stratagem menus](assets/banner.png)
+![Diver's Best Friend â€” native stratagem menus](assets/banner.png)
 
 # DiversBestFriendCanary
 
-This is the **canary** branch. [Canary R32 — Wheel Feedback](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r32) adds a selected native row to the center of native and expanded wheels, showing the game's availability text, countdown and live input arrows. Toggle **Wheel status and input progress** in Mod Options > Diver's Best Friend. In-game visual validation is pending.
+This is the **canary** branch. [DiversBestFriendCanary R33 — Polish](https://github.com/goosethulhu/DiversBestFriend/releases/tag/canary-r33) restores the previous wheel visuals and adds native selection sounds, adjustable sizes and presets, background opacity, grouped settings, and an [illustrated setup guide](docs/INSTALLATION.md). R32's center detail card is removed. Audio and layout changes need in-game validation.
 
 Packages use `DiversBestFriendCanary-R#-RecentFeature.zip`. Canary replaces the stable addon through the same Arsenal identity; enable only one version.
 
@@ -14,7 +14,7 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 
 **This was vibe-coded with GPT-6 Astra**, with me directing the project, testing it in-game, reporting bugs, and iterating on what actually worked. It's a personal project, but I'm happy to share it. Expect a hobby project, not a polished or officially supported product.
 
-[Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) · [Installation and controls](docs/INSTALLATION.md) · [Credits](CREDITS.md) · [Development](docs/DEVELOPMENT.md)
+[Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) Â· [Installation and controls](docs/INSTALLATION.md) Â· [Credits](CREDITS.md) Â· [Development](docs/DEVELOPMENT.md)
 
 R31 adds native scrambled-code resolution for Confirm and the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. R31 scrambling and recovery were reported working in user testing. If the required code changes during entry, close and reopen the menu before selecting again. Native availability restrictions still apply.
 
@@ -23,7 +23,7 @@ R31 adds native scrambled-code resolution for Confirm and the optional **Select 
 | Mode | Selection | Layout |
 | --- | --- | --- |
 | Native wheel | Native mouse/stick pointing + Confirm | Eight slots; Next/Previous page through additional entries |
-| Keybindings — list | Next/Previous + Confirm | Original list order, wrapping top to bottom; camera stays available |
+| Keybindings â€” list | Next/Previous + Confirm | Original list order, wrapping top to bottom; camera stays available |
 | Experimental: Cards | Mouse/stick pointing + Confirm | Up to 16 copied native stratagem rows arranged radially |
 | Experimental: Expanded wedges | Mouse/stick pointing + Confirm | Up to 16 entries on one wheel, without paging |
 
@@ -33,7 +33,7 @@ This is a **native in-game implementation**: it runs inside HELLDIVERS 2 through
 
 Confirm enters the selected code; it does not automatically throw, spawn equipment, or bypass the game's availability checks. Keep the stratagem menu open until the code finishes.
 
-## Requirements — and a big thank-you
+## Requirements â€” and a big thank-you
 
 This would not exist without **[CowboyBingus](https://github.com/CowboyBingus)** and the shared modding infrastructure they've made available.
 

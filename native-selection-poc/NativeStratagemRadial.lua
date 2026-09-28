@@ -56,6 +56,7 @@ function radial.layout(rows,center)
         local angle = math.pi / 2 - (index - 1) * 2 * math.pi / count
         local scale = count > 10 and 0.65 or 0.8
         local rx, ry = count > 10 and 550 or 470, count > 10 and 330 or 280
+        local wheel=radial.wheel_scale or 1;rx,ry=rx*wheel,ry*wheel
         result[index] = {address=row.address, scale={scale,scale},
             position={center[1]+math.cos(angle)*rx, center[2]+math.sin(angle)*ry}}
     end
@@ -175,6 +176,10 @@ local native_guards = {
     {name='scramble_query_position',rva=0xa1092c,bytes='\x44\x3b\x05\xed\x32\xa7\x02\x4c\x8b\x1d\xce\x5b\x91\x02\x48\x89\x44\x24\x40\x74\x44\x45\x8b\x4b\x48\x41\x8b\xcf\x45\x8b\x53\x50\x45\x0f\xaf\xd0\x41\x8d\x69\xff\x45\x85\xc9\x74\x2c\x49\x8b\x5b\x40\x41\x8b\x7b\x4c\x8b\xc5\x42\x8d\x14\x11\x48\x23\xd0\x8b\x04\xd3\x3b\xc7\x0f\x84\x89\x02\x00\x00\x41\x3b\xc0\x0f\x84\x89\x02\x00\x00\xff\xc1\x41\x3b\xc9\x72\xdc\x8b\xc6\x48\x8b\x1d\x22\x5b\x91\x02\x8b\xc8\x49\x8b\x43\x68\x48\x69\xd1\x08\x03\x00\x00\xf2'},
     {name='scramble_match_shift',rva=0x66dd94,bytes='\x41\x83\xfd\xff\x74\x28\x8b\xc8\x48\x69\xc1\x38\x12\x00\x00\x46\x03\xb4\x38\x68\xea\x53\x00\xb8\xef\x61\xeb\xdb\x41\xf7\xe6\xc1\xea\x07\x69\xc2\x95\x00\x00\x00\x44\x2b\xf0\x41\xff\xc6'},
     {name='scramble_match_call',rva=0x66dcf0,bytes='\x48\x8b\x0d\xb9\x87\xcb\x02\x44\x8b\xc3\x8b\xee\x48\x89\x7c\x24\x28\x48\x89\x7c\x24\x20\x8b\x84\xac\xa0\x00\x00\x00\x48\x8d\x14\x40\x48\x03\xd2\x45\x8b\xb4\xd7\x88\x01\x00\x00\x45\x8b\xce\x48\x8d\x54\x24\x50\xe8\xf7\x2a\x3a\x00'},
+    {name='ui_sound',rva=0x1327f50,bytes='\x48\x89\x5c\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xec\x20\x48\x8b\x05\xb2\xe3\xff\x01\x8b\xda\x48\x8b\x0d\xd1\xe3\xff\x01\x48\x8b\x90\x88\x02\x00\x00\x48\x8b\x89\xf8\x10\x00\x00\x48\x8b\xb0\x38\x03\x00\x00\xff\xd2\x8b\xcb\x48\x8b\xf8\xe8\x50\xd7\xf2\xff\x48\x8b\x0d\xa9\xe3\xff\x01\x45\x33\xc9\x4c\x8b\xc7\x8b\xd0\x48\x8b\x89\xf8\x10\x00\x00\x48\x8b\xc6\x48\x8b\x5c\x24\x30\x48\x8b\x74\x24\x38\x48\x83\xc4\x20\x5f\x48\xff\xe0\xcc\xcc\xcc\xcc\xcc'},
+    {name='wheel_move_sound',rva=0x182a908,bytes='\x3b\xd9\x0f\x84\x80\x04\x00\x00\x3b\xce\x0f\x84\x2f\x03\x00\x00\x41\x8b\x87\xe0\x1c\x00\x00\x48\x8d\x0d\xda\x56\x7d\xfe\x8b\x94\x81\x40\x75\x30\x02\xe8\x1e\xd6\xaf\xff'},
+    {name='wheel_action_sound',rva=0x182a7d2,bytes='\x48\xb9\x00\x00\x00\x00\x09\x00\x00\x00\xe8\x9f\xb3\xd5\xfe\x44\x8b\xc8\x48\x8b\x05\x2d\x27\xc5\x01\x49\xc1\xe1\x05\x45\x38\xa4\x01\x28\x03\x00\x00\x74\x3d\x41\x8b\x87\xe0\x1c\x00\x00\x48\x8d\x0d\xf9\x57\x7d\xfe\x8b\x94\x81\x20\x75\x30\x02\xe8\x3d\xd7\xaf\xff'},
+    {name='wheel_sound_ids',rva=0x2307520,bytes='\xf7\x31\x3c\x78\x83\x45\x27\xdd\x83\x45\x27\xdd\x00\x00\x00\x00\x1c\x8a\xb1\x93\xb2\xf7\xb3\x75\xb2\xf7\xb3\x75\x00\x00\x00\x00\x56\xe9\x82\x7e\x55\x5a\x42\x39\x55\x5a\x42\x39'},
 }
 
 -- Selection ABI and ownership witnesses from the supported code capture.
@@ -439,6 +444,14 @@ local function native_backend()
     end
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+    end
+    function backend.ui_sound(event)
+        local events={move=0x39425a55,confirm=0xdd274583}
+        local sound=assert(events[event],'Unknown selection sound')
+        local engine=assert(pointer(base+0x3326318),'Audio engine unavailable')
+        local game=assert(pointer(base+0x3326340),'Game state unavailable')
+        assert(pointer(engine+0x288) and pointer(engine+0x338) and pointer(game+0x10f8),'UI audio unavailable')
+        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)(0,sound)
     end
     function backend.scramble_effect(effects,key,kind)
         local result=ffi.new('uint32_t[1]',0xffffffff)
@@ -1142,37 +1155,10 @@ local function duplicate_cards(b)
             assert(original.entry>=0 and original.entry<16,'Native card entry out of bounds')
             local card=address+0x110+original.entry*0x3760
             assert(self.owns(card),'Radial card ownership changed')
-            visible(card,1) -- Restore rows previously hidden by the detail panel.
             rows[#rows+1]={address=card,entry=original.entry,kind=original.kind,width=original.width,height=original.height}
         end
         visible(address,1)
         return {identity=identity,panel=snapshot.panel,list=address,rows=rows,open=true,center=snapshot.center,geometry=snapshot.geometry}
-    end
-    -- One original-game row provides localized availability, timer and native
-    -- arrow progress. Reuse owned storage; never move or edit the stock row.
-    function self.detail(snapshot,context,dt,selected)
-        if not snapshot or not snapshot.open or not selected then self.hide();return false end
-        local match
-        for _,row in ipairs(snapshot.rows) do
-            if row.entry==selected.entry and row.kind==selected.kind then match=row;break end
-        end
-        if not match then self.hide();return false end
-        return context_scope(snapshot.list,function(resource_context)
-            local copy=prepare(snapshot,context,dt,resource_context)
-            for i=0,15 do visible(address+0x110+i*0x3760,0) end
-            local card=address+0x110+match.entry*0x3760
-            local width=270
-            for _,row in ipairs(snapshot.rows) do width=math.max(width,row.width) end
-            local scale=math.min(0.85,360/width)
-            local center=snapshot.center or {0,0}
-            local position={center[1],center[2]-(radial.vertical_offset or 0)}
-            b.set(card,'anchor',{0.5,0.5});b.set(card,'pivot',{0.5,0.5})
-            b.set(card,'scale',{scale,scale})
-            b.set(card,'animation_a',position);b.set(card,'animation_b',position)
-            b.set(card,'position',position)
-            visible(card,1);check_bounds()
-            return true
-        end)
     end
     function self.prepare(snapshot,context,dt)
         if not snapshot or not snapshot.open then self.hide();return snapshot end
@@ -1269,12 +1255,18 @@ local function emote_wheel(b,scope,input)
             visible(address+0xf50,0) -- native emote-action hint does not apply
             local center=snapshot.center or {0,0}
             b.set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
+            local size=radial.wheel_scale or 1
+            b.set(address,'scale',{size,size})
+            local text=radial.label_scale or 1
+            b.set(address+0xc98,'scale',{text,text})
+            b.set(address+0xf50,'scale',{text,text})
             -- Original HUD remains visible; only independently owned icons change.
             for i=0,7 do
                 local row=page_rows[i+1]
                 local icon=address+0x1208+i*0x158
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
+                local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
@@ -1300,6 +1292,7 @@ local function emote_wheel(b,scope,input)
         scope.context_scope(parent,function()
             local show=index~=nil and not cursor_only
             visible(address+0x488,cursor_only and 0 or 1)
+            opacity(address+0x488,radial.native_opacity or 1)
             visible(address+0x5e0,show and 1 or 0)
             visible(address+0x890,show and 1 or 0)
             visible(address+0x738,(show or cursor_only) and 0 or 1)
@@ -1481,6 +1474,7 @@ local function expanded_wheel(b,scope,input)
             assert(owned(),'Expanded ownership mismatch')
             local center=snapshot.center or {0,0}
             b.set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
+            local size=radial.wheel_scale or 1;b.set(address,'scale',{size,size})
             for i=1,16 do
                 local turn,stretch,wedge,icon=slot(i)
                 assert(b.pointer(turn+0xf0)==address and b.pointer(stretch+0xf0)==turn and
@@ -1491,6 +1485,7 @@ local function expanded_wheel(b,scope,input)
                     local angle,scale,pos=expanded_geometry(#rows,i)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
+                local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
                 local row=rows[i]
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
@@ -1725,18 +1720,94 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=32,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local function canary_settings(menu,api,radial)
+    local prefix='native_stratagem_radial.'
+    local specs={
+        {'enabled','Selection','Enable Mod','toggle',true},
+        {'selection_mode','Selection','Mode','choice',1,{'Native wheel','Keybindings - list','Experimental'}},
+        {'selection_sounds','Selection','Sound feedback','toggle',true},
+        {'experimental_layout','Appearance','Experimental layout','choice',1,{'Cards - copied list rows','Expanded wedges'},nil,nil,'Experimental mode only.'},
+        {'appearance_preset','Appearance','Preset','choice',1,{'Custom','Compact','Standard','Large'},nil,nil,'Custom uses the size sliders below. Other presets override sizes; opacity and colors stay independent.'},
+        {'wheel_size','Appearance','Wheel size (%)','slider',100,70,130,5,'All radial layouts. Custom preset only.'},
+        {'icon_size','Appearance','Icon size (%)','slider',100,70,130,5,'Native and expanded wheels. Relative to wheel size; Custom preset only.'},
+        {'label_size','Appearance','Center label size (%)','slider',100,70,130,5,'Native and expanded wheels. Relative to wheel size; Custom preset only.'},
+        {'native_opacity','Appearance','Native wheel opacity (%)','slider',100,0,100,5,'Native wheel only; background opacity. Selected highlight stays visible.'},
+        {'full_color_icons','Appearance','Full-color stratagem icons','toggle',true},
+        {'wedge_darkness','Appearance','Expanded wedge darkness (%)','slider',70,0,100,5,'Expanded wedges only.'},
+        {'wedge_opacity','Appearance','Expanded wedge opacity (%)','slider',75,0,100,5,'Expanded wedges only; selected highlight stays visible.'},
+        {'select_on_release','Controller','Select on Release','toggle',false,nil,nil,nil,'Radial modes with a Hold menu binding: point then release. Center before releasing to cancel. Also works with mouse.'},
+        {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
+        {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
+    }
+    local values={}
+    api.values=api.values or {}
+    local previous
+    for _,s in ipairs(specs) do
+        local spec={mod="Diver's Best Friend",label=s[2]..' / '..s[3],type=s[4],default=s[5],gap=previous~=s[2],description=s[9] or s[3]}
+        if s[4]=='choice' then spec.choices=s[6] end
+        if s[4]=='slider' then spec.min=s[6];spec.max=s[7];spec.step=s[8] end
+        if not api.registered[s[1]] then api.registered[s[1]]=menu.register_option(prefix..s[1],spec)==true end
+        local v=menu.get(prefix..s[1]);local valid=false
+        if s[4]=='toggle' then valid=type(v)=='boolean'
+        elseif type(v)=='number' and v==v then
+            if s[4]=='choice' then valid=v%1==0 and v>=1 and v<=#s[6]
+            else valid=v>=s[6] and v<=s[7] end
+        end
+        if valid then api.values[s[1]]=v end
+        if api.values[s[1]]==nil then api.values[s[1]]=s[5] end
+        values[s[1]]=api.values[s[1]]
+        previous=s[2]
+    end
+    local presets={{values.wheel_size,values.icon_size,values.label_size},{85,100,95},{100,100,100},{115,110,110}}
+    local sizes=presets[values.appearance_preset]
+    radial.wheel_scale,radial.icon_scale,radial.label_scale=sizes[1]/100,sizes[2]/100,sizes[3]/100
+    radial.native_opacity=values.native_opacity/100
+    radial.full_color=values.full_color_icons
+    radial.wedge_darkness,radial.wedge_opacity=values.wedge_darkness,values.wedge_opacity
+    radial.vertical_offset=values.vertical_offset
+    return values
+end
+
+-- UI-only sounds: one tick per changed target, one cue per accepted job.
+local function selection_feedback(b,report)
+    local owner,last_target,last_job,last_tick=nil,nil,nil,-math.huge
+    local failed=false
+    local self={}
+    local function play(event)
+        if failed then return end
+        local ok,why=pcall(b.ui_sound,event)
+        if not ok then failed=true;report('Selection sound unavailable: '..tostring(why)) end
+    end
+    function self.step(enabled,snapshot,selected,job,now,list_mode)
+        if not enabled or not snapshot then owner=nil;last_target=nil;last_job=nil;return end
+        local fresh=owner~=snapshot.identity
+        if fresh then owner=snapshot.identity;last_target=nil;last_job=nil;last_tick=-math.huge end
+        if job and job~=last_job then play('confirm');last_tick=now end
+        local target
+        if snapshot.open then
+            for _,row in ipairs(snapshot.rows or {}) do
+                if row.address==selected then target=tostring(row.entry)..':'..tostring(row.kind);break end
+            end
+        end
+        if target and target~=last_target and not job and not (fresh and list_mode) and now-last_tick>=60 then
+            play('move');last_tick=now
+        end
+        last_target=target;last_job=job
+    end
+    return self
+end
+
+local api={api=1,revision=33,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
-local controller,failed,registered,last_status
+local controller,failed,last_status
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
-local wheel,expanded,release_selection,release_registered
+local wheel,expanded,release_selection
 local select_on_release=false
-local detail_registered,show_details=nil,true
-local interval_registered,input_interval_ms=nil,70
+local input_interval_ms=70
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -1747,7 +1818,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R32 - Wheel Feedback\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R33 - Polish\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1759,14 +1830,6 @@ local function selection_report(message)
     if #selection_events>12 then table.remove(selection_events,1) end
     api.last_selection=message
 end
-local offset_registered,mode_registered,layout_registered,color_registered
-local wedge_registered={}
-local wedge_options={
-    {key='wedge_darkness',label='Expanded wedge darkness (%)',default=70,
-        description='Expanded wedges only. Darkens the unselected background; 0 keeps the original gray, 100 makes it black. The selected sector stays yellow.'},
-    {key='wedge_opacity',label='Expanded wedge opacity (%)',default=75,
-        description='Expanded wedges only. Background opacity: 0 is transparent, 100 is opaque. Empty sectors stay fainter and the selected sector stays visible. Original appearance: darkness 0, opacity 30.'},
-}
 local migration_checked,migrate_expanded
 local mode_names={'Native wheel','Keybindings - list','Experimental'}
 local function report(status,force)
@@ -1778,12 +1841,11 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' Canary R32 - Wheel Feedback\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R33 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
             file:write('pointing='..tostring(api.pointing_status)..'\n')
-            file:write('wheel_details='..tostring(show_details)..'; detail_status='..tostring(api.detail_status)..'\n')
             file:write('mode='..mode_names[api.mode]..'; experimental_layout='..api.experimental_layout..'\n')
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
@@ -1796,32 +1858,11 @@ local function report(status,force)
         end
     end)
 end
+local settings_owner,settings_state
+local sound_feedback,sounds_enabled
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
-    if detail_registered~=menu then
-        if menu.register_option('native_stratagem_radial.wheel_details',{
-            type='toggle',mod=MOD_NAME,label='Wheel status and input progress',default=true,
-            description='Native and expanded wheels: show the selected stratagem using an original-game row with status, countdown and live input arrows.'}) then detail_registered=menu end
-    end
-    if detail_registered==menu then show_details=menu.get('native_stratagem_radial.wheel_details')~=false end
-    if interval_registered~=menu then
-        if menu.register_option('native_stratagem_radial.input_interval_ms',{
-            type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
-            description='Delay between directions for Confirm and Select on Release. 0 sends one direction per frame. Changes apply to the next code.'}) then interval_registered=menu end
-    end
-    if interval_registered==menu then
-        local value=menu.get('native_stratagem_radial.input_interval_ms')
-        if type(value)=='number' and value==value and value>=0 and value<=250 then input_interval_ms=value end
-    end
-    if release_registered~=menu then
-        if menu.register_option('native_stratagem_radial.select_on_release',{
-            type='toggle',mod=MOD_NAME,label='Select on Release',default=false,
-            description='Radial modes only: use a Hold stratagem-menu binding, point, then release to select. No separate Confirm binding required. Center the pointer to cancel. List mode still requires Confirm.'}) then release_registered=menu end
-    end
-    if release_registered==menu then
-        select_on_release=menu.get('native_stratagem_radial.select_on_release')==true
-    end
     if migration_checked~=menu then
         migration_checked=menu
         migrate_expanded=menu.get('native_stratagem_radial.selection_mode')==4
@@ -1844,75 +1885,17 @@ local function options()
             end
         end
     end
-    if registered~=menu then
-        local ok=menu.register_option('native_stratagem_radial.enabled',{
-            type='toggle',mod=MOD_NAME,label='Enable Mod',default=true,
-            description='Enable the selected menu mode. Confirm enters the highlighted stratagem code.'})
-        if ok then registered=menu end
-    end
-    if mode_registered~=menu then
-        if menu.register_option('native_stratagem_radial.selection_mode',{
-            type='choice',mod=MOD_NAME,label='Selection mode',
-            choices={'Native wheel','Keybindings - list','Experimental'},default=1,
-            description='Native wheel: eight slots with mouse or stick selection. List: Next/Previous and Confirm with camera control. Experimental: choose Cards or Expanded wedges below.'}) then mode_registered=menu end
-    end
-    if mode_registered==menu then
-        local value=menu.get('native_stratagem_radial.selection_mode')
-        if value==1 or value==2 or value==3 then api.mode=value end
-    end
-    if layout_registered~=menu then
-        if menu.register_option('native_stratagem_radial.experimental_layout',{
-            type='choice',mod=MOD_NAME,label='Experimental layout',
-            choices={'Cards - copied list rows','Expanded wedges'},default=1,
-            description='Experimental mode: up to 16 Cards or Expanded wedges. Point with the mouse or stick, then Confirm or use Select on Release.'}) then layout_registered=menu end
-    end
-    if layout_registered==menu then
-        local value=menu.get('native_stratagem_radial.experimental_layout')
-        if value==1 or value==2 then api.experimental_layout=value end
-    end
-    if migrate_expanded and mode_registered==menu and layout_registered==menu then
+    if settings_owner~=menu then settings_owner=menu;settings_state={registered={}} end
+    local values=canary_settings(menu,settings_state,radial)
+    api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
+    select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
+    if migrate_expanded then
         api.mode,api.experimental_layout=3,2
-        if type(menu.set)=='function' then
-            local layout_ok=menu.set('native_stratagem_radial.experimental_layout',2)
-            if layout_ok and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
-        end
-    end
-    if color_registered~=menu then
-        if menu.register_option('native_stratagem_radial.full_color_icons',{
-            type='toggle',mod=MOD_NAME,label='Full-color stratagem icons',default=true,
-            description='Use full-color icons on the wheels. Off shows the raw red/green icons. Cards keep their original colors; cooldown icons remain gray.'}) then color_registered=menu end
-    end
-    if color_registered==menu then
-        local value=menu.get('native_stratagem_radial.full_color_icons')
-        if type(value)=='boolean' then radial.full_color=value end
-    end
-    for _,spec in ipairs(wedge_options) do
-        local id='native_stratagem_radial.'..spec.key
-        if wedge_registered[id]~=menu then
-            if menu.register_option(id,{type='slider',mod=MOD_NAME,
-                label=spec.label,min=0,max=100,step=5,default=spec.default,
-                description=spec.description}) then wedge_registered[id]=menu end
-        end
-        if wedge_registered[id]==menu then
-            local value=menu.get(id)
-            if type(value)=='number' and value>=0 and value<=100 then radial[spec.key]=value end
-        end
-    end
-    if offset_registered~=menu then
-        if menu.register_option('native_stratagem_radial.vertical_offset',{
-            type='slider',mod=MOD_NAME,label='Radial vertical offset (down)',
-            min=-600,max=600,step=25,default=0,
-            description='Fine-tune automatic viewport centering. Leave at 0 for screen center; positive values move downward. Apply after adjusting.'}) then offset_registered=menu end
-    end
-    if offset_registered==menu then
-        local value=menu.get('native_stratagem_radial.vertical_offset')
-        if type(value)=='number' and value>=-600 and value<=600 then radial.vertical_offset=value end
-    end
-    if registered==menu then
-        local value=menu.get('native_stratagem_radial.enabled')
-        if type(value)=='boolean' then api.enabled=value end
+        if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
+            and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
     end
 end
+
 local function bindings()
     local menu=rawget(_G,'ModBindingsMenu')
     if type(menu)~='table' or menu.api~=1 or menu.version~=2 then
@@ -1945,6 +1928,7 @@ local function step()
             camera=camera_capture(backend)
             input=input_backend(backend)
             selection=selection_controller(input,selection_report)
+            sound_feedback=selection_feedback(backend,selection_report)
             release_selection=release_controller(input,selection_report)
             duplicates=duplicate_cards(backend)
             pointing=native_pointing(backend)
@@ -1972,7 +1956,6 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        local original_snapshot=snapshot
         local vector
         if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
@@ -2022,6 +2005,8 @@ local function step()
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if release_selection.job then selection.selected=release_selection.job.address end
+        sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
+            release_selection.job or selection.job,now,api.mode==2)
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -2049,19 +2034,7 @@ local function step()
                     if row.address==selection.selected then selected_row=row;break end
                 end
             end
-            local detail_shown=false
-            if not legacy then
-                if show_details and selected_row then
-                    local detail_ok,result=pcall(function()
-                        return duplicates.detail(original_snapshot,input.view_context(),dt,selected_row)
-                    end)
-                    detail_shown=detail_ok and result==true
-                    if detail_ok then api.detail_status=detail_shown and 'native row visible' or 'no matching row' end
-                    if not detail_ok then duplicates.hide();api.detail_status=tostring(result) end
-                else duplicates.hide() end
-            end
-            if detail_shown then wheel.caption(nil) end
-            wheel.timer(not detail_shown and selected_row or nil)
+            wheel.timer(selected_row)
         end
         display.step(api.enabled,snapshot or {open=false})
         if was_open then native_checkpoint('layout returned') end

@@ -186,6 +186,14 @@ local function native_backend()
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
     end
+    function backend.ui_sound(event)
+        local events={move=0x39425a55,confirm=0xdd274583}
+        local sound=assert(events[event],'Unknown selection sound')
+        local engine=assert(pointer(base+0x3326318),'Audio engine unavailable')
+        local game=assert(pointer(base+0x3326340),'Game state unavailable')
+        assert(pointer(engine+0x288) and pointer(engine+0x338) and pointer(game+0x10f8),'UI audio unavailable')
+        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)(0,sound)
+    end
     function backend.scramble_effect(effects,key,kind)
         local result=ffi.new('uint32_t[1]',0xffffffff)
         -- Same six-argument query as the matcher; optional outputs are null.

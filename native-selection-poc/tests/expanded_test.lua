@@ -153,5 +153,8 @@ assert(shown[root+0x110+3*0x4e0]==1 and shown[root+0x110+3*0x4e0+0x380]==0,'empt
 assert(point(prepared.rows,{-1,0})==nil,'empty sector cannot select')
 w.hide();assert(shown[root]==0)
 w.prepare(snap);assert(constructors==33,'reopen reuses storage')
+env.radial.wheel_scale=1.2;env.radial.icon_scale=0.8
+w.prepare(snap)
+assert(props[root].scale[1]==1.2 and props[root+0x110+0x380].scale[1]==0.8,'independent root/icon scales')
 id=id+8;w.hide();assert(shown[root]==1,'stale owner is never mutated')
 print('Expanded wedges passed: '..checks..' geometry/selection checks, 16-slot construction, scope/ownership, transformed width, slot-16 Confirm, membership resize, empty slots, reopen and stale HUD.')

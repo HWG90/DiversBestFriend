@@ -8,10 +8,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 32
+REVISION = 33
 DISPLAY_NAME = "Diver's Best Friend Canary - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'WheelFeedback'
+RECENT_FEATURE = 'Polish'
 OUTPUT = ROOT / f'DiversBestFriendCanary-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
@@ -22,13 +22,13 @@ def build():
     source = ('-- HD2-Addon: ' + RESOURCE + '\n'
               "if rawget(_G,'NativeStratagemRadial') then return end\n")
     source += '\n'.join((ROOT / name).read_text(encoding='utf-8')
-                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'menu_latch.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'release.lua', 'entry.lua'))
+                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'menu_latch.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'release.lua', 'settings.lua', 'feedback.lua', 'entry.lua'))
     body = source.encode('utf-8')
     assert f'revision={REVISION},' in source, 'Runtime revision must match release metadata'
     assert (ROOT / 'INSTALL.txt').read_text().splitlines()[0] == DISPLAY_NAME, 'Install title must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: CANARY: Native and expanded wheels show a selected native row with availability text, countdown and live input arrows. New Wheel status and input progress option defaults on. In-game visual validation pending. Optional Select on Release remains off by default. "
+    description = (f"Revision {REVISION}: CANARY: Restores the previous wheel visuals. Adds native selection sounds, size presets and independent icon/label sizing, native background opacity, grouped settings and an illustrated guide. Optional Select on Release remains off by default. "
                    'Input interval applies to both Confirm and release sequences (0-250 ms, default 70). '
                    'Native and expanded wheels gray and dim icons during cooldown or delivery. '
                    'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '

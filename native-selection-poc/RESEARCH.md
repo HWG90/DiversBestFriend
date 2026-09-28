@@ -392,3 +392,21 @@ Suppress the separate wheel caption/timer only when detail preparation succeeds.
 Detail guard failure hides the copy and preserves the old caption/timer, without
 disabling selection. Tests cover selection/empty selection, centered transforms,
 mode switching, options and original-widget isolation. Live rendering is pending.
+
+
+## Canary R33: rollback, audio and layout controls
+
+R32 detail feedback was rejected visually and removed. UI sound dispatcher
+1327F50 ignores incoming RCX and consumes EDX as the event ID. Native wheel
+mode 1/2 uses 39425A55 on target change (182A908..182A92D) and DD274583
+for its action-9 UI cue (182A7D2..182A80E). R33 uses these for navigation
+and job acceptance, not as proof of equip. Guarded entry/call-site/table bytes
+and required engine/game pointers precede the call. Lua audio failure is isolated.
+The existing native input handler's gameplay sounds are not suppressed.
+
+Root scale adjusts native/expanded wheels and their cursor together; child icon
+and center label scales remain independently configurable. Cards only change
+radial spacing. Settings use the documented gap field and prefixed groups; no
+unsupported dynamic-hide API is invented. Presets derive effective values and
+preserve custom slider settings. Tests cover cue lifecycle, bounds, grouping,
+presets and native transform routing. Sound and visual results need live tests.

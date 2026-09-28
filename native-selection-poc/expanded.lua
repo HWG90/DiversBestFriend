@@ -116,6 +116,7 @@ local function expanded_wheel(b,scope,input)
             assert(owned(),'Expanded ownership mismatch')
             local center=snapshot.center or {0,0}
             b.set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
+            local size=radial.wheel_scale or 1;b.set(address,'scale',{size,size})
             for i=1,16 do
                 local turn,stretch,wedge,icon=slot(i)
                 assert(b.pointer(turn+0xf0)==address and b.pointer(stretch+0xf0)==turn and
@@ -126,6 +127,7 @@ local function expanded_wheel(b,scope,input)
                     local angle,scale,pos=expanded_geometry(#rows,i)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
+                local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
                 local row=rows[i]
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then

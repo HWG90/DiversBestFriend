@@ -83,12 +83,18 @@ local function emote_wheel(b,scope,input)
             visible(address+0xf50,0) -- native emote-action hint does not apply
             local center=snapshot.center or {0,0}
             b.set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
+            local size=radial.wheel_scale or 1
+            b.set(address,'scale',{size,size})
+            local text=radial.label_scale or 1
+            b.set(address+0xc98,'scale',{text,text})
+            b.set(address+0xf50,'scale',{text,text})
             -- Original HUD remains visible; only independently owned icons change.
             for i=0,7 do
                 local row=page_rows[i+1]
                 local icon=address+0x1208+i*0x158
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
+                local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
@@ -114,6 +120,7 @@ local function emote_wheel(b,scope,input)
         scope.context_scope(parent,function()
             local show=index~=nil and not cursor_only
             visible(address+0x488,cursor_only and 0 or 1)
+            opacity(address+0x488,radial.native_opacity or 1)
             visible(address+0x5e0,show and 1 or 0)
             visible(address+0x890,show and 1 or 0)
             visible(address+0x738,(show or cursor_only) and 0 or 1)

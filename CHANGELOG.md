@@ -1,5 +1,14 @@
 # Changelog
 
+## Canary R33 - Polish
+
+- Restore the pre-R32 wheel visuals and remove the centered detail card.
+- Add native selection sounds with repeat throttling and isolated failure handling.
+- Add layout size presets, wheel/icon/label sizing and native background opacity.
+- Group options into Selection, Appearance, Controller and Advanced while retaining saved IDs.
+- Add an illustrated setup guide, controller examples and status troubleshooting.
+- Automated tests pass; audio and new layout sizing need live verification.
+
 ## Canary R32 - Wheel Feedback
 
 - Add selected native-row feedback to native and expanded wheel centers: native availability text, countdown and live input arrows.

@@ -1,15 +1,14 @@
-local api={api=1,revision=32,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=33,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
-local controller,failed,registered,last_status
+local controller,failed,last_status
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
-local wheel,expanded,release_selection,release_registered
+local wheel,expanded,release_selection
 local select_on_release=false
-local detail_registered,show_details=nil,true
-local interval_registered,input_interval_ms=nil,70
+local input_interval_ms=70
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -20,7 +19,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R32 - Wheel Feedback\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R33 - Polish\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -32,14 +31,6 @@ local function selection_report(message)
     if #selection_events>12 then table.remove(selection_events,1) end
     api.last_selection=message
 end
-local offset_registered,mode_registered,layout_registered,color_registered
-local wedge_registered={}
-local wedge_options={
-    {key='wedge_darkness',label='Expanded wedge darkness (%)',default=70,
-        description='Expanded wedges only. Darkens the unselected background; 0 keeps the original gray, 100 makes it black. The selected sector stays yellow.'},
-    {key='wedge_opacity',label='Expanded wedge opacity (%)',default=75,
-        description='Expanded wedges only. Background opacity: 0 is transparent, 100 is opaque. Empty sectors stay fainter and the selected sector stays visible. Original appearance: darkness 0, opacity 30.'},
-}
 local migration_checked,migrate_expanded
 local mode_names={'Native wheel','Keybindings - list','Experimental'}
 local function report(status,force)
@@ -51,12 +42,11 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' Canary R32 - Wheel Feedback\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R33 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
             file:write('pointing='..tostring(api.pointing_status)..'\n')
-            file:write('wheel_details='..tostring(show_details)..'; detail_status='..tostring(api.detail_status)..'\n')
             file:write('mode='..mode_names[api.mode]..'; experimental_layout='..api.experimental_layout..'\n')
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
@@ -69,32 +59,11 @@ local function report(status,force)
         end
     end)
 end
+local settings_owner,settings_state
+local sound_feedback,sounds_enabled
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
-    if detail_registered~=menu then
-        if menu.register_option('native_stratagem_radial.wheel_details',{
-            type='toggle',mod=MOD_NAME,label='Wheel status and input progress',default=true,
-            description='Native and expanded wheels: show the selected stratagem using an original-game row with status, countdown and live input arrows.'}) then detail_registered=menu end
-    end
-    if detail_registered==menu then show_details=menu.get('native_stratagem_radial.wheel_details')~=false end
-    if interval_registered~=menu then
-        if menu.register_option('native_stratagem_radial.input_interval_ms',{
-            type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
-            description='Delay between directions for Confirm and Select on Release. 0 sends one direction per frame. Changes apply to the next code.'}) then interval_registered=menu end
-    end
-    if interval_registered==menu then
-        local value=menu.get('native_stratagem_radial.input_interval_ms')
-        if type(value)=='number' and value==value and value>=0 and value<=250 then input_interval_ms=value end
-    end
-    if release_registered~=menu then
-        if menu.register_option('native_stratagem_radial.select_on_release',{
-            type='toggle',mod=MOD_NAME,label='Select on Release',default=false,
-            description='Radial modes only: use a Hold stratagem-menu binding, point, then release to select. No separate Confirm binding required. Center the pointer to cancel. List mode still requires Confirm.'}) then release_registered=menu end
-    end
-    if release_registered==menu then
-        select_on_release=menu.get('native_stratagem_radial.select_on_release')==true
-    end
     if migration_checked~=menu then
         migration_checked=menu
         migrate_expanded=menu.get('native_stratagem_radial.selection_mode')==4
@@ -117,75 +86,17 @@ local function options()
             end
         end
     end
-    if registered~=menu then
-        local ok=menu.register_option('native_stratagem_radial.enabled',{
-            type='toggle',mod=MOD_NAME,label='Enable Mod',default=true,
-            description='Enable the selected menu mode. Confirm enters the highlighted stratagem code.'})
-        if ok then registered=menu end
-    end
-    if mode_registered~=menu then
-        if menu.register_option('native_stratagem_radial.selection_mode',{
-            type='choice',mod=MOD_NAME,label='Selection mode',
-            choices={'Native wheel','Keybindings - list','Experimental'},default=1,
-            description='Native wheel: eight slots with mouse or stick selection. List: Next/Previous and Confirm with camera control. Experimental: choose Cards or Expanded wedges below.'}) then mode_registered=menu end
-    end
-    if mode_registered==menu then
-        local value=menu.get('native_stratagem_radial.selection_mode')
-        if value==1 or value==2 or value==3 then api.mode=value end
-    end
-    if layout_registered~=menu then
-        if menu.register_option('native_stratagem_radial.experimental_layout',{
-            type='choice',mod=MOD_NAME,label='Experimental layout',
-            choices={'Cards - copied list rows','Expanded wedges'},default=1,
-            description='Experimental mode: up to 16 Cards or Expanded wedges. Point with the mouse or stick, then Confirm or use Select on Release.'}) then layout_registered=menu end
-    end
-    if layout_registered==menu then
-        local value=menu.get('native_stratagem_radial.experimental_layout')
-        if value==1 or value==2 then api.experimental_layout=value end
-    end
-    if migrate_expanded and mode_registered==menu and layout_registered==menu then
+    if settings_owner~=menu then settings_owner=menu;settings_state={registered={}} end
+    local values=canary_settings(menu,settings_state,radial)
+    api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
+    select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
+    if migrate_expanded then
         api.mode,api.experimental_layout=3,2
-        if type(menu.set)=='function' then
-            local layout_ok=menu.set('native_stratagem_radial.experimental_layout',2)
-            if layout_ok and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
-        end
-    end
-    if color_registered~=menu then
-        if menu.register_option('native_stratagem_radial.full_color_icons',{
-            type='toggle',mod=MOD_NAME,label='Full-color stratagem icons',default=true,
-            description='Use full-color icons on the wheels. Off shows the raw red/green icons. Cards keep their original colors; cooldown icons remain gray.'}) then color_registered=menu end
-    end
-    if color_registered==menu then
-        local value=menu.get('native_stratagem_radial.full_color_icons')
-        if type(value)=='boolean' then radial.full_color=value end
-    end
-    for _,spec in ipairs(wedge_options) do
-        local id='native_stratagem_radial.'..spec.key
-        if wedge_registered[id]~=menu then
-            if menu.register_option(id,{type='slider',mod=MOD_NAME,
-                label=spec.label,min=0,max=100,step=5,default=spec.default,
-                description=spec.description}) then wedge_registered[id]=menu end
-        end
-        if wedge_registered[id]==menu then
-            local value=menu.get(id)
-            if type(value)=='number' and value>=0 and value<=100 then radial[spec.key]=value end
-        end
-    end
-    if offset_registered~=menu then
-        if menu.register_option('native_stratagem_radial.vertical_offset',{
-            type='slider',mod=MOD_NAME,label='Radial vertical offset (down)',
-            min=-600,max=600,step=25,default=0,
-            description='Fine-tune automatic viewport centering. Leave at 0 for screen center; positive values move downward. Apply after adjusting.'}) then offset_registered=menu end
-    end
-    if offset_registered==menu then
-        local value=menu.get('native_stratagem_radial.vertical_offset')
-        if type(value)=='number' and value>=-600 and value<=600 then radial.vertical_offset=value end
-    end
-    if registered==menu then
-        local value=menu.get('native_stratagem_radial.enabled')
-        if type(value)=='boolean' then api.enabled=value end
+        if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
+            and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
     end
 end
+
 local function bindings()
     local menu=rawget(_G,'ModBindingsMenu')
     if type(menu)~='table' or menu.api~=1 or menu.version~=2 then
@@ -218,6 +129,7 @@ local function step()
             camera=camera_capture(backend)
             input=input_backend(backend)
             selection=selection_controller(input,selection_report)
+            sound_feedback=selection_feedback(backend,selection_report)
             release_selection=release_controller(input,selection_report)
             duplicates=duplicate_cards(backend)
             pointing=native_pointing(backend)
@@ -245,7 +157,6 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        local original_snapshot=snapshot
         local vector
         if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
@@ -295,6 +206,8 @@ local function step()
         release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if release_selection.job then selection.selected=release_selection.job.address end
+        sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
+            release_selection.job or selection.job,now,api.mode==2)
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -322,19 +235,7 @@ local function step()
                     if row.address==selection.selected then selected_row=row;break end
                 end
             end
-            local detail_shown=false
-            if not legacy then
-                if show_details and selected_row then
-                    local detail_ok,result=pcall(function()
-                        return duplicates.detail(original_snapshot,input.view_context(),dt,selected_row)
-                    end)
-                    detail_shown=detail_ok and result==true
-                    if detail_ok then api.detail_status=detail_shown and 'native row visible' or 'no matching row' end
-                    if not detail_ok then duplicates.hide();api.detail_status=tostring(result) end
-                else duplicates.hide() end
-            end
-            if detail_shown then wheel.caption(nil) end
-            wheel.timer(not detail_shown and selected_row or nil)
+            wheel.timer(selected_row)
         end
         display.step(api.enabled,snapshot or {open=false})
         if was_open then native_checkpoint('layout returned') end

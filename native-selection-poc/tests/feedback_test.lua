@@ -1,0 +1,17 @@
+local f=assert(io.open('native-selection-poc/feedback.lua'));local source=f:read('*a');f:close()
+local make=assert(loadstring(source..'\nreturn selection_feedback'))()
+local events={};local b={ui_sound=function(e) events[#events+1]=e end}
+local c=make(b,function() end)
+local s={identity=1,open=true,rows={{address=1,entry=0,kind=3},{address=2,entry=1,kind=33}}}
+c.step(true,s,1,nil,0,true);assert(#events==0,'initial list highlight is silent')
+c.step(true,s,2,nil,100,true);assert(events[1]=='move')
+c.step(true,s,2,nil,200,true);assert(#events==1)
+local job={};c.step(true,s,2,job,300,true);assert(events[2]=='confirm')
+c.step(true,s,2,job,400,true);assert(#events==2,'accepted job sounds once')
+c.step(false,s,1,nil,500,false);c.step(true,s,nil,nil,600,false)
+c.step(true,s,1,nil,700,false);assert(events[3]=='move')
+c.step(true,s,2,nil,710,false);assert(#events==3,'throttles boundary flicker')
+s.open=false;c.step(true,s,2,{},800,false);assert(events[4]=='confirm','release job may start after close')
+local errors=0;local bad=make({ui_sound=function() error('no audio') end},function() errors=errors+1 end)
+bad.step(true,s,nil,{},0,false);bad.step(true,s,nil,{},100,false);assert(errors==1,'audio failure is isolated')
+print('Selection sounds: target changes, held jobs, throttle, release and isolated failure passed.')

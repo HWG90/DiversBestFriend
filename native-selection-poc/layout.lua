@@ -54,6 +54,7 @@ function radial.layout(rows,center)
         local angle = math.pi / 2 - (index - 1) * 2 * math.pi / count
         local scale = count > 10 and 0.65 or 0.8
         local rx, ry = count > 10 and 550 or 470, count > 10 and 330 or 280
+        local wheel=radial.wheel_scale or 1;rx,ry=rx*wheel,ry*wheel
         result[index] = {address=row.address, scale={scale,scale},
             position={center[1]+math.cos(angle)*rx, center[2]+math.sin(angle)*ry}}
     end

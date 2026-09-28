@@ -9,8 +9,6 @@ local snapshot={identity=1,open=true,rows={{address=10,kind=3},{address=20,kind=
 local logs={}
 local mode,enabled,experimental_layout=2,true,1
 local full_color=true
-local details=false
-local detail_selected,detail_calls=nil,0
 local release_enabled=false
 local release_down,release_calls=true,0
 local wedge_darkness,wedge_opacity=70,75
@@ -22,6 +20,8 @@ local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
+env.canary_settings=assert(loadstring(source('settings.lua')..'\nreturn canary_settings'))()
+env.selection_feedback=assert(loadstring(source('feedback.lua')..'\nreturn selection_feedback'))()
 env.release_controller=make_release
 env.radial.controller=function()
     return {step=function() draws=draws+1 end,restore=function() end,count=2,status='drawing'}
@@ -39,7 +39,6 @@ env.ModOptionsMenu={api=1,register_option=function(id,spec)
     if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3 and spec.default==1) end
     return true
 end,get=function(id)
-    if id:find('wheel_details',1,true) then return details end
     if id:find('select_on_release',1,true) then return release_enabled end
     if id:find('selection_mode',1,true) then return mode end
     if id:find('enabled',1,true) then return enabled end
@@ -64,7 +63,7 @@ env.duplicate_cards=function() return {prepare=function(s)
     prepares=prepares+1;copies=copies+1
     local rows={};for i,row in ipairs(s.rows) do rows[i]={address=row.address+100,kind=row.kind} end
     return {identity=s.identity,open=s.open,rows=rows}
-end,detail=function(_,_,_,row) detail_selected=row;detail_calls=detail_calls+1;return true end,hide=function() detail_selected=nil end} end
+end,hide=function() end} end
 env.emote_wheel=function()
     return {prepare=function(s)
         prepares=prepares+1;return {identity=s.identity,open=s.open,rows=s.rows,pointer_only=true},false
@@ -183,15 +182,3 @@ tick();assert(release_calls==1,'no repeated selection on closed frames')
 mode=2;release_down=true;snapshot.open=true;tick();release_down=false;snapshot.open=false;tick()
 assert(release_calls==1,'list mode never confirms on release')
 print('Select on Release integration passed: opt-in default, closed-frame delivery, once-only and list exclusion.')
-
--- Detail feedback is wheel-only and follows the current selected row.
-mode=1;enabled=true;focus=true;details=true;release_enabled=false;snapshot.open=true;buttons.confirm=false;vector={0,1};tick();tick()
-assert(detail_calls>0 and detail_selected and detail_selected.address==env.radial.selected)
-assert(timer_row==nil and caption==nil,'detail replaces duplicate center caption/countdown')
-details=false;tick();assert(detail_selected==nil,'option hides owned panel')
-local detail_before=detail_calls;mode=2;details=true;tick()
-assert(detail_calls==detail_before,'list keeps original feedback')
-
-mode=3;experimental_layout=2;vector={1,0};tick();tick()
-assert(detail_calls>detail_before and detail_selected,'expanded wedges include the detail panel')
-vector={0,0};tick();assert(detail_selected==nil,'center dead zone hides stale details')

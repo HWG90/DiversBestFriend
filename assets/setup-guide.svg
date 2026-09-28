@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="370" viewBox="0 0 1080 370">
+<rect width="1080" height="370" rx="16" fill="#12191d"/>
+<g font-family="Arial,sans-serif" fill="#f3f0d7"><text x="32" y="42" font-size="23" font-weight="bold">DIVER'S BEST FRIEND CANARY • QUICK SETUP</text>
+<text x="32" y="68" font-size="13" fill="#b3bfc3">Illustrated workflow — not a screenshot of Arsenal or the game</text>
+<g fill="#223038" stroke="#53646e"><rect x="32" y="94" width="310" height="242" rx="12"/><rect x="385" y="94" width="310" height="242" rx="12"/><rect x="738" y="94" width="310" height="242" rx="12"/></g>
+<g fill="#ffe55a" font-size="20" font-weight="bold"><text x="52" y="128">1 / INSTALL</text><text x="405" y="128">2 / CHOOSE</text><text x="758" y="128">3 / SELECT</text></g>
+<g font-size="16"><text x="52" y="166">Close the game</text><text x="52" y="195">Loader + Options + Bindings</text><text x="52" y="224">Import ONE addon revision</text><text x="52" y="253">Deploy → Restart</text><text x="52" y="302" fill="#b3bfc3">Canary replaces the stable addon.</text>
+<text x="405" y="166">MODS → Diver's Best Friend</text><text x="405" y="195">Selection / Mode</text><text x="405" y="224">Appearance / Preset</text><text x="405" y="253">APPLY</text><text x="405" y="302" fill="#b3bfc3">Custom uses the size sliders.</text>
+<text x="758" y="166">Hold menu → Point</text><text x="758" y="195">Confirm OR optional release</text><text x="758" y="224">Wait for the input sequence</text><text x="758" y="253">Throw the beacon normally</text><text x="758" y="302" fill="#b3bfc3">List mode always uses Confirm.</text></g>
+<g fill="#ffe55a" font-size="28"><text x="352" y="224">›</text><text x="705" y="224">›</text></g></g></svg>
