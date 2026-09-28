@@ -171,6 +171,10 @@ local native_guards = {
     {name='widget_transform',rva=0x144a40e,bytes='\xf3\x0f\x10\x79\x14\x48\x8b\xd9\xf3\x0f\x10\x51\x24\x0f\x57\x15\xce\x1b\xf8\x00\xf3\x0f\x10\x49\x28\x0f\x57\x0d\xc2\x1b\xf8\x00\xf3\x0f\x59\x51\x3c\x48\x8b\x81\xf0\x00\x00\x00\xf3\x0f\x59\x49\x40\x48\x89\x54\x24\x58\xf3\x0f\x10\x5c\x24\x58\xf3\x0f\x10\x64\x24\x5c\xf3\x0f\x59\x49\x18\xf3\x0f\x59\xd7\xf3\x0f\x11\x7c\x24\x54\xf3\x0f\x58\x59\x04\xf3\x0f\x58\x61\x08\xf3\x0f\x58\xda\xf3\x0f\x58\xe1\xf3\x0f\x11\x5c\x24\x24\xf3\x0f\x11\x64\x24\x44\x48\x85\xc0\x74\x33\x48\x8b\x40\x24\x48\x89\x44\x24\x58\xf3\x0f\x10\x44\x24\x58\xf3\x0f\x10\x4c\x24\x5c\xf3\x0f\x59\x41\x2c\xf3\x0f\x59\x49\x30\xf3\x0f\x58\xd8\xf3\x0f\x58\xe1\xf3\x0f\x11\x5c\x24\x24\xf3\x0f\x11\x64\x24\x44'},
     {name='widget_measure',rva=0x144bd60,bytes='\x48\x83\xec\x28\xf3\x0f\x10\x41\x0c\x4c\x8b\xc9\xf3\x0f\x10\x49\x10\xf3\x0f\x59\x41\x1c\x8b\x91\xb8\x00\x00\x00\xf3\x0f\x59\x49\x20\xf3\x0f\x11\x44\x24\x30\xf3\x0f\x11\x4c\x24\x34\x48\x8b\x44\x24\x30\x48\x89\x41\x24'},
     {name='viewport_parent',rva=0x12f0aa1,bytes='\x49\x8b\xd7\x48\x8b\xce\xe8\x14\xbb\x15\x00\x48\x8b\xce\xe8\x0c\xb8\x15\x00'},
+    {name='scramble_query',rva=0xa10820,bytes='\x4c\x8b\xdc\x56\x41\x54\x41\x55\x41\x57\x48\x81\xec\x98\x00\x00\x00\x48\x8b\x05\xd8\xb7\xc2\x01\x48\x33\xc4\x48\x89\x44\x24\x48\x44\x3b\x05\x05\x34\xa7\x02\xbe\xff\xff\xff\xff\x89\x32\x4c\x8b\xe2\x44\x89\x4c\x24\x28\x4c\x8b\xe9\x48\x89\x54\x24\x20\x0f\x84'},
+    {name='scramble_query_position',rva=0xa1092c,bytes='\x44\x3b\x05\xed\x32\xa7\x02\x4c\x8b\x1d\xce\x5b\x91\x02\x48\x89\x44\x24\x40\x74\x44\x45\x8b\x4b\x48\x41\x8b\xcf\x45\x8b\x53\x50\x45\x0f\xaf\xd0\x41\x8d\x69\xff\x45\x85\xc9\x74\x2c\x49\x8b\x5b\x40\x41\x8b\x7b\x4c\x8b\xc5\x42\x8d\x14\x11\x48\x23\xd0\x8b\x04\xd3\x3b\xc7\x0f\x84\x89\x02\x00\x00\x41\x3b\xc0\x0f\x84\x89\x02\x00\x00\xff\xc1\x41\x3b\xc9\x72\xdc\x8b\xc6\x48\x8b\x1d\x22\x5b\x91\x02\x8b\xc8\x49\x8b\x43\x68\x48\x69\xd1\x08\x03\x00\x00\xf2'},
+    {name='scramble_match_shift',rva=0x66dd94,bytes='\x41\x83\xfd\xff\x74\x28\x8b\xc8\x48\x69\xc1\x38\x12\x00\x00\x46\x03\xb4\x38\x68\xea\x53\x00\xb8\xef\x61\xeb\xdb\x41\xf7\xe6\xc1\xea\x07\x69\xc2\x95\x00\x00\x00\x44\x2b\xf0\x41\xff\xc6'},
+    {name='scramble_match_call',rva=0x66dcf0,bytes='\x48\x8b\x0d\xb9\x87\xcb\x02\x44\x8b\xc3\x8b\xee\x48\x89\x7c\x24\x28\x48\x89\x7c\x24\x20\x8b\x84\xac\xa0\x00\x00\x00\x48\x8d\x14\x40\x48\x03\xd2\x45\x8b\xb4\xd7\x88\x01\x00\x00\x45\x8b\xce\x48\x8d\x54\x24\x50\xe8\xf7\x2a\x3a\x00'},
 }
 
 -- Selection ABI and ownership witnesses from the supported code capture.
@@ -436,6 +440,13 @@ local function native_backend()
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
     end
+    function backend.scramble_effect(effects,key,kind)
+        local result=ffi.new('uint32_t[1]',0xffffffff)
+        -- Same six-argument query as the matcher; optional outputs are null.
+        ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',
+            base+0xa10820)(effects,result,key,kind,0,0)
+        return tonumber(result[0])
+    end
     function backend.request_stratagem_slot(weapon)
         ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
     end
@@ -627,7 +638,6 @@ local function input_backend(b)
         -- Same menu-active bit tested by A8E780; HUD visibility alone is insufficient.
         local menu_active=math.floor(num(avatar+0xfd8)/512)%2==1
         assert(allow_closed or menu_active,'Native input menu is inactive')
-        if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are not supported') end
         local player_context=num(avatar+0x110c)
         -- The matching routine dereferences the corresponding mission payload.
         -- Verify that its context-to-peer resolution maps to this session first.
@@ -647,9 +657,26 @@ local function input_backend(b)
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
             key=key,payload=payload,context=player_context,identity=manager..':'..key,
-            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420}
+            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420,avatar=avatar}
     end
-    local function code(kind)
+    local function code(kind,c)
+        -- Match 66DD24/66DD94: affected kinds use a shifted definition.
+        -- The seed alone does not imply that this particular kind is affected.
+        assert(selectable_kind(kind),'Invalid stratagem kind')
+        -- The query itself dereferences the original definition's category.
+        local source_settings=ptr(base+0x348e8f8)
+        local source_info=ptr(base+0x37cb600+kind*8,4)
+        assert(source_info>=source_settings and source_info+400<=source_settings+80280
+            and num(source_info)==kind,'Invalid definition')
+        local positions=ptr(base+0x3326508)
+        local position_index=lookup(positions,0x40,c.key,65536)
+        read(ptr(positions+0x68)+position_index*0x308+0x2e0,12)
+        local effects=ptr(base+0x33264b0)
+        local effect=b.scramble_effect(effects,c.key,kind)
+        assert(type(effect)=='number' and effect>=0 and effect<=4294967295 and effect%1==0,'Invalid scramble effect')
+        if effect~=4294967295 then
+            kind=((kind+num(c.avatar+0x11b8))%4294967296)%149+1
+        end
         assert(selectable_kind(kind),'Invalid stratagem kind')
         local settings=ptr(base+0x348e8f8)
         -- Packed settings descriptors can be 4 mod 8 (live Maelstrom kind 50).
@@ -711,11 +738,16 @@ local function input_backend(b)
         local found=false
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Stratagem no longer belongs to the local mission list')
-        return {identity=c.identity,component=c.component,kind=kind,code=code(kind),sent=0}
+        return {identity=c.identity,component=c.component,kind=kind,code=code(kind,c),sent=0}
     end
     function out.advance(job)
         local c=context(true)
         assert(c.identity==job.identity and c.component==job.component,'Local avatar changed')
+        local current_code=code(job.kind,c)
+        assert(#current_code==#job.code,'Stratagem code changed; close and reopen the menu')
+        for i,d in ipairs(current_code) do
+            assert(d==job.code[i],'Stratagem code changed; close and reopen the menu')
+        end
         assert(num(c.component)==job.sent and num(c.component+0x14)==0,'Native input changed; cancelled')
         for i=1,job.sent do assert(read(c.component+3+i,1):byte()==job.code[i],'Native sequence changed') end
         idle_actions(c)
@@ -769,7 +801,7 @@ local function input_backend(b)
         local found=false
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Released stratagem no longer belongs to the mission')
-        code(kind)
+        code(kind,c)
         local controls=ptr(base+0x347cf18)
         local menu_action=read(controls+808+32*(97*5),1)
         assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')
@@ -1666,7 +1698,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=30,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=31,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1687,7 +1719,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R30 - Beacon Handoff\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R31 - Scrambled Codes\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1718,7 +1750,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R30 - Beacon Handoff\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R31 - Scrambled Codes\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')

@@ -12,7 +12,7 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 
 [Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) · [Installation and controls](docs/INSTALLATION.md) · [Credits](CREDITS.md) · [Development](docs/DEVELOPMENT.md)
 
-R30 clears the stale return-to-primary weapon request when reopening the menu for the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R30 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r30) needs in-game controller validation.
+R31 adds native scrambled-code resolution for Confirm and the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R31 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r31) needs in-game scrambling and controller validation. If the required code changes during entry, close and reopen the menu before selecting again. Native availability restrictions still apply.
 
 ## What it does
 

@@ -81,7 +81,6 @@ local function input_backend(b)
         -- Same menu-active bit tested by A8E780; HUD visibility alone is insufficient.
         local menu_active=math.floor(num(avatar+0xfd8)/512)%2==1
         assert(allow_closed or menu_active,'Native input menu is inactive')
-        if activation then assert(num(avatar+0x11b8)==0,'Scrambled stratagem codes are not supported') end
         local player_context=num(avatar+0x110c)
         -- The matching routine dereferences the corresponding mission payload.
         -- Verify that its context-to-peer resolution maps to this session first.
@@ -101,9 +100,26 @@ local function input_backend(b)
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
             key=key,payload=payload,context=player_context,identity=manager..':'..key,
-            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420}
+            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420,avatar=avatar}
     end
-    local function code(kind)
+    local function code(kind,c)
+        -- Match 66DD24/66DD94: affected kinds use a shifted definition.
+        -- The seed alone does not imply that this particular kind is affected.
+        assert(selectable_kind(kind),'Invalid stratagem kind')
+        -- The query itself dereferences the original definition's category.
+        local source_settings=ptr(base+0x348e8f8)
+        local source_info=ptr(base+0x37cb600+kind*8,4)
+        assert(source_info>=source_settings and source_info+400<=source_settings+80280
+            and num(source_info)==kind,'Invalid definition')
+        local positions=ptr(base+0x3326508)
+        local position_index=lookup(positions,0x40,c.key,65536)
+        read(ptr(positions+0x68)+position_index*0x308+0x2e0,12)
+        local effects=ptr(base+0x33264b0)
+        local effect=b.scramble_effect(effects,c.key,kind)
+        assert(type(effect)=='number' and effect>=0 and effect<=4294967295 and effect%1==0,'Invalid scramble effect')
+        if effect~=4294967295 then
+            kind=((kind+num(c.avatar+0x11b8))%4294967296)%149+1
+        end
         assert(selectable_kind(kind),'Invalid stratagem kind')
         local settings=ptr(base+0x348e8f8)
         -- Packed settings descriptors can be 4 mod 8 (live Maelstrom kind 50).
@@ -165,11 +181,16 @@ local function input_backend(b)
         local found=false
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Stratagem no longer belongs to the local mission list')
-        return {identity=c.identity,component=c.component,kind=kind,code=code(kind),sent=0}
+        return {identity=c.identity,component=c.component,kind=kind,code=code(kind,c),sent=0}
     end
     function out.advance(job)
         local c=context(true)
         assert(c.identity==job.identity and c.component==job.component,'Local avatar changed')
+        local current_code=code(job.kind,c)
+        assert(#current_code==#job.code,'Stratagem code changed; close and reopen the menu')
+        for i,d in ipairs(current_code) do
+            assert(d==job.code[i],'Stratagem code changed; close and reopen the menu')
+        end
         assert(num(c.component)==job.sent and num(c.component+0x14)==0,'Native input changed; cancelled')
         for i=1,job.sent do assert(read(c.component+3+i,1):byte()==job.code[i],'Native sequence changed') end
         idle_actions(c)
@@ -223,7 +244,7 @@ local function input_backend(b)
         local found=false
         for i=0,n-1 do if num(c.payload+0x188+i*0x30)==kind then found=true end end
         assert(found,'Released stratagem no longer belongs to the mission')
-        code(kind)
+        code(kind,c)
         local controls=ptr(base+0x347cf18)
         local menu_action=read(controls+808+32*(97*5),1)
         assert(menu_action=='\0' or menu_action=='\1','Invalid native controls menu action')

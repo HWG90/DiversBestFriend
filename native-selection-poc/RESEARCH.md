@@ -352,3 +352,26 @@ component and slot 5 only if the requested slot differs. This is the same call
 made by the opener at A8F88F; it is not a weapon-ID write or a spawn operation.
 Signatures guard both the function and these opener sites. The comparison
 explains the failure; the patched behavior still requires a live test.
+
+
+## R31: native scrambled-code resolution
+
+The old activation guard rejected any nonzero avatar+0x11B8. That field is a
+seed, not per-kind effect membership. Matcher 66D8C0 calls A10820 with the
+manager at game+33264B0, a uint32 output, local avatar key, original kind, and
+two null optional outputs. A result other than UINT32_MAX selects definition
+(((kind + seed) modulo 2^32) modulo 149) + 1; otherwise it uses the original
+definition. See 66DCF0..66DDF4 and 66E08A..66E161. A10820 checks the kind's
+category and effect volume membership using the local position.
+
+The adapter validates the original definition and local position-map lookup
+at game+3326508 (table+40, records+68, stride308, position+2E0) before calling.
+The selected identity remains unchanged; only its input sequence is resolved.
+Every input rechecks the resolved sequence, so changed effects cancel without
+sending another stale direction. No seed, effect, availability or matched-kind
+field is written. Release cancellation restores its latch through existing
+cleanup. Native availability rejection remains authoritative.
+
+Fixtures cover nonzero seeds without active effects, shifted code lengths,
+entering/leaving effects, both selection paths and release cleanup/recovery.
+The reported spire and scrambler encounters still need live verification.

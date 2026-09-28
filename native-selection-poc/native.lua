@@ -186,6 +186,13 @@ local function native_backend()
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
     end
+    function backend.scramble_effect(effects,key,kind)
+        local result=ffi.new('uint32_t[1]',0xffffffff)
+        -- Same six-argument query as the matcher; optional outputs are null.
+        ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',
+            base+0xa10820)(effects,result,key,kind,0,0)
+        return tonumber(result[0])
+    end
     function backend.request_stratagem_slot(weapon)
         ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
     end

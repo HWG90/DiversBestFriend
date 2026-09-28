@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [R30 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r30) is `DiversBestFriend-R30-BeaconHandoff.zip`. This is the current stable release.
+4. The current stable release is [R30](https://github.com/HWG90/DiversBestFriend/releases/tag/r30), `DiversBestFriend-R30-BeaconHandoff.zip`. The [R31 scrambling test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r31) is `DiversBestFriend-R31-ScrambledCodes.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -22,8 +22,8 @@ In the escape menu's **MODS** tab, select **Diver's Best Friend**. Change settin
 | Setting | Effect |
 | --- | --- |
 | Enable | Enables/disables the addon |
-| Selection mode | Native wheel, Keybindings — list, or Experimental |
-| Experimental layout | Cards — copied list rows, or Expanded wedges |
+| Selection mode | Native wheel, Keybindings â€” list, or Experimental |
+| Experimental layout | Cards â€” copied list rows, or Expanded wedges |
 | Full-color stratagem icons | Uses the native channel-mask colors for wheel icons; copied rows retain their native colors |
 | Expanded wedge darkness (%) | Expanded wedges only: 0 original gray to 100 black; default **70** |
 | Expanded wedge opacity (%) | Expanded wedges only: 0 transparent to 100 opaque; default **75** |
@@ -46,7 +46,7 @@ Use bindings that do not interfere with your other controls. Configure the contr
 Open the regular stratagem menu with your normal game binding:
 
 - **Native wheel:** point with mouse/stick and press Confirm. There are eight slots per page. Next/Previous changes pages when needed.
-- **Keybindings — list:** Next moves down the list, Previous moves up, and both wrap. Press Confirm for the highlighted entry. Camera control remains available.
+- **Keybindings â€” list:** Next moves down the list, Previous moves up, and both wrap. Press Confirm for the highlighted entry. Camera control remains available.
 - **Experimental / Cards:** point at a copied native row card and Confirm. Up to 16 cards, no pages.
 - **Experimental / Expanded wedges:** point at a sector and Confirm. Up to 16 entries on one wheel, no pages.
 
@@ -79,9 +79,9 @@ No separate setting is needed. Countdown seconds are rounded up to avoid showing
 
 Logs live in `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/`:
 
-- `DiversBestFriend.log` — status, selected mode/layout, last confirmation, centering, and offset.
-- `DiversBestFriend-native.log` — native-call checkpoints, useful after a crash.
-- `BingusSharedLoader.log` — loading/dependency diagnostics.
+- `DiversBestFriend.log` â€” status, selected mode/layout, last confirmation, centering, and offset.
+- `DiversBestFriend-native.log` â€” native-call checkpoints, useful after a crash.
+- `BingusSharedLoader.log` â€” loading/dependency diagnostics.
 
 Review logs before attaching them publicly. Include the release revision, game build, resolution, HUD scale, mode/layout, and steps to reproduce. r21 modes were author-tested in-game; r22's centering change is regression-tested but awaits a specific live placement check.
 
@@ -91,7 +91,7 @@ Close the game, disable/remove the Diver's Best Friend addon in your manager, an
 
 ## Optional Select on Release
 
-Install the [R30 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r30), `DiversBestFriend-R30-BeaconHandoff.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
+Install the [R31 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r31), `DiversBestFriend-R31-ScrambledCodes.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
 
 ### Input interval (ms)
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## R31 - Scrambled Codes
+
+- Resolve scrambled sequences using the native per-stratagem effect query and code-definition remapping, for both Confirm and Select on Release.
+- Stop input if the required code changes mid-sequence; reopen the menu to retry without reloading the mod.
+- Preserve native availability checks and release-binding cleanup.
+- Add regression tests for scrambled sequences, effect transitions, and recovery. Live encounter verification remains pending.
+
 ## R30 - Beacon Handoff
 
 - Clear the stale return-to-primary request after release by reissuing the native beacon-slot request when needed.

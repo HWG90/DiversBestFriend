@@ -48,11 +48,20 @@ for i,c in ipairs(cases) do
     ptr(base+0x37cb600+c[1]*8,info);num(info,c[1]);ptr(info+0x40,code);num(info+0x48,#c[2])
     for j,d in ipairs(c[2]) do num(code+(j-1)*4,d) end
 end
+local positions,effects,position_data=0x34000000,0x35000000,0x36000000
+ptr(base+0x3326508,positions);map(positions,0x40,42,1)
+ptr(positions+0x68,position_data);put(position_data+0x308+0x2e0,string.rep('\0',12))
+ptr(base+0x33264b0,effects)
+local scramble_effect=4294967295
 local actions=manager+0xa7aec+0x4118
 for a=0,4 do put(actions+a*32,'\0') end
 local writes,calls,fail,reject=0,0,false,false
 local expected
 local b={base=base,read=read,u32=u32,valid=function(p) return p==hud end}
+function b.scramble_effect(owner,key,kind)
+    assert(owner==effects and key==42 and kind>0 and kind<150)
+    return scramble_effect
+end
 function b.pointer(at) local s=read(at,8); if not s then return nil end; return u32(s,0)+u32(s,4)*4294967296 end
 function b.pulse_byte(at,value)
     assert(at==actions or at==0x32000000+808+32*(97*5) or at==actions+32 or at==actions+64 or at==actions+96 or at==actions+128)
@@ -123,7 +132,22 @@ ptr(tank_slot,tank_info);num(tank_info,49)
 assert(not pcall(input.begin,50),'descriptor identity still checked')
 num(tank_info,50)
 reset();assert(not pcall(input.begin,149),'non-member kind refused')
-num(avatar+0x11b8,1);assert(not pcall(input.begin,33));num(avatar+0x11b8,0)
+-- A persisted seed outside an effect must not reject normal selection.
+num(avatar+0x11b8,1);assert(input.begin(33));num(avatar+0x11b8,0)
+-- Native effect applies per kind; selected identity remains Resupply while
+-- its input code is borrowed from the shifted descriptor (kind 3 here).
+scramble_effect=0;num(avatar+0x11b8,118)
+expected={33,cases[1][2]};local scrambled=input.begin(33)
+for i=1,#expected[2] do assert(input.advance(scrambled)==(i==#expected[2])) end
+reset();scrambled=input.begin(33);local unchanged=writes
+scramble_effect=4294967295
+assert(not pcall(input.advance,scrambled) and writes==unchanged,'leaving effect cancels before another pulse')
+num(avatar+0x11b8,0)
+reset();scrambled=input.begin(33);unchanged=writes
+scramble_effect=0;num(avatar+0x11b8,118)
+assert(not pcall(input.advance,scrambled) and writes==unchanged,'entering effect cancels before another pulse')
+scramble_effect=4294967295;num(avatar+0x11b8,0)
+reset();assert(input.begin(33),'selection recovers without reloading the mod')
 num(avatar+0xfd8,0);assert(not pcall(input.begin,33));num(avatar+0xfd8,512)
 num(avatar+0xfd8,0);num(avatar+0x11b8,1)
 input.decorate(cards)
@@ -210,6 +234,21 @@ for _,failure in ipairs({'owner','rejected','throws'}) do
     assert(read(mapping_table+8,20)==hold_mapping,'failed request restores Hold mapping')
     num(avatar+0x420,42);num(avatar+0x424,5);b.request_stratagem_slot=native_request
 end
+-- Release follows the same scrambled code and restores the latch on a
+-- mid-sequence effect change; the next clean opening can select again.
+armed=release_fixture();scramble_effect=0;num(avatar+0x11b8,118)
+expected={33,cases[1][2]};held_job=input.begin_release(33,armed)
+for i=1,#expected[2] do input.advance_release(held_job) end
+num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+assert(input.release_complete(held_job));input.end_release(held_job,false)
+armed=release_fixture();expected={33,cases[1][2]};held_job=input.begin_release(33,armed)
+input.advance_release(held_job);local pulses_before=writes
+scramble_effect=4294967295
+assert(not pcall(input.advance_release,held_job) and writes==pulses_before)
+input.end_release(held_job,true)
+assert(read(mapping_table+8,20)==hold_mapping,'scramble interruption restores original binding')
+num(avatar+0x11b8,0);armed=release_fixture();held_job=input.begin_release(33,armed)
+input.end_release(held_job,true)
 print('Native release adapter passed: reopen/match, failure cleanup, pulse restoration, overlay/trigger/ownership/membership guards.')
 local starts,advances=0,0
 local fake={begin=function(kind) starts=starts+1;return {kind=kind} end,
