@@ -1655,7 +1655,7 @@ local function options()
     end
     if registered~=menu then
         local ok=menu.register_option('native_stratagem_radial.enabled',{
-            type='toggle',mod=MOD_NAME,label='Enable menu selection',default=true,
+            type='toggle',mod=MOD_NAME,label='Enable Mod',default=true,
             description='Enable the selected menu mode. Confirm enters the highlighted stratagem code.'})
         if ok then registered=menu end
     end
