@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R30 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r30) is `DiversBestFriend-R30-BeaconHandoff.zip`.
+4. The current [R30 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r30) is `DiversBestFriend-R30-BeaconHandoff.zip`. This is the current stable release.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
