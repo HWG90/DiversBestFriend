@@ -101,7 +101,7 @@ local function input_backend(b)
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
             key=key,payload=payload,context=player_context,identity=manager..':'..key,
-            hud=hud,hud_open=hud_open,menu_active=menu_active}
+            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420}
     end
     local function code(kind)
         assert(selectable_kind(kind),'Invalid stratagem kind')
@@ -235,6 +235,21 @@ local function input_backend(b)
                 assert(b.open_input(c.component),'Native game state rejected release selection')
                 reopened=true
                 if b.checkpoint then b.checkpoint('release native opener returned') end
+            end
+            -- Closing on physical release queued the previous weapon. The
+            -- native opener skips its slot-5 request when the beacon is still
+            -- the current weapon, leaving that older request pending. Reissue
+            -- the same native slot request, never a weapon ID or spawn call.
+            local current=context(true)
+            assert(current.identity==c.identity and current.component==c.component,'Release owner changed during reopen')
+            assert(num(current.weapon)==c.key,'Weapon input owner mismatch')
+            local requested=num(current.weapon+4)
+            assert(requested>=1 and requested<=7,'Invalid requested weapon slot')
+            if requested~=5 then
+                if b.checkpoint then b.checkpoint('release beacon slot request enter') end
+                b.request_stratagem_slot(current.weapon)
+                assert(num(current.weapon+4)==5,'Native beacon slot request rejected')
+                if b.checkpoint then b.checkpoint('release beacon slot request returned') end
             end
             return out.begin(kind)
         end)

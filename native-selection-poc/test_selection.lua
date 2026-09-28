@@ -32,6 +32,7 @@ ptr(base+0x346bf98,registry);map(registry,0xf22ec8,7,2);num(registry+0xf32f20+48
 ptr(base+0x3326d20,manager);num(manager+0x70,2);map(manager,0xf8,42,1)
 ptr(manager+0x118,unit);num(unit+8,42)
 local avatar=manager+0x53d8b0+0x1238
+num(avatar+0x420,42);num(avatar+0x424,5)
 local component=avatar+0x8d0;put(component,string.rep('\0',0x38));num(component+0x28,42)
 num(avatar+0xfd8,512);num(avatar+0x11b8,0);num(avatar+0x110c,5)
 map(pm,0xd0,5,1);put(pm+0x2c8+0x38,'local123')
@@ -149,6 +150,11 @@ num(controls+808+32*(97*5)+24,2)
 local ui=0x31000000
 ptr(base+0x347ce28,ui);num(ui+0x429c+20,0);num(actions+24,2)
 local reopened,closed_count=0,0
+local slot_requests=0
+function b.request_stratagem_slot(at)
+    assert(at==avatar+0x420 and u32(read(at,4),0)==42)
+    slot_requests=slot_requests+1;num(at+4,5)
+end
 function b.open_input(at)
     assert(at==component);reopened=reopened+1
     num(avatar+0xfd8,512);put(hud+0x395100+0x38769,'\1');return true
@@ -164,7 +170,9 @@ local function release_fixture()
     return armed
 end
 local armed=release_fixture()
+num(avatar+0x424,1) -- physical release queued the primary weapon
 local held_job=input.begin_release(33,armed)
+assert(slot_requests==1 and u32(read(avatar+0x424,4),0)==5,'reopen cancels the stale primary-weapon request')
 input.hold_release(held_job)
 assert(read(actions,1)=='\0' and u32(read(actions+24,4),0)==0,'Press latch does not inject a menu activation')
 assert(u32(read(mapping_table+16,4),0)==0 and read(mapping_table+28,20)==press_mapping,'Hold converted, existing Press untouched')
@@ -185,6 +193,23 @@ armed.identity='other';assert(not pcall(input.begin_release,33,armed))
 assert(reopened==opened_before,'overlay, non-hold and stale ownership never reopen')
 armed=release_fixture();assert(not pcall(input.begin_release,149,armed))
 assert(reopened==opened_before,'missing mission member never reopens')
+-- Already-requested beacon slots do not reissue; rejected requests roll back.
+armed=release_fixture();local requests_before=slot_requests
+held_job=input.begin_release(33,armed)
+assert(slot_requests==requests_before,'slot 5 is already requested')
+input.end_release(held_job,true)
+local native_request=b.request_stratagem_slot
+for _,failure in ipairs({'owner','rejected','throws'}) do
+    armed=release_fixture();num(avatar+0x424,1)
+    local closes_before=closed_count
+    if failure=='owner' then num(avatar+0x420,99)
+    elseif failure=='rejected' then b.request_stratagem_slot=function() end
+    else b.request_stratagem_slot=function() error('native request failed') end end
+    assert(not pcall(input.begin_release,33,armed),failure)
+    assert(closed_count==closes_before+1,'failed reopen closes the menu')
+    assert(read(mapping_table+8,20)==hold_mapping,'failed request restores Hold mapping')
+    num(avatar+0x420,42);num(avatar+0x424,5);b.request_stratagem_slot=native_request
+end
 print('Native release adapter passed: reopen/match, failure cleanup, pulse restoration, overlay/trigger/ownership/membership guards.')
 local starts,advances=0,0
 local fake={begin=function(kind) starts=starts+1;return {kind=kind} end,

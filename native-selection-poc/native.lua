@@ -186,6 +186,9 @@ local function native_backend()
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
     end
+    function backend.request_stratagem_slot(weapon)
+        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
+    end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end
     ffi.cdef [[

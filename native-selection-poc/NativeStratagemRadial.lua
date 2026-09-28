@@ -243,6 +243,10 @@ native_guards[#native_guards+1]={name='release_guarded_open',rva=0xa8e850,bytes=
 native_guards[#native_guards+1]={name='release_close',rva=0xa8fb50,bytes='\x48\x89\x5c\x24\x08\x48\x89\x6c\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xec\x60\x48\x8b\x05\x9d'}
 native_guards[#native_guards+1]={name='release_hold_test',rva=0xa8ed4e,bytes='\xb9\x05\x00\x00\x00\xe8\x28\x6e\xaf\xff\x44\x8b\xc8\x49\x8d\x81\xff\x01\x00\x00\x48\xc1\xe0\x05\x42\x8b\x8c\x38\x50\x01\x00\x00\x83\xf9\x02\x74\x26\x83\xf9\x09\x74\x21\x32\xc0\xeb\x1f\x3b\xc8\x0f\x85\x4c\xff\xff\xff\x43\x8b\x4c\xc3\x04\xe9\x44\xff\xff\xff\x3b\xc8\x75\x9e\x43\x8b\x44\xc3\x04\xeb\x99\xb0\x01\x49\xc1\xe1\x05\x43\x3a\x84\x39\x18\x41\x00\x00\x74\x05\x39\x75\x14\x74\x59'}
 native_guards[#native_guards+1]={name='release_match_survives',rva=0xa8eda7,bytes='\x74\x05\x39\x75\x14\x74\x59'}
+native_guards[#native_guards+1]={name='release_weapon_request',rva=0xa93e90,bytes='\x4c\x8b\xdc\x55\x57\x48\x8b\xec\x48\x83\xec\x78\x48\x8b\x05\x6d\x81\xba\x01\x48\x33\xc4\x48\x89\x45\xe0\x8b\x01\x48\x8b\xf9\x49\x89\x5b\x10\x33\xdb\x3b\x05\x65\xfd\x9e\x02\x49\x89\x73\x18\x8b'}
+native_guards[#native_guards+1]={name='release_weapon_request_assignment',rva=0xa9401a,bytes='\x8b\x4f\x04\x8d\x41\xff\x83\xf8\x03\x77\x12\x3b\xce\x74\x0e\x8d\x41\xff\x89\x4f\x08\x83\xf8\x02\x77\x03\x89\x4f\x0c\x89\x77\x04\x83\xfe\x03\x75\x43\x44\x8b\x07'}
+native_guards[#native_guards+1]={name='release_opener_slot_guard',rva=0xa8f828,bytes='\x41\x8b\x56\x08\xe8\x6f\x8c\xf1\xff\x83\xf8\x05\x74\x69\x45\x33'}
+native_guards[#native_guards+1]={name='release_opener_slot_call',rva=0xa8f88f,bytes='\x49\x8d\x8d\xd0\xdc\x53\x00\x41\x8d\x52\x05\xe8\xf1\x45\x00\x00'}
 
 -- Supported-build adapter. All drawing remains in the game's native HUD.
 local function native_backend()
@@ -431,6 +435,9 @@ local function native_backend()
     end
     function backend.close_input(component)
         ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+    end
+    function backend.request_stratagem_slot(weapon)
+        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
     end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end
@@ -640,7 +647,7 @@ local function input_backend(b)
         assert(payload,'Local mission payload unavailable')
         return {component=component,actions=manager+index*0xa7aec+0x4118,input_owner=manager+index*0xa7aec+0x150,
             key=key,payload=payload,context=player_context,identity=manager..':'..key,
-            hud=hud,hud_open=hud_open,menu_active=menu_active}
+            hud=hud,hud_open=hud_open,menu_active=menu_active,weapon=avatar+0x420}
     end
     local function code(kind)
         assert(selectable_kind(kind),'Invalid stratagem kind')
@@ -774,6 +781,21 @@ local function input_backend(b)
                 assert(b.open_input(c.component),'Native game state rejected release selection')
                 reopened=true
                 if b.checkpoint then b.checkpoint('release native opener returned') end
+            end
+            -- Closing on physical release queued the previous weapon. The
+            -- native opener skips its slot-5 request when the beacon is still
+            -- the current weapon, leaving that older request pending. Reissue
+            -- the same native slot request, never a weapon ID or spawn call.
+            local current=context(true)
+            assert(current.identity==c.identity and current.component==c.component,'Release owner changed during reopen')
+            assert(num(current.weapon)==c.key,'Weapon input owner mismatch')
+            local requested=num(current.weapon+4)
+            assert(requested>=1 and requested<=7,'Invalid requested weapon slot')
+            if requested~=5 then
+                if b.checkpoint then b.checkpoint('release beacon slot request enter') end
+                b.request_stratagem_slot(current.weapon)
+                assert(num(current.weapon+4)==5,'Native beacon slot request rejected')
+                if b.checkpoint then b.checkpoint('release beacon slot request returned') end
             end
             return out.begin(kind)
         end)
@@ -1644,7 +1666,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=29,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=30,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1665,7 +1687,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R29 - Completion Wait\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R30 - Beacon Handoff\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1696,7 +1718,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R29 - Completion Wait\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R30 - Beacon Handoff\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')

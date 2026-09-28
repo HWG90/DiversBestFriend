@@ -337,3 +337,18 @@ A lease restores exact original records by current bucket/index only when they s
 ## R29: completion handshake
 
 R28 logs show all directions and a matched kind followed by unconditional restoration on the next addon update. This did not prove native equip completion; the user reports cancellation. Native A8F126..A8F39D can defer final consumption while weapon state changes, eventually calling A8FB50 through its native branches. R29 retains the latch until the local menu-active flag clears, logging count/matched/queued (+0/+14/+2C) while waiting. It rejects a lost match while the menu remains active. A two-second post-match deadline prevents indefinite latching. No equip function or matched ID is forced. Native close is a lifecycle acknowledgement, not proof a beacon was equipped; live verification is still needed.
+
+
+## R30: pending weapon request on release
+
+Read-only comparison of working Confirm and failing release showed avatar+0x424
+remaining at requested slot 5 for Confirm, but changing to slot 1 at physical
+menu release. The actual weapon was still slot 5. Native opener A8F570 checks
+the actual weapon at A8F828 and skips its slot request if already 5. Thus the
+pending primary request survived reopening and cancelled the briefly active beacon.
+
+R30 validates the owner at avatar+0x420 and calls native A93E90 with that
+component and slot 5 only if the requested slot differs. This is the same call
+made by the opener at A8F88F; it is not a weapon-ID write or a spawn operation.
+Signatures guard both the function and these opener sites. The comparison
+explains the failure; the patched behavior still requires a live test.

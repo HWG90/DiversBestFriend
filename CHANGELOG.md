@@ -1,5 +1,12 @@
 # Changelog
 
+## R30 - Beacon Handoff
+
+- Clear the stale return-to-primary request after release by reissuing the native beacon-slot request when needed.
+- Validate weapon-request ownership and guard the native function and opener call sites.
+- Preserve opt-in release selection, pacing, completion wait and binding restoration.
+- Add regression coverage for stale requests, already-requested beacon slots and failure cleanup. In-game verification remains pending.
+
 ## R29 - Completion Wait
 
 - Wait for the native menu to finish after a matched code before restoring Hold behavior, instead of restoring one frame later.

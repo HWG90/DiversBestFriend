@@ -9,7 +9,7 @@ Download and install these separately:
 1. [Bingus Shared Loader v18](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), API 1.
 2. [Mod Bindings Menu v2.0](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0).
 3. [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu).
-4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R29 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r29) is `DiversBestFriend-R29-CompletionWait.zip`.
+4. The current [DiversBestFriend release ZIP](https://github.com/HWG90/DiversBestFriend/releases/latest), stable R24; the [R30 test build](https://github.com/HWG90/DiversBestFriend/releases/tag/r30) is `DiversBestFriend-R30-BeaconHandoff.zip`.
 
 Close the game before changing deployed mods. Import the packages into Arsenal, enable them, and deploy. Shared Loader must win the shared startup-resource conflict: its current instructions say last in Arsenal's default order, or first when first-mod priority is enabled. Follow upstream instructions for Purge/Deploy when replacing the loader. Do not keep multiple enabled revisions of this addon or loader.
 
@@ -91,7 +91,7 @@ Close the game, disable/remove the Diver's Best Friend addon in your manager, an
 
 ## Optional Select on Release
 
-Install the [R29 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r29), `DiversBestFriend-R29-CompletionWait.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
+Install the [R30 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r30), `DiversBestFriend-R30-BeaconHandoff.zip`. In MODS > Diver's Best Friend, enable **Select on Release** and Apply. It is off by default. Use a **Hold** stratagem-menu binding: hold, point, release, then throw normally. Center the pointer before releasing to cancel. Applies to all radial layouts; list mode still requires Confirm. Native reopening and controller timing need in-game validation.
 
 ### Input interval (ms)
 
