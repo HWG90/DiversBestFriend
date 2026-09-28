@@ -18,9 +18,17 @@ local function release_controller(input,report)
                 self.status='Release cancelled: HUD changed, timeout or explicit input';report(self.status);self.reset();return
             end
             if job.finished then
+                local checked,done,message=pcall(input.release_complete,job)
+                if not checked then
+                    self.status='Release completion cancelled: '..tostring(done);report(self.status);self.reset();return
+                end
+                if not done then
+                    if self.status~=message then self.status=message;report(message) end
+                    return
+                end
                 local ok,why=pcall(input.end_release,job,false)
                 self.job=nil;blocked=true
-                self.status=ok and 'Release code complete; original menu trigger restored' or 'Release cleanup failed: '..tostring(why)
+                self.status=ok and (message..'; original menu trigger restored') or 'Release cleanup failed: '..tostring(why)
                 report(self.status);return
             end
             local ok,why=pcall(function()
@@ -29,6 +37,7 @@ local function release_controller(input,report)
                     local done,message=input.advance_release(job)
                     self.status=message;report('Release: '..message)
                     job.finished=done;job.next_at=now+job.interval_ms
+                    if done then job.deadline=now+2000 end
                 end
             end)
             if not ok then self.status='Release cancelled: '..tostring(why);report(self.status);self.reset() end

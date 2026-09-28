@@ -265,6 +265,19 @@ local function input_backend(b)
         job.latch.restore(avatar_valid)
         if cancelled and avatar_valid and c.menu_active then b.close_input(c.component) end
     end
+    function out.release_complete(job)
+        local c=context(false,true)
+        assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
+            'Release completion owner changed')
+        local count,matched,queued=num(c.component),num(c.component+0x14),num(c.component+0x2c)
+        local state='menu='..tostring(c.menu_active)..'; count='..count..'; matched='..matched..'; queued='..queued
+        if not c.menu_active then return true,'Native menu finished; '..state end
+        assert(matched==job.kind or queued==job.kind,'Native match disappeared before completion; '..state)
+        -- The native update can wait for weapon/equip state before its normal
+        -- A8FB50 close. Keep Press semantics through that entire transition.
+        out.hold_release(job)
+        return false,'Waiting for native completion; '..state
+    end
     function out.advance_release(job)
         out.hold_release(job)
         return out.advance(job)

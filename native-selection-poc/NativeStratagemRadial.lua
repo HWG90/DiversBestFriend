@@ -804,6 +804,19 @@ local function input_backend(b)
         job.latch.restore(avatar_valid)
         if cancelled and avatar_valid and c.menu_active then b.close_input(c.component) end
     end
+    function out.release_complete(job)
+        local c=context(false,true)
+        assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
+            'Release completion owner changed')
+        local count,matched,queued=num(c.component),num(c.component+0x14),num(c.component+0x2c)
+        local state='menu='..tostring(c.menu_active)..'; count='..count..'; matched='..matched..'; queued='..queued
+        if not c.menu_active then return true,'Native menu finished; '..state end
+        assert(matched==job.kind or queued==job.kind,'Native match disappeared before completion; '..state)
+        -- The native update can wait for weapon/equip state before its normal
+        -- A8FB50 close. Keep Press semantics through that entire transition.
+        out.hold_release(job)
+        return false,'Waiting for native completion; '..state
+    end
     function out.advance_release(job)
         out.hold_release(job)
         return out.advance(job)
@@ -1561,9 +1574,17 @@ local function release_controller(input,report)
                 self.status='Release cancelled: HUD changed, timeout or explicit input';report(self.status);self.reset();return
             end
             if job.finished then
+                local checked,done,message=pcall(input.release_complete,job)
+                if not checked then
+                    self.status='Release completion cancelled: '..tostring(done);report(self.status);self.reset();return
+                end
+                if not done then
+                    if self.status~=message then self.status=message;report(message) end
+                    return
+                end
                 local ok,why=pcall(input.end_release,job,false)
                 self.job=nil;blocked=true
-                self.status=ok and 'Release code complete; original menu trigger restored' or 'Release cleanup failed: '..tostring(why)
+                self.status=ok and (message..'; original menu trigger restored') or 'Release cleanup failed: '..tostring(why)
                 report(self.status);return
             end
             local ok,why=pcall(function()
@@ -1572,6 +1593,7 @@ local function release_controller(input,report)
                     local done,message=input.advance_release(job)
                     self.status=message;report('Release: '..message)
                     job.finished=done;job.next_at=now+job.interval_ms
+                    if done then job.deadline=now+2000 end
                 end
             end)
             if not ok then self.status='Release cancelled: '..tostring(why);report(self.status);self.reset() end
@@ -1622,7 +1644,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=28,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=29,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1643,7 +1665,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R28 - Release Latch\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R29 - Completion Wait\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1674,7 +1696,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R28 - Release Latch\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R29 - Completion Wait\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1862,7 +1884,7 @@ local function step()
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
         local vector
-        if snapshot and snapshot.open and api.mode~=2 then
+        if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
             local ready,context=pcall(input.view_context)
             if ready then

@@ -8,10 +8,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 28
+REVISION = 29
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'ReleaseLatch'
+RECENT_FEATURE = 'CompletionWait'
 OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
@@ -28,7 +28,7 @@ def build():
     assert (ROOT / 'INSTALL.txt').read_text().splitlines()[0] == DISPLAY_NAME, 'Install title must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: Paced Select on Release uses a temporary native Press-mode latch for Display Stratagem List, restoring the original trigger after completion or cancellation. Optional Select on Release remains off by default. "
+    description = (f"Revision {REVISION}: Select on Release waits for native menu completion before restoring the original trigger, with a bounded two-second completion timeout. Optional Select on Release remains off by default. "
                    'Input interval applies to both Confirm and release sequences (0-250 ms, default 70). '
                    'Native and expanded wheels gray and dim icons during cooldown or delivery. '
                    'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '

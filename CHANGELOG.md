@@ -1,5 +1,13 @@
 # Changelog
 
+## R29 - Completion Wait
+
+- Wait for the native menu to finish after a matched code before restoring Hold behavior, instead of restoring one frame later.
+- Keep the latch during the native equip transition, with a two-second completion timeout.
+- Log native menu/count/matched/queued state to distinguish code match from completion.
+- Skip further pointing/context preparation during completion to tolerate native menu/HUD close timing.
+- Regression tests pass; the reported post-code cancellation still requires in-game retesting.
+
 ## R28 - Release Latch
 
 - Replace R27's overwritten evaluated-button hold with a temporary Press trigger for Display Stratagem List in the native live binding map.

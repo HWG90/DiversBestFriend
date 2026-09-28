@@ -2,7 +2,7 @@ Diver's Best Friend - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Revision 28 - Release Latch. Select on Release remains optional and off by default.
+Revision 29 - Completion Wait. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
 
 Mod Options > Diver's Best Friend > Selection mode:
@@ -17,7 +17,8 @@ Input interval (ms): 0-250 in 5 ms steps, default 70. Applies to Confirm and
 Select on Release; 0 means one direction per frame. A running code keeps the
 interval it started with. Select on Release temporarily uses native Press behavior for Display
 Stratagem List while the code runs. It restores the original trigger after
-completion or cancellation; key/button assignments are unchanged.
+native menu completion or cancellation; key/button assignments are unchanged.
+It waits up to two seconds after the last direction for native completion.
 
 1. Native wheel
    Existing eight-slot native wheel with mouse/stick pointing and Confirm.

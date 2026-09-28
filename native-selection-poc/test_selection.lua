@@ -170,6 +170,9 @@ assert(read(actions,1)=='\0' and u32(read(actions+24,4),0)==0,'Press latch does 
 assert(u32(read(mapping_table+16,4),0)==0 and read(mapping_table+28,20)==press_mapping,'Hold converted, existing Press untouched')
 for i=1,#held_job.code do input.advance_release(held_job) end
 assert(reopened==1 and u32(read(component+0x14,4),0)==33,'paced release matches native code')
+assert(not input.release_complete(held_job),'matched code alone is not completion')
+num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+assert(input.release_complete(held_job),'native close acknowledges completion')
 input.end_release(held_job,false)
 assert(read(mapping_table+8,20)==hold_mapping and u32(read(actions+24,4),0)==2,'live Hold mapping and evaluated type restored')
 armed=release_fixture();held_job=input.begin_release(33,armed);input.hold_release(held_job);fail=true
