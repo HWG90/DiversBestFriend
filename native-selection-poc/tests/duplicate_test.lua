@@ -64,7 +64,7 @@ function b.set(p,key,value)
     assert(p~=original and properties[p],'never write the original list/cards')
     properties[p][key]=value
 end
-local env=setmetatable({require=function() return proxy end},{__index=_G})
+local env=setmetatable({radial={vertical_offset=50},require=function() return proxy end},{__index=_G})
 local chunk=assert(loadstring(source..'\nreturn duplicate_cards'));setfenv(chunk,env)
 local d=chunk()(b)
 local context={context=5,payload=123456}
@@ -79,6 +79,17 @@ end
 d.hide();assert(visibility[copy.list]==0)
 local again=d.prepare(snapshot,context,1/60)
 assert(again.list==copy.list and roots==1 and constructors==16 and updates==32,'reuse widgets across reopen')
+assert(d.detail(snapshot,context,1/60,snapshot.rows[3]))
+for i,row in ipairs(copy.rows) do assert(visibility[row.address]==(i==3 and 1 or 0)) end
+local detail=copy.rows[3].address
+assert(properties[detail].pivot[1]==0.5 and properties[detail].anchor[2]==0.5)
+assert(properties[detail].position[1]==snapshot.center[1])
+assert(properties[detail].position[2]==snapshot.center[2]-50)
+assert(properties[detail].scale[1]<=0.85)
+assert(not d.detail(snapshot,context,1/60,{entry=99,kind=3}) and visibility[copy.list]==0)
+assert(not d.detail(snapshot,context,1/60,nil))
+d.prepare(snapshot,context,1/60)
+for _,row in ipairs(copy.rows) do assert(visibility[row.address]==1,'switching back to cards restores visibility') end
 identity=identity+8
 assert(not d.owns(copy.rows[1].address),'reject stale HUD owner')
 d.hide();assert(visibility[copy.list]==1,'do not write stale HUD')

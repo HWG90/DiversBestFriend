@@ -8,11 +8,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 31
-DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
+REVISION = 32
+DISPLAY_NAME = "Diver's Best Friend Canary - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'ScrambledCodes'
-OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
+RECENT_FEATURE = 'WheelFeedback'
+OUTPUT = ROOT / f'DiversBestFriendCanary-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
 def build():
@@ -28,7 +28,7 @@ def build():
     assert (ROOT / 'INSTALL.txt').read_text().splitlines()[0] == DISPLAY_NAME, 'Install title must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: Confirm and Select on Release resolve scrambled codes through the native per-stratagem effect query and cancel safely if the required code changes during entry. Optional Select on Release remains off by default. "
+    description = (f"Revision {REVISION}: CANARY: Native and expanded wheels show a selected native row with availability text, countdown and live input arrows. New Wheel status and input progress option defaults on. In-game visual validation pending. Optional Select on Release remains off by default. "
                    'Input interval applies to both Confirm and release sequences (0-250 ms, default 70). '
                    'Native and expanded wheels gray and dim icons during cooldown or delivery. '
                    'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '

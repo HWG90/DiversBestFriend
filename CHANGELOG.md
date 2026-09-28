@@ -1,5 +1,13 @@
 # Changelog
 
+## Canary R32 - Wheel Feedback
+
+- Add selected native-row feedback to native and expanded wheel centers: native availability text, countdown and live input arrows.
+- Add an enabled-by-default Wheel status and input progress toggle.
+- Preserve the original list, apply wheel centering/offset, and restore card visibility when switching layouts.
+- Publish as DiversBestFriendCanary with canary Arsenal metadata and log filenames.
+- Regression tests pass; native appearance and progress timing need live verification.
+
 ## R31 - Scrambled Codes
 
 - Resolve scrambled sequences using the native per-stratagem effect query and code-definition remapping, for both Confirm and Select on Release.

@@ -1,6 +1,10 @@
 ![Diver's Best Friend — native stratagem menus](assets/banner.png)
 
-# DiversBestFriend
+# DiversBestFriendCanary
+
+This is the **canary** branch. [Canary R32 — Wheel Feedback](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r32) adds a selected native row to the center of native and expanded wheels, showing the game's availability text, countdown and live input arrows. Toggle **Wheel status and input progress** in Mod Options > Diver's Best Friend. In-game visual validation is pending.
+
+Packages use `DiversBestFriendCanary-R#-RecentFeature.zip`. Canary replaces the stable addon through the same Arsenal identity; enable only one version.
 
 **Your stratagems. In the game. No OCR.**
 
@@ -12,7 +16,7 @@ I made this because I was getting frustrated with how inconsistent OCR was in my
 
 [Download the latest build](https://github.com/HWG90/DiversBestFriend/releases/latest) · [Installation and controls](docs/INSTALLATION.md) · [Credits](CREDITS.md) · [Development](docs/DEVELOPMENT.md)
 
-R31 adds native scrambled-code resolution for Confirm and the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. [R31 test release](https://github.com/HWG90/DiversBestFriend/releases/tag/r31) needs in-game scrambling and controller validation. If the required code changes during entry, close and reopen the menu before selecting again. Native availability restrictions still apply.
+R31 adds native scrambled-code resolution for Confirm and the optional **Select on Release** setting, disabled by default. In radial modes, enable it and use a Hold menu binding to point and release without a separate Confirm button. R31 scrambling and recovery were reported working in user testing. If the required code changes during entry, close and reopen the menu before selecting again. Native availability restrictions still apply.
 
 ## What it does
 

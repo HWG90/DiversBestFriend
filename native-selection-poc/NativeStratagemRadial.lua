@@ -1142,10 +1142,37 @@ local function duplicate_cards(b)
             assert(original.entry>=0 and original.entry<16,'Native card entry out of bounds')
             local card=address+0x110+original.entry*0x3760
             assert(self.owns(card),'Radial card ownership changed')
+            visible(card,1) -- Restore rows previously hidden by the detail panel.
             rows[#rows+1]={address=card,entry=original.entry,kind=original.kind,width=original.width,height=original.height}
         end
         visible(address,1)
         return {identity=identity,panel=snapshot.panel,list=address,rows=rows,open=true,center=snapshot.center,geometry=snapshot.geometry}
+    end
+    -- One original-game row provides localized availability, timer and native
+    -- arrow progress. Reuse owned storage; never move or edit the stock row.
+    function self.detail(snapshot,context,dt,selected)
+        if not snapshot or not snapshot.open or not selected then self.hide();return false end
+        local match
+        for _,row in ipairs(snapshot.rows) do
+            if row.entry==selected.entry and row.kind==selected.kind then match=row;break end
+        end
+        if not match then self.hide();return false end
+        return context_scope(snapshot.list,function(resource_context)
+            local copy=prepare(snapshot,context,dt,resource_context)
+            for i=0,15 do visible(address+0x110+i*0x3760,0) end
+            local card=address+0x110+match.entry*0x3760
+            local width=270
+            for _,row in ipairs(snapshot.rows) do width=math.max(width,row.width) end
+            local scale=math.min(0.85,360/width)
+            local center=snapshot.center or {0,0}
+            local position={center[1],center[2]-(radial.vertical_offset or 0)}
+            b.set(card,'anchor',{0.5,0.5});b.set(card,'pivot',{0.5,0.5})
+            b.set(card,'scale',{scale,scale})
+            b.set(card,'animation_a',position);b.set(card,'animation_b',position)
+            b.set(card,'position',position)
+            visible(card,1);check_bounds()
+            return true
+        end)
     end
     function self.prepare(snapshot,context,dt)
         if not snapshot or not snapshot.open then self.hide();return snapshot end
@@ -1698,7 +1725,7 @@ local function release_controller(input,report)
     return self
 end
 
-local api={api=1,revision=31,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=32,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1708,6 +1735,7 @@ local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
 local wheel,expanded,release_selection,release_registered
 local select_on_release=false
+local detail_registered,show_details=nil,true
 local interval_registered,input_interval_ms=nil,70
 local binding_owner={}
 local selection_events={}
@@ -1717,9 +1745,9 @@ local function native_checkpoint(message)
     -- bypasses pcall and the ordinary end-of-frame status logger.
     if native_seen[message] then return end
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
-    local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
+    local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R31 - Scrambled Codes\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R32 - Wheel Feedback\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1748,13 +1776,14 @@ local function report(status,force)
     pcall(function()
         local loader=rawget(_G,'CowboyBingusModLoader')
         if not loader or type(loader.open_log)~='function' then return end
-        local file=loader.open_log('DiversBestFriend.log')
+        local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' R31 - Scrambled Codes\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R32 - Wheel Feedback\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
             file:write('pointing='..tostring(api.pointing_status)..'\n')
+            file:write('wheel_details='..tostring(show_details)..'; detail_status='..tostring(api.detail_status)..'\n')
             file:write('mode='..mode_names[api.mode]..'; experimental_layout='..api.experimental_layout..'\n')
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
@@ -1770,6 +1799,12 @@ end
 local function options()
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
+    if detail_registered~=menu then
+        if menu.register_option('native_stratagem_radial.wheel_details',{
+            type='toggle',mod=MOD_NAME,label='Wheel status and input progress',default=true,
+            description='Native and expanded wheels: show the selected stratagem using an original-game row with status, countdown and live input arrows.'}) then detail_registered=menu end
+    end
+    if detail_registered==menu then show_details=menu.get('native_stratagem_radial.wheel_details')~=false end
     if interval_registered~=menu then
         if menu.register_option('native_stratagem_radial.input_interval_ms',{
             type='slider',mod=MOD_NAME,label='Input interval (ms)',min=0,max=250,step=5,default=70,
@@ -1937,6 +1972,7 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
+        local original_snapshot=snapshot
         local vector
         if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
@@ -2013,7 +2049,19 @@ local function step()
                     if row.address==selection.selected then selected_row=row;break end
                 end
             end
-            wheel.timer(selected_row)
+            local detail_shown=false
+            if not legacy then
+                if show_details and selected_row then
+                    local detail_ok,result=pcall(function()
+                        return duplicates.detail(original_snapshot,input.view_context(),dt,selected_row)
+                    end)
+                    detail_shown=detail_ok and result==true
+                    if detail_ok then api.detail_status=detail_shown and 'native row visible' or 'no matching row' end
+                    if not detail_ok then duplicates.hide();api.detail_status=tostring(result) end
+                else duplicates.hide() end
+            end
+            if detail_shown then wheel.caption(nil) end
+            wheel.timer(not detail_shown and selected_row or nil)
         end
         display.step(api.enabled,snapshot or {open=false})
         if was_open then native_checkpoint('layout returned') end

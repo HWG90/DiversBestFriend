@@ -125,10 +125,37 @@ local function duplicate_cards(b)
             assert(original.entry>=0 and original.entry<16,'Native card entry out of bounds')
             local card=address+0x110+original.entry*0x3760
             assert(self.owns(card),'Radial card ownership changed')
+            visible(card,1) -- Restore rows previously hidden by the detail panel.
             rows[#rows+1]={address=card,entry=original.entry,kind=original.kind,width=original.width,height=original.height}
         end
         visible(address,1)
         return {identity=identity,panel=snapshot.panel,list=address,rows=rows,open=true,center=snapshot.center,geometry=snapshot.geometry}
+    end
+    -- One original-game row provides localized availability, timer and native
+    -- arrow progress. Reuse owned storage; never move or edit the stock row.
+    function self.detail(snapshot,context,dt,selected)
+        if not snapshot or not snapshot.open or not selected then self.hide();return false end
+        local match
+        for _,row in ipairs(snapshot.rows) do
+            if row.entry==selected.entry and row.kind==selected.kind then match=row;break end
+        end
+        if not match then self.hide();return false end
+        return context_scope(snapshot.list,function(resource_context)
+            local copy=prepare(snapshot,context,dt,resource_context)
+            for i=0,15 do visible(address+0x110+i*0x3760,0) end
+            local card=address+0x110+match.entry*0x3760
+            local width=270
+            for _,row in ipairs(snapshot.rows) do width=math.max(width,row.width) end
+            local scale=math.min(0.85,360/width)
+            local center=snapshot.center or {0,0}
+            local position={center[1],center[2]-(radial.vertical_offset or 0)}
+            b.set(card,'anchor',{0.5,0.5});b.set(card,'pivot',{0.5,0.5})
+            b.set(card,'scale',{scale,scale})
+            b.set(card,'animation_a',position);b.set(card,'animation_b',position)
+            b.set(card,'position',position)
+            visible(card,1);check_bounds()
+            return true
+        end)
     end
     function self.prepare(snapshot,context,dt)
         if not snapshot or not snapshot.open then self.hide();return snapshot end

@@ -1,8 +1,13 @@
-Diver's Best Friend - Automated Stratagem System (ASS)
+Diver's Best Friend Canary - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
+Canary replaces the stable addon; do not enable both together.
+Wheel status and input progress defaults on. Toggle it in Mod Options >
+Diver's Best Friend to return to the previous center caption and timer.
+Native and expanded wheels show a centered native row with the game's
+availability text, countdown and live arrow progress. Visual testing pending.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Revision 31 - Scrambled Codes. Select on Release remains optional and off by default.
+Canary Revision 32 - Wheel Feedback. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
 
 Mod Options > Diver's Best Friend > Selection mode:

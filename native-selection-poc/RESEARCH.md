@@ -375,3 +375,20 @@ cleanup. Native availability rejection remains authoritative.
 Fixtures cover nonzero seeds without active effects, shifted code lengths,
 entering/leaving effects, both selection paths and release cleanup/recovery.
 The reported spire and scrambler encounters still need live verification.
+
+
+## Canary R32: native detail feedback
+
+Reuse the existing independently constructed sixteen-card duplicate container.
+For native/expanded wheel feedback, update it with the original full snapshot
+and validated current input context, then show only the row matching selected
+entry and kind. The existing 1836510 native updater supplies status text,
+countdown and input arrows; no availability enums or translated text are guessed.
+Place both animation endpoints and position at the same projected wheel center,
+with centered anchor/pivot and scale capped at 0.85 / 360-unit width. Restore
+card visibility during normal prepare so switching back to Cards works.
+
+Suppress the separate wheel caption/timer only when detail preparation succeeds.
+Detail guard failure hides the copy and preserves the old caption/timer, without
+disabling selection. Tests cover selection/empty selection, centered transforms,
+mode switching, options and original-widget isolation. Live rendering is pending.

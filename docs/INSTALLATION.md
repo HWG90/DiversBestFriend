@@ -15,6 +15,14 @@ Close the game before changing deployed mods. Import the packages into Arsenal, 
 
 Restart the game after deployment. No separate app needs to be launched. Python and the test tools are for development only. The original Equipped Stratagems exporter, external wheel app, and CowboyBingus' gameplay megapack are not required.
 
+## Canary wheel feedback
+
+Install [DiversBestFriendCanary-R32-WheelFeedback.zip](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r32) with the game closed. Canary uses the same addon identity and settings as stable; enable only one revision.
+
+**Wheel status and input progress** defaults on. Native and expanded wheels show an independently constructed native row for the highlighted stratagem in the wheel center. The game renders its availability text, countdown, and arrow-entry progress. The original top-left list stays in place. List and Cards layouts retain their existing feedback. Turn the option off to restore the wheel's previous caption/countdown.
+
+Test ready, cooldown and incoming entries; test native blocked/jammed states where available. Check arrow progress with Confirm and Select on Release, and check centering at your HUD scale. Canary logs are `DiversBestFriendCanary.log` and `DiversBestFriendCanary-native.log`.
+
 ## Settings
 
 In the escape menu's **MODS** tab, select **Diver's Best Friend**. Change settings and press the native **Apply** control.
