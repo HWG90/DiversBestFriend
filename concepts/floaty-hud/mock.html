@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Floaty HUD — contract v1 mock</title>
+<style>
+  :root {
+    --ink: #f2f2f2;
+    --ink-dim: rgba(242,242,242,.55);
+    --ink-faint: rgba(242,242,242,.25);
+    --amber: #e8a33d;
+    --red: #e03030;
+    --cyan: #8fd8e8;
+    --hazard: #e8c020;
+    --plate: rgba(14,16,13,.55);
+    --tray: rgba(8,9,7,.45);
+    --border: rgba(242,242,242,.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: #0b0c0a; }
+  body { background: #0b0c0a; font-family: 'Bahnschrift', 'Segoe UI', Arial, sans-serif; color: var(--ink); }
+  .sheet { width: 1004px; margin: 0 auto; padding: 18px 0 40px; }
+
+  .head { padding: 10px 4px 16px; }
+  .head h1 { font-size: 21px; font-weight: 600; letter-spacing: .02em; }
+  .head .test { margin-top: 6px; font-size: 12.5px; color: var(--ink-dim); max-width: 900px; line-height: 1.5; }
+  .head .test b { color: var(--ink); font-weight: 600; }
+  .palette { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+  .sw { width: 46px; height: 16px; border: 1px solid rgba(242,242,242,.2); }
+  .palette span { font-size: 10px; color: var(--ink-dim); letter-spacing: .08em; }
+
+  .panel { margin: 0 0 26px; }
+  .panel h2 { font-size: 13px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  .panel h2 em { font-style: normal; color: var(--ink-dim); font-weight: 400; letter-spacing: .02em; text-transform: none; margin-left: 10px; font-size: 12px; }
+  .tag { display: inline-block; margin-left: 10px; padding: 1px 7px; font-size: 9.5px; letter-spacing: .1em;
+         border: 1px solid rgba(232,163,61,.5); color: var(--amber); text-transform: uppercase; vertical-align: 2px; }
+
+  .crop { position: relative; width: 964px; height: 520px; overflow: hidden; border: 1px solid #23261f; margin-top: 8px; background: #000; }
+  .frame { position: absolute; width: 1920px; height: 1080px; background: url('assets/bg_neutral.png') center/1920px 1080px no-repeat; }
+  .zoom { position: absolute; left: 10px; bottom: 10px; width: 320px; height: 128px; overflow: hidden;
+          border: 1px solid rgba(242,242,242,.3); background: #000; }
+  .zoom .frame { transform: scale(2); transform-origin: 0 0; }
+  .zoom::after { content: '2×'; position: absolute; top: 3px; right: 6px; font-size: 9px; color: var(--ink-dim); letter-spacing: .1em; }
+
+  .xhair { position: absolute; width: 22px; height: 22px; }
+  .xhair::before { content: ''; position: absolute; left: 10px; top: 0; width: 2px; height: 22px;
+      background: linear-gradient(rgba(242,242,242,.75) 0 7px, transparent 7px 15px, rgba(242,242,242,.75) 15px 22px); }
+  .xhair::after { content: ''; position: absolute; top: 10px; left: 0; height: 2px; width: 22px;
+      background: linear-gradient(90deg, rgba(242,242,242,.75) 0 7px, transparent 7px 15px, rgba(242,242,242,.75) 15px 22px); }
+
+  /* ---- THE STATION (one grammar; only the tray gauge changes) ---- */
+  .station { position: absolute; width: 150px; height: 62px;
+             clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+             background: var(--border); padding: 1px; }
+  .station .inner { position: relative; width: 100%; height: 100%;
+             clip-path: polygon(0 0, calc(100% - 7.5px) 0, 100% 7.5px, 100% 100%, 0 100%);
+             background: var(--plate); backdrop-filter: blur(3px); }
+  .row1 { position: absolute; left: 0; right: 0; top: 0; height: 43px; display: flex; align-items: center; padding: 0 9px; gap: 8px; }
+  .numeral { font-size: 33px; font-weight: 600; font-stretch: condensed; line-height: 1;
+             font-variant-numeric: tabular-nums; color: var(--ink); text-shadow: 0 1px 2px rgba(0,0,0,.55);
+             min-width: 52px; letter-spacing: .01em; }
+  .unit { font-size: 8.5px; letter-spacing: .14em; color: var(--ink-dim); text-transform: uppercase; line-height: 1.35; }
+  .aux { margin-left: auto; display: flex; gap: 3px; align-items: flex-end; }
+  .divider { position: absolute; left: 0; right: 0; top: 43px; height: 1px; background: rgba(242,242,242,.12); }
+  .tray { position: absolute; left: 1px; right: 1px; bottom: 1px; height: 17px; background: var(--tray);
+          display: flex; align-items: center; padding: 0 8px; gap: 6px; }
+
+  /* mag pips */
+  .pip { width: 6px; height: 10px; background: var(--amber); opacity: .92;
+         clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%); }
+  .pip.spent { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-faint); opacity: 1; }
+
+  /* heatsink bricks */
+  .brick { width: 4px; height: 9px; background: var(--ink-dim); }
+  .brick.spent { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-faint); }
+
+  /* heat / fuel / charge bars */
+  .bar { position: relative; height: 7px; flex: 1; background: rgba(242,242,242,.10); overflow: hidden; }
+  .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; }
+  .bar .hazard { position: absolute; right: 0; top: 0; bottom: 0; width: 25%;
+      background: repeating-linear-gradient(45deg, rgba(232,192,32,.38) 0 2px, rgba(20,20,16,.55) 2px 4px); }
+  .bar .hazard.lit { background: repeating-linear-gradient(45deg, rgba(232,192,32,.95) 0 2px, rgba(20,20,16,.85) 2px 4px); }
+
+  /* autocannon round ticks (plate left edge, deplete top->bottom).
+     All integer px: fractional heights subpixel-snap and merge adjacent ticks. */
+  .ticks { position: absolute; left: 4px; top: 4px; display: flex; flex-direction: column; }
+  .ticks > div { margin-bottom: 1px; }
+  .ticks > div:last-child { margin-bottom: 0; }
+  .tick { width: 3px; height: 2px; background: var(--ink); opacity: .92; }
+  .tick.empty { height: 4px; background: transparent; box-shadow: inset 0 0 0 1px rgba(242,242,242,.32); opacity: 1; }
+  .clipmark { width: 7px; height: 1px; margin-left: -2px; background: rgba(232,163,61,.35); }
+  .clipmark.lit { background: var(--amber); }
+
+  /* backpack mag bars (AC tray) */
+  .magbar { height: 2.6px; background: var(--amber); opacity: .9; }
+
+  /* arc gauge (flamer) */
+  .dial { position: relative; width: 54px; height: 16px; flex: none; }
+  .dial svg { position: absolute; inset: 0; width: 54px; height: 16px; }
+
+  /* railgun strip */
+  .mark { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: rgba(242,242,242,.75); }
+
+  /* hologram treatment (phase 2 concept only) */
+  .holo .station .inner { background: rgba(14,18,16,.42); }
+  .holo .station { background: rgba(160,220,232,.35); }
+  .holo::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(0deg, rgba(143,216,232,.05) 0 1px, transparent 1px 3px); }
+  .holo .numeral, .holo .unit { text-shadow: 0 0 6px rgba(143,216,232,.5); }
+
+  .caption { margin-top: 6px; font-size: 11px; color: var(--ink-dim); line-height: 1.45; max-width: 940px; }
+  .caption b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="head">
+    <h1>FLOATY HUD — contract v1 target mock</h1>
+    <div class="test"><b>Acceptance test:</b> crop the station next to a native HUD element in a screenshot; if you can immediately tell which is the mod, it fails.
+    One grammar, fixed 150&times;62 station at gun-side (1258,668)@1080p, tabular numerals, nothing moves. Only the tray gauge changes per weapon.</div>
+    <div class="palette">
+      <div class="sw" style="background:#f2f2f2"></div><span>INK</span>
+      <div class="sw" style="background:#e8a33d"></div><span>AMBER</span>
+      <div class="sw" style="background:#e03030"></div><span>RED</span>
+      <div class="sw" style="background:#8fd8e8"></div><span>CHARGE</span>
+      <div class="sw" style="background:#e8c020"></div><span>HAZARD</span>
+      <div class="sw" style="background:rgba(14,16,13,.85)"></div><span>PLATE .55 + 3px BLUR</span>
+    </div>
+  </div>
+  <div id="panels"></div>
+</div>
+
+<script>
+const CX = 960, CY = 540;                 // crosshair @1080p
+const AX = 1258, AY = 668;                // default gun-side anchor (plate top-left)
+const VAR_AX = 990, VAR_AY = 526;         // variant: right of crosshair
+
+function el(tag, cls, parent, style) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (style) for (const k in style) e.style[k] = style[k];
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+/* The ONE station builder. Every panel uses this — the grammar cannot drift. */
+function station(cfg) {
+  const s = el('div', 'station');
+  if (cfg.scale) s.style.transform = `scale(${cfg.scale})`;
+  if (cfg.x != null) { s.style.left = cfg.x + 'px'; s.style.top = cfg.y + 'px'; }
+  const inner = el('div', 'inner', s);
+  const row1 = el('div', 'row1', inner);
+
+  if (cfg.ticks) {                          // autocannon round column: depletes top->bottom
+    const t = el('div', 'ticks', inner);
+    for (let i = 1; i <= 10; i++) {
+      el('div', 'tick' + (i <= 10 - cfg.ticks ? ' empty' : ''), t);
+      if (i === 5) el('div', 'clipmark' + (cfg.ticks <= 5 ? ' lit' : ''), t);
+    }
+    row1.style.paddingLeft = '13px';
+  }
+  const num = el('div', 'numeral', row1); num.textContent = cfg.numeral;
+  const unit = el('div', 'unit', row1); unit.innerHTML = cfg.unit;
+
+  if (cfg.sinks != null) {                  // laser: heatsink bricks right of numeral
+    const aux = el('div', 'aux', row1);
+    for (let i = 0; i < cfg.sinkMax; i++) el('div', 'brick' + (i < cfg.sinks ? '' : ' spent'), aux);
+  }
+
+  el('div', 'divider', inner);
+  const tray = el('div', 'tray', inner);
+
+  if (cfg.pips != null) {                   // mag weapons: magazine pips
+    for (let i = 0; i < cfg.pipMax; i++) el('div', 'pip' + (i < cfg.pips ? '' : ' spent'), tray);
+  }
+  if (cfg.magbars != null) {                // autocannon backpack
+    const wrap = el('div', '', tray, { flex: '1', display: 'flex', flexDirection: 'column', gap: '2px' });
+    for (let i = 0; i < cfg.magbars; i++) el('div', 'magbar', wrap);
+    const lab = el('div', '', tray, { fontSize: '8.5px', color: 'var(--ink-dim)', letterSpacing: '.12em' });
+    lab.textContent = 'BACKPACK';
+  }
+  if (cfg.heat != null) {                   // laser: heat bar + hazard band
+    const bar = el('div', 'bar', tray);
+    const fill = el('div', 'fill', bar, { width: cfg.heat + '%', background: 'linear-gradient(90deg, #d9d4c8, #e8a33d)' });
+    if (cfg.heat >= 75) fill.style.background = 'linear-gradient(90deg, #d9d4c8, #e8a33d 55%, #e03030)';
+    el('div', 'hazard' + (cfg.heat >= 75 ? ' lit' : ''), bar);
+  }
+  if (cfg.fuel != null) {                   // flamer: up-facing arc gauge with needle
+    tray.style.justifyContent = 'center';
+    const dial = el('div', 'dial', tray);
+    const cx = 27, cy = 16, rx = 21, ry = 13;
+    const pt = d => [cx + rx * Math.cos(d * Math.PI / 180), cy + ry * Math.sin(d * Math.PI / 180)];
+    const A0 = 210, SWEEP = 120;            // screen degrees (y down); 270 = straight up
+    const ang = A0 + SWEEP * (cfg.fuel / 100);
+    const redA = A0 + SWEEP * 0.75;         // last quarter of the sweep is the red zone
+    const [sx, sy] = pt(A0), [ex, ey] = pt(A0 + SWEEP), [qx, qy] = pt(redA);
+    const nx = cx + 10 * Math.cos(ang * Math.PI / 180), ny = cy + 10 * Math.sin(ang * Math.PI / 180);
+    dial.innerHTML = `<svg viewBox="0 0 54 16">
+      <path d="M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${rx} ${ry} 0 0 1 ${ex.toFixed(1)} ${ey.toFixed(1)}" fill="none" stroke="rgba(242,242,242,.28)" stroke-width="1.4"/>
+      <path d="M ${qx.toFixed(1)} ${qy.toFixed(1)} A ${rx} ${ry} 0 0 1 ${ex.toFixed(1)} ${ey.toFixed(1)}" fill="none" stroke="rgba(224,48,48,.6)" stroke-width="1.4"/>
+      <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="#f2f2f2" stroke-width="1.4" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="1.3" fill="#e8a33d"/>
+    </svg>`;
+  }
+  if (cfg.charge != null) {                 // railgun: charge strip + safe mark
+    const bar = el('div', 'bar', tray);
+    el('div', 'fill', bar, { width: Math.min(cfg.charge, cfg.safeMark) + '%', background: 'var(--cyan)' });
+    if (cfg.charge > cfg.safeMark)
+      el('div', 'fill', bar, { left: cfg.safeMark + '%', width: (cfg.charge - cfg.safeMark) + '%', background: 'var(--amber)' });
+    el('div', 'mark', bar, { left: cfg.safeMark + '%' });
+  }
+  return s;
+}
+
+function xhair(frame) { el('div', 'xhair', frame, { left: (CX - 11) + 'px', top: (CY - 11) + 'px' }); }
+
+function panel(spec) {
+  const p = el('div', 'panel');
+  const h = el('h2', '', p);
+  h.innerHTML = spec.name + (spec.note ? `<em>${spec.note}</em>` : '') + (spec.tag ? `<span class="tag">${spec.tag}</span>` : '');
+  const crop = el('div', 'crop', p);
+  let host = crop;
+  if (spec.fit) {                           // zoom OUT: scale the whole 1920 frame down
+    host = el('div', '', crop, { position: 'absolute', width: '1920px', height: '1080px',
+        transform: `scale(${spec.fit})`, transformOrigin: '0 0', left: '2px', top: '2px' });
+  }
+  const frame = el('div', 'frame', host, { left: -spec.cx + 'px', top: -spec.cy + 'px' });
+  xhair(frame);
+  if (spec.native) nativeCounter(frame);
+  if (spec.holo) frame.parentElement.classList.add('holo');
+  frame.appendChild(station(Object.assign({}, spec.station)));
+  if (spec.zoom !== false) {
+    const z = el('div', 'zoom', crop);
+    const zf = el('div', 'frame', z);
+    xhair(zf);
+    const st = station(Object.assign({}, spec.station));
+    zf.appendChild(st);
+    const zx = spec.station.x + 75, zy = spec.station.y + 31;   // station center
+    zf.style.transform = `scale(2) translate(${(zx * -1) + 80}px, ${(zy * -1) + 32}px)`;
+    // note: translate before scale math — scaled origin handled by transform-origin 0 0
+  }
+  if (spec.caption) { const c = el('div', 'caption', p); c.innerHTML = spec.caption; }
+  return p;
+}
+
+/* approximate native bottom-right ammo counter, for the side-by-side test only */
+function nativeCounter(frame) {
+  const n = el('div', '', frame, { position: 'absolute', right: '38px', bottom: '92px', textAlign: 'right',
+      fontFamily: "'Bahnschrift', Arial", color: '#f2f2f2', textShadow: '0 1px 3px rgba(0,0,0,.7)' });
+  const a = el('div', '', n, { fontSize: '38px', fontWeight: 600, fontStretch: 'condensed', lineHeight: 1 });
+  a.textContent = '38';
+  const b = el('div', '', n, { fontSize: '15px', color: 'rgba(242,242,242,.6)', lineHeight: 1.2 });
+  b.textContent = '/ 315';
+  const c = el('div', '', n, { fontSize: '8.5px', letterSpacing: '.12em', color: 'rgba(242,242,242,.45)', marginTop: '2px' });
+  c.textContent = 'AR-59';
+}
+
+const P = [];
+P.push({ name: 'Context', note: 'placement, 0.5&times; full frame, native counter shown for the side-by-side test', zoom: false, fit: 0.5,
+  cx: 0, cy: 0, native: true, station: { x: AX, y: AY, numeral: '38', unit: 'RNDS<br>MAGS', pips: 7, pipMax: 8 },
+  caption: 'Gun-side anchor (1258,668). The station sits between the first-person weapon and the native bottom-right counter — reading as the weapon\u2019s own readout, not competition for the crosshair.' });
+
+P.push({ name: 'Mag weapons', note: 'rifle / sidearm grammar \u2014 AR-59', tag: 'rule 1',
+  cx: 620, cy: 300, station: { x: AX, y: AY, numeral: '38', unit: 'RNDS<br>MAGS', pips: 7, pipMax: 8 },
+  caption: 'Numeral = rounds in mag. Tray = <b>magazine</b> pips (not rounds \u2014 per your correction), spent mags leave a 25% silhouette. Same grammar for the sidearm, different values.' });
+
+P.push({ name: 'Autocannon', note: 'stripper-clip mechanic made visible', tag: 'rule 3',
+  cx: 620, cy: 300, station: { x: AX, y: AY, numeral: '7', unit: 'RNDS', ticks: 7, magbars: 4 },
+  caption: 'Tick column depletes top\u2192bottom (your spec): with 7 rounds the top 3 slots are spent silhouettes. The <b>boundary line at mid-column marks 5 rounds</b> \u2014 the moment a stripper-clip reload becomes legal it lights amber; here 7 &gt; 5 so it is still faint. Tray carries backpack magazine bars.' });
+
+P.push({ name: 'Laser', note: 'heat + heatsinks \u2014 62%', tag: 'rule 3',
+  cx: 620, cy: 300, station: { x: AX, y: AY, numeral: '62', unit: 'HEAT<br>PCT', heat: 62, sinks: 3, sinkMax: 5 },
+  caption: 'Heat bar fills pale\u2192amber\u2192red. Hazard band occupies the last 25% \u2014 <b>faint below 75%, lit at/above</b> (your threshold spec). Heatsink bricks right of the numeral: 3 of 5 remain, spent leave gray silhouettes.' });
+
+P.push({ name: 'Flamer / Cremator', note: 'gas-tank arc gauge \u2014 71%', tag: 'rule 1',
+  cx: 620, cy: 300, station: { x: AX, y: AY, numeral: '71', unit: 'FUEL<br>PCT', fuel: 71 },
+  caption: 'Your needle-gauge spec, inside the standard tray slot: up-facing arc, needle at the value, last quarter red. Percent lives in the numeral row \u2014 <b>no text overlapping the gauge</b>, which was the original complaint.' });
+
+P.push({ name: 'Railgun', note: 'charge strip \u2014 96%, safe mark 80%', tag: 'rule 2',
+  cx: 620, cy: 300, station: { x: AX, y: AY, numeral: '96', unit: 'CHRG<br>PCT', charge: 96, safeMark: 80 },
+  caption: 'Cyan charge on the shared bar; the segment past the safe-charge mark renders amber. Same tray geometry as heat/fuel \u2014 no bespoke widgets.' });
+
+P.push({ name: 'Anchor variant', note: 'same station at (990,526) \u2014 right of crosshair', tag: 'the one open call',
+  cx: 620, cy: 300, station: { x: VAR_AX, y: VAR_AY, numeral: '38', unit: 'RNDS<br>MAGS', pips: 7, pipMax: 8 },
+  caption: 'Everything above uses the gun-side anchor (Division feel: beside the weapon, out of the aim path). This variant parks it beside the reticle instead \u2014 R52\u2019s position. <b>Gun-side is recommended</b>; this panel exists so the call is a comparison, not a guess.' });
+
+P.push({ name: 'Phase 2 \u2014 world-bound', note: 'concept only: same station, projected beside the weapon', tag: 'v2',
+  cx: 620, cy: 300, holo: true, station: { x: 1010, y: 610, scale: 0.85, numeral: '38', unit: 'RNDS<br>MAGS', pips: 7, pipMax: 8 },
+  caption: 'The Division / Dead Space end-state: the identical station treated as a weapon hologram, anchored to a world point beside the gun via the projection seam already stubbed in the archived <b>world</b> style. Layout and grammar do not change \u2014 only the anchor source. Not in v1.' });
+
+const root = document.getElementById('panels');
+P.forEach(spec => root.appendChild(panel(spec)));
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+ok   ammo chunk compiles: nil
+ok   missing framework -> clean no-install (no crash)
+ok   framework chunk installs __DBF_HD2UI api
+ok   ammo entry installs on framework
+ok   default style is crosshair
+ok   locked base == planted component
+ok   locked mag/res match planted values
+ok   scan locked the planted anchor
+ok   cache file saved with the locked base
+ok   HUD renders 7/56 (got 7/56)
+ok   HUD tracks live fire -> 6/56 (got 6/56)
+ok   implausible value triggers rescan
+ok   HUD hidden while cursor visible
+ok   original shutdown called
+ok   second chunk compiles: nil
+ok   second install succeeds
+ok   menu preset selects gunside style
+ok   shipped identity is r3.2 (got dbf-ammo r5.1)
+ok   cache fast path locks on install
+ok   no heap scan on cache hit
+ok   gunside HUD renders 7/56 from cached lock
+ok   gunside HUD renders its subtitle
+ok   log records the chosen style
+ok   original update called
+ok   second shutdown chained
+ok   entry registers options with Mod Options Menu
+ok   style/size/enabled option rows all registered
+ok   option kinds match the menu facility
+ok   menu style change rebuilds HUD live
+ok   menu value is authoritative after set
+ok   menu slider size applies live
+FAIL: graphical mode keeps the numeric counter
+ok   graphical mode replaces the text subtitle
+ok   display change rebuilds hud
+FAIL: text mode restores the subtitle
+ok   enabled=false hides the HUD
+ok   enabled=true brings the HUD back
+ammo_hud: 37 checks, 2 failures
+
+==STDERR==
+Traceback (most recent call last):
+  File "C:\Users\david\DiversBestFriend\run_lua.py", line 33, in <module>
+    run(path.read_bytes(), str(path))
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\david\DiversBestFriend\run_lua.py", line 27, in run
+    raise RuntimeError(lua.lua_tolstring(state, -1, None).decode(errors='replace'))
+RuntimeError: [string "hd2ui\tests\test_ammo_hud.lua"]:294: 2 failures
