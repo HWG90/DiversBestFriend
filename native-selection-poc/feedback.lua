@@ -8,11 +8,14 @@ local function selection_feedback(b,report)
         local ok,why=pcall(b.ui_sound,event)
         if not ok then failed=true;report('Selection sound unavailable: '..tostring(why)) end
     end
-    function self.step(enabled,snapshot,selected,job,now,list_mode)
+    function self.step(enabled,snapshot,selected,job,now,list_mode,paged)
         if not enabled or not snapshot then owner=nil;last_target=nil;last_job=nil;return end
         local fresh=owner~=snapshot.identity
         if fresh then owner=snapshot.identity;last_target=nil;last_job=nil;last_tick=-math.huge end
         if job and job~=last_job then play('confirm');last_tick=now end
+        -- A page flip is deliberate navigation; share the move-cue throttle so
+        -- it never doubles with a target change in the same frame.
+        if paged and not job and now-last_tick>=60 then play('move');last_tick=now end
         local target
         if snapshot.open then
             for _,row in ipairs(snapshot.rows or {}) do

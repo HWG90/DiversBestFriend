@@ -64,8 +64,8 @@ for i=1,16 do rows[i]={address=100+i,kind=i,entry=i-1,list_y=i*68} end
 local snap={identity=id,open=true,list=parent,rows=rows,center={1000,300}}
 local idle={next=false,previous=false,confirm=false}
 local next_button={next=true,previous=false,confirm=false}
-local page,changed=w.prepare(snap,idle,false)
-assert(changed and constructed==1 and w.pages==2 and #page.rows==8)
+local page,changed,paged=w.prepare(snap,idle,false)
+assert(changed and not paged and constructed==1 and w.pages==2 and #page.rows==8)
 assert(page.rows[1].kind==16 and page.rows[8].kind==9,'native display order')
 assert(positions[wheel_address..'position'][2]==-275,'saved offset retained')
 local pt=make_point(b)
@@ -86,13 +86,14 @@ assert(timer_values[0x51d1e697]==0 and timer_values[0x4583b0d3]==59,'countdown c
 page.rows[4].timer_seconds,page.rows[4].timer_kind=nil,nil
 w.prepare(snap,idle,false);w.draw(page.rows[4].address,v,page.rows);w.timer(page.rows[4])
 assert(shown[wheel_address+0xf50]==0 and opacities[wheel_address+0x1208+3*0x158]==1,'expiry restores icon and hides timer')
-page,changed=w.prepare(snap,next_button,false)
+page,changed,paged=w.prepare(snap,next_button,false)
 assert(changed and w.page==2 and page.rows[1].kind==8 and page.rows[8].kind==1)
-page,changed=w.prepare(snap,next_button,false);assert(not changed and w.page==2,'held next does not repeat')
+assert(paged,'a real page flip reports itself')
+page,changed,paged=w.prepare(snap,next_button,false);assert(not changed and w.page==2 and not paged,'held next does not repeat')
 w.prepare(snap,idle,false)
-page,changed=w.prepare(snap,next_button,true);assert(not changed and w.page==2,'no paging during entry')
+page,changed,paged=w.prepare(snap,next_button,true);assert(not changed and w.page==2 and not paged,'no paging during entry')
 w.prepare(snap,idle,false)
-page,changed=w.prepare(snap,next_button,false);assert(changed and w.page==1,'wrap to first page')
+page,changed,paged=w.prepare(snap,next_button,false);assert(changed and w.page==1 and paged,'wrap to first page')
 -- Nine total items: page two has exactly one enabled sector, never slot overflow.
 for i=16,10,-1 do table.remove(rows,i) end
 w.prepare(snap,idle,false)
@@ -116,6 +117,11 @@ assert(positions[wheel_address..'scale'][1]==1.2)
 assert(positions[(wheel_address+0x1208)..'scale'][1]==0.8)
 assert(positions[(wheel_address+0xc98)..'scale'][1]==1.1)
 assert(opacities[wheel_address+0x488]==0.4,'background opacity leaves independent icons/labels')
+-- A single page never flips or cues, even with the paging binding held.
+table.remove(rows);table.remove(rows)
+w.prepare(snap,idle,false)
+local single,single_changed,single_paged=w.prepare(snap,next_button,false)
+assert(w.pages==1 and not single_changed and not single_paged and w.page==1,'single page ignores paging edges')
 id=id+8;w.hide();assert(shown[w.address]==1,'never touch stale HUD')
 print('Native wheel adapter passed: constructor ABI/scope, bounded paging/order, owned visuals, native cursor/sector state, empty-slot rejection, busy/held paging, offset, reuse and stale owner.')
 

@@ -8,21 +8,17 @@
 
 Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through Bingus Shared Loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
-[Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r33) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+[Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current canary: R33 - Polish
+## Current canary: R34 - PageCue
 
-[Download DiversBestFriendCanary-R33-Polish.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r33/DiversBestFriendCanary-R33-Polish.zip)
+[Download DiversBestFriendCanary-R34-PageCue.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r34/DiversBestFriendCanary-R34-PageCue.zip)
 
-Canary contains experimental changes ahead of the stable release. R33 adds:
+Canary contains experimental changes ahead of the stable release. R34 adds:
 
-- Native selection sounds, with an option to disable them.
-- Compact, Standard, Large, and Custom size presets.
-- Adjustable wheel, icon, and center-label sizes, plus native wheel background opacity.
-- Settings grouped into Selection, Appearance, Controller, and Advanced.
-- An [illustrated setup guide](docs/INSTALLATION.md) with mouse/controller examples and troubleshooting.
+- A sound cue when the native wheel changes pages (more than eight stratagems).
 
-R33 restores the previous caption and countdown presentation, removing R32's center detail card. It retains R31's scrambled-code recovery and optional Select on Release. The confirmation sound marks an accepted input sequence; the normal game equip feedback confirms the beacon is ready.
+R34 keeps R33's selection sounds, size presets and background opacity, and the restored caption and countdown presentation. It retains R31's scrambled-code recovery and optional Select on Release. The confirmation sound marks an accepted input sequence; the normal game equip feedback confirms the beacon is ready.
 
 These changes are a prerelease. For regular play, use the stable build below. To roll back, close the game and deploy the stable package with only one version enabled.
 
@@ -31,7 +27,7 @@ These changes are a prerelease. For regular play, use the stable build below. To
 | Channel | Build | Highlights |
 | --- | --- | --- |
 | Stable | [R31 - Scrambled Codes](https://github.com/HWG90/DiversBestFriend/releases/tag/r31) | Scrambled-code selection and recovery after leaving scrambling areas, plus optional Select on Release |
-| Canary / prerelease | [R33 - Polish](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r33) | Native selection sounds, adjustable sizes and presets, background opacity, and grouped settings |
+| Canary / prerelease | [R34 - PageCue](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) | Page-flip sound cue; native selection sounds, adjustable sizes and presets, background opacity, and grouped settings |
 
 Choose stable for regular play or canary to try the latest changes. Install only one version: both use the same addon identity and settings. Stable packages use `DiversBestFriend-R#-RecentFeature.zip`; canary packages use `DiversBestFriendCanary-R#-RecentFeature.zip`.
 

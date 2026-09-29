@@ -62,8 +62,7 @@ local function release_controller(input,report)
                 and state.hud==previous.hud then
                 local called,job=pcall(input.begin_release,previous.kind,previous)
                 if called then
-                    local interval=self.interval_ms
-                    if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                    local interval=input_interval(self.interval_ms,70)
                     job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity;job.address=previous.address
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job

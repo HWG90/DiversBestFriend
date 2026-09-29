@@ -1,4 +1,4 @@
-local api={api=1,revision=33,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=34,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -19,7 +19,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R33 - Polish\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R34 - PageCue\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -42,7 +42,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' Canary R33 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R34 - PageCue\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -157,7 +157,7 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        local vector
+        local vector,paged
         if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
             local ready,context=pcall(input.view_context)
@@ -176,7 +176,7 @@ local function step()
                     wheel.prepare(original,nil,false)
                 else
                     local changed
-                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
+                    snapshot,changed,paged=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
                     if changed then pointing.reset();selection.step(nil,nil,now) end
                 end
                 snapshot.pointer_only=true
@@ -207,7 +207,7 @@ local function step()
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if release_selection.job then selection.selected=release_selection.job.address end
         sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
-            release_selection.job or selection.job,now,api.mode==2)
+            release_selection.job or selection.job,now,api.mode==2,paged)
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then

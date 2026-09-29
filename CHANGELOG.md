@@ -1,8 +1,27 @@
 # Changelog
 
-All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R33**.
+All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R34**.
 
-R32 and R33 are canary revisions, published under `canary-r32` and `canary-r33`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
+R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
+
+## Canary R34 — PageCue — 2026-09-29
+
+[Release and download](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) · [Changes from R33](https://github.com/HWG90/DiversBestFriend/compare/canary-r33...canary-r34)
+
+### Added
+
+- A native UI sound cue when the native wheel changes pages with more than eight stratagems. The cue respects the Sound feedback option, shares the existing move-cue throttle, and is suppressed while an input sequence runs.
+
+### Changed
+
+- Confirm and Select on Release now share one input-interval validation helper; pacing behavior is unchanged.
+- Build-time checks keep the runtime log headers, package install text and manifest description aligned with the packaged revision, so a future revision bump cannot ship mismatched metadata.
+
+### Validation and upgrade notes
+
+- Regression coverage includes the page-cue lifecycle (one cue per flip, silent reopen and single-page presses, no cue during jobs or when sounds are off) and invalid-interval fallback.
+- The page-flip cue needs in-game verification together with the R33 sound and sizing checks.
+- Package: `DiversBestFriendCanary-R34-PageCue.zip`. Install with the game closed and enable only one revision.
 
 ## Canary R33 — Polish — 2026-09-28
 

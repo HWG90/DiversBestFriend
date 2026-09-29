@@ -4,6 +4,11 @@
 local function selectable_kind(kind)
     return type(kind)=='number' and kind>0 and kind<150 and kind%1==0
 end
+-- Confirm and Select on Release share one bounded pacing policy.
+local function input_interval(ms,default)
+    if type(ms)~='number' or ms~=ms or ms<0 or ms>250 then return default end
+    return ms
+end
 local function input_backend(b)
     local base=b.base
     local ffi=require('ffi')

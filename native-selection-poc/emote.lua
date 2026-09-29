@@ -45,9 +45,10 @@ local function emote_wheel(b,scope,input)
         self.pages=math.max(1,math.ceil(#rows/8))
         local next_edge=buttons and buttons.next and previous.next==false
         local prev_edge=buttons and buttons.previous and previous.previous==false
+        local paged=false
         if not busy and next_edge~=prev_edge and (next_edge or prev_edge) then
             local page=(self.page-1+(next_edge and 1 or -1))%self.pages+1
-            changed=changed or page~=self.page;self.page=page
+            if page~=self.page then changed=true;self.page=page;paged=true end
         end
         previous=buttons and {next=buttons.next,previous=buttons.previous} or {}
         local page_rows={}
@@ -111,7 +112,7 @@ local function emote_wheel(b,scope,input)
         self.status='native emote-style wheel; page '..self.page..'/'..self.pages
         self.observation='8 native sectors; native cursor radius 240; '..self.status
         return {identity=snapshot.identity,open=true,rows=page_rows,pointer_only=true,
-            pointing_index=function(_,vector) return vector.slot end},changed
+            pointing_index=function(_,vector) return vector.slot end},changed,paged
     end
     function self.draw(selected,vector,rows,cursor_only)
         if not owned() then return end

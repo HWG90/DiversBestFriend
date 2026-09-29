@@ -574,6 +574,11 @@ end
 local function selectable_kind(kind)
     return type(kind)=='number' and kind>0 and kind<150 and kind%1==0
 end
+-- Confirm and Select on Release share one bounded pacing policy.
+local function input_interval(ms,default)
+    if type(ms)~='number' or ms~=ms or ms<0 or ms>250 then return default end
+    return ms
+end
 local function input_backend(b)
     local base=b.base
     local ffi=require('ffi')
@@ -1217,9 +1222,10 @@ local function emote_wheel(b,scope,input)
         self.pages=math.max(1,math.ceil(#rows/8))
         local next_edge=buttons and buttons.next and previous.next==false
         local prev_edge=buttons and buttons.previous and previous.previous==false
+        local paged=false
         if not busy and next_edge~=prev_edge and (next_edge or prev_edge) then
             local page=(self.page-1+(next_edge and 1 or -1))%self.pages+1
-            changed=changed or page~=self.page;self.page=page
+            if page~=self.page then changed=true;self.page=page;paged=true end
         end
         previous=buttons and {next=buttons.next,previous=buttons.previous} or {}
         local page_rows={}
@@ -1283,7 +1289,7 @@ local function emote_wheel(b,scope,input)
         self.status='native emote-style wheel; page '..self.page..'/'..self.pages
         self.observation='8 native sectors; native cursor radius 240; '..self.status
         return {identity=snapshot.identity,open=true,rows=page_rows,pointer_only=true,
-            pointing_index=function(_,vector) return vector.slot end},changed
+            pointing_index=function(_,vector) return vector.slot end},changed,paged
     end
     function self.draw(selected,vector,rows,cursor_only)
         if not owned() then return end
@@ -1619,8 +1625,7 @@ local function selection_controller(input,report)
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then
-                local interval=self.interval_ms
-                if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                local interval=input_interval(self.interval_ms,70)
                 self.job=result;self.job.interval_ms=interval
                 self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
                 next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')
@@ -1694,8 +1699,7 @@ local function release_controller(input,report)
                 and state.hud==previous.hud then
                 local called,job=pcall(input.begin_release,previous.kind,previous)
                 if called then
-                    local interval=self.interval_ms
-                    if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                    local interval=input_interval(self.interval_ms,70)
                     job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity;job.address=previous.address
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job
@@ -1778,11 +1782,14 @@ local function selection_feedback(b,report)
         local ok,why=pcall(b.ui_sound,event)
         if not ok then failed=true;report('Selection sound unavailable: '..tostring(why)) end
     end
-    function self.step(enabled,snapshot,selected,job,now,list_mode)
+    function self.step(enabled,snapshot,selected,job,now,list_mode,paged)
         if not enabled or not snapshot then owner=nil;last_target=nil;last_job=nil;return end
         local fresh=owner~=snapshot.identity
         if fresh then owner=snapshot.identity;last_target=nil;last_job=nil;last_tick=-math.huge end
         if job and job~=last_job then play('confirm');last_tick=now end
+        -- A page flip is deliberate navigation; share the move-cue throttle so
+        -- it never doubles with a target change in the same frame.
+        if paged and not job and now-last_tick>=60 then play('move');last_tick=now end
         local target
         if snapshot.open then
             for _,row in ipairs(snapshot.rows or {}) do
@@ -1797,7 +1804,7 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=33,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=34,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1818,7 +1825,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R33 - Polish\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R34 - PageCue\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1841,7 +1848,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' Canary R33 - Polish\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R34 - PageCue\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1956,7 +1963,7 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        local vector
+        local vector,paged
         if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
             local ready,context=pcall(input.view_context)
@@ -1975,7 +1982,7 @@ local function step()
                     wheel.prepare(original,nil,false)
                 else
                     local changed
-                    snapshot,changed=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
+                    snapshot,changed,paged=wheel.prepare(snapshot,buttons,selection.job~=nil or release_selection.job~=nil)
                     if changed then pointing.reset();selection.step(nil,nil,now) end
                 end
                 snapshot.pointer_only=true
@@ -2006,7 +2013,7 @@ local function step()
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if release_selection.job then selection.selected=release_selection.job.address end
         sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
-            release_selection.job or selection.job,now,api.mode==2)
+            release_selection.job or selection.job,now,api.mode==2,paged)
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then

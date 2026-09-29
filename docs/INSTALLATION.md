@@ -47,7 +47,7 @@ All options stay under one mod category, grouped with labels and row spacing. [M
 
 **Sizing:** wheel size affects native/expanded wheels and Cards spacing. Icon/center-label sizing applies to native and expanded wheels and is relative to overall wheel size. The background opacity controls are separate for native and expanded wheels. Selected highlights stay visible. List geometry remains native. Sizes range from 70–130%; large settings may crowd long names or high-slot-count wheels.
 
-**Sounds:** a native UI tick marks a changed target; a different native wheel action cue marks an accepted input job. This cue does not certify that the beacon is equipped. Normal game input/equip sounds remain. Rapid changes are throttled and held confirmation does not repeat the cue. Turn Sound feedback off to disable the added cues.
+**Sounds:** a native UI tick marks a changed target; the same tick marks a native-wheel page change; a different native wheel action cue marks an accepted input job. This cue does not certify that the beacon is equipped. Normal game input/equip sounds remain. Rapid changes are throttled and held confirmation does not repeat the cue. Turn Sound feedback off to disable the added cues.
 
 **Input interval:** 0–250 ms, default 70. Zero sends at most one direction per frame. A sequence keeps its starting interval. Release selection temporarily uses native Press behavior while entering the code, restoring Hold afterward. No saved key/button assignment is changed.
 
@@ -72,4 +72,4 @@ Status details are recorded in `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/Div
 | Settings do nothing | Press APPLY. Choose Custom for size sliders; check the option's layout description. |
 | Crash when opening | Disable the addon and preserve both canary logs. Report revision, game build, layout, resolution, HUD scale and other UI mods. |
 
-R31 scrambling and post-effect recovery were reported working by the author. R33 sound character, volume and new sizing still need in-game validation. To roll back, close the game and deploy a known-working release with only one revision enabled.
+R31 scrambling and post-effect recovery were reported working by the author. R33 sound character, volume and new sizing, plus the R34 page-flip cue, still need in-game validation. To roll back, close the game and deploy a known-working release with only one revision enabled.

@@ -83,8 +83,7 @@ local function selection_controller(input,report)
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then
-                local interval=self.interval_ms
-                if type(interval)~='number' or interval~=interval or interval<0 or interval>250 then interval=70 end
+                local interval=input_interval(self.interval_ms,70)
                 self.job=result;self.job.interval_ms=interval
                 self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
                 next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')
