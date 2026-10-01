@@ -1,6 +1,6 @@
 ![Diver's Best Friend — DBF / Automated Stratagem System (ASS)](assets/banner-dbf.png)
 
-# Diver's Best Friend Canary
+# Diver's Best Friend
 
 **Your stratagems. In the game. No OCR. No Python. No AutoHotkey. Just a nice ASS.**
 
@@ -10,26 +10,15 @@ Select stratagems through a native in-game wheel or list, then throw the beacon 
 
 [Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current canary: R34 - PageCue
+## Current release: R35 - Bindings Compatibility
 
-[Download DiversBestFriendCanary-R34-PageCue.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r34/DiversBestFriendCanary-R34-PageCue.zip)
+[Download DiversBestFriend-R35-BindingsCompatibility.zip](https://github.com/HWG90/DiversBestFriend/releases/download/r35/DiversBestFriend-R35-BindingsCompatibility.zip) | [Release notes](docs/RELEASE-r35.md)
 
-Canary contains experimental changes ahead of the stable release. R34 adds:
+R35 restores compatibility with the updated Vanilla Plus Megapack by accepting Mod Bindings Menu interface versions 2 and newer with API 1. It includes R34 page-change sounds and R33 selection sounds, size presets, background opacity and grouped settings. Scrambled-code recovery and optional Select on Release remain available; Select on Release defaults off.
 
-- A sound cue when the native wheel changes pages (more than eight stratagems).
+Package checks and isolated LuaJIT tests pass. This build still needs in-game verification of selection, sound cues, sizing and cursor alignment. The confirmation sound marks an accepted sequence; normal game feedback confirms the beacon is ready.
 
-R34 keeps R33's selection sounds, size presets and background opacity, and the restored caption and countdown presentation. It retains R31's scrambled-code recovery and optional Select on Release. The confirmation sound marks an accepted input sequence; the normal game equip feedback confirms the beacon is ready.
-
-These changes are a prerelease. For regular play, use the stable build below. To roll back, close the game and deploy the stable package with only one version enabled.
-
-## Available builds
-
-| Channel | Build | Highlights |
-| --- | --- | --- |
-| Stable | [R31 - Scrambled Codes](https://github.com/HWG90/DiversBestFriend/releases/tag/r31) | Scrambled-code selection and recovery after leaving scrambling areas, plus optional Select on Release |
-| Canary / prerelease | [R34 - PageCue](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) | Page-flip sound cue; native selection sounds, adjustable sizes and presets, background opacity, and grouped settings |
-
-Choose stable for regular play or canary to try the latest changes. Install only one version: both use the same addon identity and settings. Stable packages use `DiversBestFriend-R#-RecentFeature.zip`; canary packages use `DiversBestFriendCanary-R#-RecentFeature.zip`.
+Install only one revision; stable and canary share addon identity, settings and bindings. Earlier [canary R34](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) remains available for comparison; it lacks the bindings compatibility fix.
 
 ## Selection modes
 

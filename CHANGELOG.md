@@ -1,8 +1,16 @@
 # Changelog
 
-All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R34**.
+All documented changes to **Diver's Best Friend / DiversBestFriend** through **R35**.
 
 R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
+
+## R35 — Bindings Compatibility — 2026-10-01
+
+[Release and download](https://github.com/HWG90/DiversBestFriend/releases/tag/r35)
+
+- Accept numeric Mod Bindings Menu interface versions 2 and newer with API 1, restoring compatibility with the updated megapack. Reject invalid/missing versions safely.
+- Promote the R34 canary implementation, including R33 appearance/settings improvements and native sound cues, into the normal release package. Stable identity and binding IDs are preserved.
+- Full isolated LuaJIT and package checks pass. In-game verification of this build remains pending. See [release notes](docs/RELEASE-r35.md).
 
 ## Canary R34 — PageCue — 2026-09-29
 

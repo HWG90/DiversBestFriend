@@ -1,11 +1,12 @@
-Diver's Best Friend Canary - Automated Stratagem System (ASS)
+Diver's Best Friend - Automated Stratagem System (ASS)
 
 Close the game, import this ZIP into Arsenal, deploy and restart.
-Adds a sound cue when the native wheel changes pages. Keeps the restored
-wheel appearance from R33. Canary replaces stable; enable only one revision.
+Restores wheel input compatibility with the updated megapack by accepting
+Mod Bindings Menu interface versions 2 or newer with API 1. Includes R34
+page-change sounds and R33 sound, size and appearance controls.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Canary Revision 34 - PageCue. Select on Release remains optional and off by default.
-Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 and Mod Options Menu.
+Revision 35 - BindingsCompatibility. Select on Release remains optional and off by default.
+Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 or newer (API 1) and Mod Options Menu.
 
 Mod Options > Diver's Best Friend > Selection / Mode:
 
