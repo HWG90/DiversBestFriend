@@ -1905,8 +1905,9 @@ end
 
 local function bindings()
     local menu=rawget(_G,'ModBindingsMenu')
-    if type(menu)~='table' or menu.api~=1 or menu.version~=2 then
-        api.selection_status='Requires Mod Bindings Menu v2'; return nil
+    if type(menu)~='table' or menu.api~=1 or type(menu.version)~='number'
+        or not (menu.version>=2) then
+        api.selection_status='Requires Mod Bindings Menu v2 or newer'; return nil
     end
     local labels={next='Next stratagem',previous='Previous stratagem',confirm='Confirm stratagem'}
     local buttons={}

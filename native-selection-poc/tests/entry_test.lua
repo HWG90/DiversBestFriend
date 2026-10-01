@@ -99,7 +99,7 @@ buttons.confirm=false;tick();assert(advances==1)
 buttons.confirm=true;tick();assert(starts==2)
 focus=false;tick();assert(advances==1 and not env.radial.selected,'focus loss cancels')
 focus=true;tick();assert(starts==2,'held confirmation on focus return is ignored')
-env.ModBindingsMenu.version=1;tick();assert(env.NativeStratagemRadial.selection_status=='Requires Mod Bindings Menu v2')
+env.ModBindingsMenu.version=1;tick();assert(env.NativeStratagemRadial.selection_status=='Requires Mod Bindings Menu v2 or newer')
 assert(draws==9,'drawing survives missing binding dependency')
 assert(table.concat(logs):find('Native matched; equip pending',1,true))
 assert(prepares==0 and samples==0 and not captured,'list mode must not create a radial or consume pointing/camera')
@@ -182,3 +182,29 @@ tick();assert(release_calls==1,'no repeated selection on closed frames')
 mode=2;release_down=true;snapshot.open=true;tick();release_down=false;snapshot.open=false;tick()
 assert(release_calls==1,'list mode never confirms on release')
 print('Select on Release integration passed: opt-in default, closed-frame delivery, once-only and list exclusion.')
+
+-- Version is a minimum feature level; compatible API 1 revisions keep working.
+mode=1;enabled=true;focus=true;buttons.confirm=false;snapshot.open=true;vector={0,1}
+for _,version in ipairs({2,3,99}) do
+    local provider=env.ModBindingsMenu
+    env.ModBindingsMenu={api=1,version=version,
+        register_binding=provider.register_binding,is_down=provider.is_down}
+    registered={};local before=samples
+    tick()
+    assert(registered['native_stratagem_radial.next'])
+    assert(registered['native_stratagem_radial.previous'])
+    assert(registered['native_stratagem_radial.confirm'])
+    assert(samples==before+1 and captured,'compatible versions must sample the wheel pointer')
+    assert(env.radial.selected==10,'compatible versions must select the pointed card')
+end
+local function rejects(version,api)
+    env.ModBindingsMenu.version=version;env.ModBindingsMenu.api=api
+    local before=samples;tick()
+    assert(env.NativeStratagemRadial.selection_status=='Requires Mod Bindings Menu v2 or newer')
+    assert(samples==before and not captured,'incompatible providers must not sample or capture input')
+end
+rejects(1,1);rejects(nil,1);rejects('3',1);rejects(false,1);rejects({},1);rejects(0/0,1)
+rejects(3,2)
+env.ModBindingsMenu.api=1;env.ModBindingsMenu.version=3;tick()
+assert(captured,'dependency recovery must resume pointing')
+print('Bindings compatibility passed: versions 2, 3 and future versions, invalid versions, API guard and recovery.')

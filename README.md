@@ -57,7 +57,7 @@ This project would not exist without **[CowboyBingus](https://github.com/CowboyB
 | Dependency | Version | Purpose |
 | --- | --- | --- |
 | [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest) | v18 / API 1 | Loads the addon |
-| [Mod Bindings Menu](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0) | v2.0 | Configurable selection controls |
+| [Mod Bindings Menu](https://github.com/CowboyBingus/ModBindingsMenu/releases/latest) | v2.0 or newer / API 1 | Configurable selection controls |
 | [Mod Options Menu](https://github.com/CowboyBingus/ModOptionsMenu) | v1.0.1 / API 1 | In-game settings |
 | HELLDIVERS 2 on Windows/Steam | Build 25480438 | Supported game build |
 | Arsenal or a compatible mod manager | Installation only | Deploys the addon and dependencies |
