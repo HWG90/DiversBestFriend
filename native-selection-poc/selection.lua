@@ -2,7 +2,7 @@
 local function selection_controller(input,report)
     local self={selected=nil,status='Open the native stratagem menu',job=nil,interval_ms=70}
     local previous,opened={},false
-    local owner,next_at,last_vector,point_mode
+    local owner,next_at,last_vector,point_mode,selected_kind
     function self.step(snapshot,buttons,now,vector)
         local edges={}
         for _,key in ipairs({'next','previous','confirm'}) do
@@ -13,7 +13,7 @@ local function selection_controller(input,report)
         if not active or (owner and snapshot.identity~=owner) then
             if self.job then report('Cancelled: menu closed, input unavailable, or HUD changed') end
             self.job=nil; self.selected=nil; opened=false
-            owner=nil;last_vector=nil;point_mode=false; return
+            owner=nil;last_vector=nil;point_mode=false;selected_kind=nil; return
         end
         owner=snapshot.identity
         local eligible={}
@@ -38,7 +38,9 @@ local function selection_controller(input,report)
             edges.confirm=false
         end
         local chosen
-        for i,row in ipairs(eligible) do if row.address==self.selected then chosen=i end end
+        for i,row in ipairs(eligible) do
+            if row.address==self.selected and (not selected_kind or row.kind==selected_kind) then chosen=i end
+        end
         if not chosen and self.selected then
             self.job=nil; chosen=1; self.selected=eligible[1] and eligible[1].address
             edges.confirm=false
@@ -79,6 +81,7 @@ local function selection_controller(input,report)
         end
         if not chosen then self.status='Point at a card, then press Confirm';return end
         local row=eligible[chosen]
+        selected_kind=row.kind
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)

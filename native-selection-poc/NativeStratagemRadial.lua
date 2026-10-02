@@ -1156,12 +1156,16 @@ local function duplicate_cards(b)
         end
         check_bounds()
         local rows={}
+        local allowed={}
         for _,original in ipairs(snapshot.rows) do
             assert(original.entry>=0 and original.entry<16,'Native card entry out of bounds')
             local card=address+0x110+original.entry*0x3760
             assert(self.owns(card),'Radial card ownership changed')
             rows[#rows+1]={address=card,entry=original.entry,kind=original.kind,width=original.width,height=original.height}
+            allowed[original.entry]=true
         end
+        -- Native updates populate all mission entries, including excluded ones.
+        for i=0,15 do visible(address+0x110+i*0x3760,allowed[i] and 1 or 0) end
         visible(address,1)
         return {identity=identity,panel=snapshot.panel,list=address,rows=rows,open=true,center=snapshot.center,geometry=snapshot.geometry}
     end
@@ -1544,7 +1548,7 @@ end
 local function selection_controller(input,report)
     local self={selected=nil,status='Open the native stratagem menu',job=nil,interval_ms=70}
     local previous,opened={},false
-    local owner,next_at,last_vector,point_mode
+    local owner,next_at,last_vector,point_mode,selected_kind
     function self.step(snapshot,buttons,now,vector)
         local edges={}
         for _,key in ipairs({'next','previous','confirm'}) do
@@ -1555,7 +1559,7 @@ local function selection_controller(input,report)
         if not active or (owner and snapshot.identity~=owner) then
             if self.job then report('Cancelled: menu closed, input unavailable, or HUD changed') end
             self.job=nil; self.selected=nil; opened=false
-            owner=nil;last_vector=nil;point_mode=false; return
+            owner=nil;last_vector=nil;point_mode=false;selected_kind=nil; return
         end
         owner=snapshot.identity
         local eligible={}
@@ -1580,7 +1584,9 @@ local function selection_controller(input,report)
             edges.confirm=false
         end
         local chosen
-        for i,row in ipairs(eligible) do if row.address==self.selected then chosen=i end end
+        for i,row in ipairs(eligible) do
+            if row.address==self.selected and (not selected_kind or row.kind==selected_kind) then chosen=i end
+        end
         if not chosen and self.selected then
             self.job=nil; chosen=1; self.selected=eligible[1] and eligible[1].address
             edges.confirm=false
@@ -1621,6 +1627,7 @@ local function selection_controller(input,report)
         end
         if not chosen then self.status='Point at a card, then press Confirm';return end
         local row=eligible[chosen]
+        selected_kind=row.kind
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
@@ -1724,6 +1731,67 @@ local function release_controller(input,report)
     return self
 end
 
+-- IDs are native stratagem kinds, never menu slots, names or direction codes.
+local function stratagem_blacklist(values)
+    local excluded={}
+    if values.hide_sos==true then excluded[145]=true end
+    for i=1,8 do
+        local kind=values['blacklist_kind_'..i]
+        if type(kind)=='number' and kind%1==0 and kind>=1 and kind<150 then excluded[kind]=true end
+    end
+    return excluded
+end
+local function blacklist_signature(excluded)
+    local ids={}
+    for kind=1,149 do if excluded[kind] then ids[#ids+1]=kind end end
+    return table.concat(ids,',')
+end
+local function blacklist_snapshot(snapshot,excluded)
+    if not snapshot or not snapshot.open then return snapshot end
+    local filtered={}
+    for key,value in pairs(snapshot) do filtered[key]=value end
+    filtered.rows,filtered.excluded_rows={},{}
+    for _,row in ipairs(snapshot.rows) do
+        local target=excluded[row.kind] and filtered.excluded_rows or filtered.rows
+        target[#target+1]=row
+    end
+    return filtered
+end
+-- Hide excluded stock rows only while DBF list mode is active. Do not touch
+-- card membership, native availability, binding files or gameplay definitions.
+local function blacklist_list_visibility(b)
+    local saved={}
+    local function same(a,c) return a and c and a[1]==c[1] and a[2]==c[2] end
+    local function restore(item)
+        if b.valid(item.identity) and same(b.get(item.address,'scale'),item.applied) then
+            b.set(item.address,'scale',item.before)
+        end
+    end
+    local self={}
+    function self.restore()
+        for _,item in pairs(saved) do restore(item) end
+        saved={}
+    end
+    function self.step(snapshot)
+        local active={}
+        if snapshot and snapshot.open then
+            for _,row in ipairs(snapshot.excluded_rows or {}) do active[row.address]=true end
+        end
+        for address,item in pairs(saved) do
+            if not active[address] or item.identity~=snapshot.identity then restore(item);saved[address]=nil end
+        end
+        for address in pairs(active) do
+            assert(b.valid(snapshot.identity),'Blacklist HUD changed')
+            local current=assert(b.get(address,'scale'),'Excluded row scale unavailable')
+            local item=saved[address]
+            if not item then item={identity=snapshot.identity,address=address,before=current};saved[address]=item
+            elseif not same(current,item.applied) then item.before=current end
+            b.set(address,'scale',{0,0});item.applied={0,0}
+        end
+    end
+    return self
+end
+
 local function canary_settings(menu,api,radial)
     local prefix='native_stratagem_radial.'
     local specs={
@@ -1743,6 +1811,12 @@ local function canary_settings(menu,api,radial)
         {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
         {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
     }
+    specs[#specs+1]={'hide_sos','Blacklist','Hide SOS Beacon','toggle',false,nil,nil,nil,
+        'Exclude SOS Beacon from every DBF selection layout. Manual vanilla stratagem input remains available.'}
+    for i=1,8 do
+        specs[#specs+1]={'blacklist_kind_'..i,'Blacklist','Extra stratagem ID '..i,'slider',0,0,149,1,
+            '0 = empty. Exclude this native stratagem ID in every DBF layout. Examples: 145 SOS Beacon, 33 Resupply, 124 Reinforce. See docs/BLACKLIST.md for the ID reference. Duplicates are harmless.'}
+    end
     local values={}
     api.values=api.values or {}
     local previous
@@ -1755,7 +1829,9 @@ local function canary_settings(menu,api,radial)
         if s[4]=='toggle' then valid=type(v)=='boolean'
         elseif type(v)=='number' and v==v then
             if s[4]=='choice' then valid=v%1==0 and v>=1 and v<=#s[6]
-            else valid=v>=s[6] and v<=s[7] end
+            else valid=v>=s[6] and v<=s[7]
+                if s[1]:find('blacklist_kind_',1,true) then valid=valid and v%1==0 end
+            end
         end
         if valid then api.values[s[1]]=v end
         if api.values[s[1]]==nil then api.values[s[1]]=s[5] end
@@ -1804,7 +1880,7 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=35,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=36,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1813,6 +1889,8 @@ local controller,failed,last_status
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
 local wheel,expanded,release_selection
+local excluded,exclusion_signature,hidden_rows={},'',nil
+local blacklist_release_blocked=false
 local select_on_release=false
 local input_interval_ms=70
 local binding_owner={}
@@ -1825,7 +1903,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R35 - BindingsCompatibility\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R36 - Blacklist\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1848,7 +1926,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R35 - BindingsCompatibility\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R36 - Blacklist\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -1896,6 +1974,7 @@ local function options()
     local values=canary_settings(menu,settings_state,radial)
     api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
     select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
+    excluded=stratagem_blacklist(values)
     if migrate_expanded then
         api.mode,api.experimental_layout=3,2
         if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
@@ -1930,6 +2009,7 @@ local function step()
         if not controller then
             backend=native_backend()
             backend.checkpoint=native_checkpoint
+            hidden_rows=blacklist_list_visibility(backend)
             native_checkpoint('native adapter ready; menu not entered')
             controller=radial.controller(backend)
             list_controller=radial.list_controller(backend)
@@ -1944,6 +2024,15 @@ local function step()
             expanded=expanded_wheel(backend,duplicates,input)
         end
         local now=backend.milliseconds()
+        local signature=blacklist_signature(excluded)
+        if signature~=exclusion_signature then
+            -- An applied edit cancels queued/armed input before any more pulses.
+            selection.step(nil,nil,now);release_selection.reset()
+            controller.restore();list_controller.restore();hidden_rows.restore()
+            duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
+            exclusion_signature=signature
+            blacklist_release_blocked=true
+        end
         local dt=last_tick and math.max(0.001,math.min((now-last_tick)/1000,0.05)) or 1/60
         last_tick=now
         local legacy=api.mode==3 and api.experimental_layout==1
@@ -1964,8 +2053,11 @@ local function step()
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
+        snapshot=blacklist_snapshot(snapshot,excluded)
         local vector,paged
-        if snapshot and snapshot.open and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
+        local empty=snapshot and snapshot.open and #snapshot.rows==0
+        if empty then selection.step(nil,nil,now);release_selection.reset() end
+        if snapshot and snapshot.open and not empty and api.mode~=2 and not (release_selection.job and release_selection.job.finished) then
             native_checkpoint('first open snapshot accepted')
             local ready,context=pcall(input.view_context)
             if ready then
@@ -2001,7 +2093,7 @@ local function step()
                 api.selection_status=tostring(context);buttons=nil;snapshot=nil
             end
         end
-        if api.mode==2 or not snapshot or not snapshot.open then
+        if api.mode==2 or not snapshot or not snapshot.open or empty then
             duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
             if api.mode==2 then api.pointing_status='off; keybinding list mode' end
         end
@@ -2010,8 +2102,9 @@ local function step()
         selection.interval_ms=input_interval_ms
         if not release_selection.job then selection.step(snapshot,buttons,now,vector) end
         release_selection.interval_ms=input_interval_ms
-        release_selection.step(select_on_release and api.enabled and api.mode~=2 and buttons~=nil,
+        release_selection.step(select_on_release and not blacklist_release_blocked and api.enabled and api.mode~=2 and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
+        if not was_open then blacklist_release_blocked=false end
         if release_selection.job then selection.selected=release_selection.job.address end
         sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
             release_selection.job or selection.job,now,api.mode==2,paged)
@@ -2033,7 +2126,7 @@ local function step()
         -- Never fall back to arranging the original list if preparation failed.
         if was_open then native_checkpoint('layout enter') end
         local display=api.mode==2 and list_controller or (expanded_layout and expanded or (legacy and controller or wheel))
-        if api.mode~=2 and snapshot and snapshot.open then
+        if api.mode~=2 and snapshot and snapshot.open and not empty then
             wheel.draw(selection.selected,vector,snapshot.rows,legacy or expanded_layout)
             if expanded_layout then wheel.caption(expanded.draw(selection.selected,snapshot.rows)) end
             local selected_row
@@ -2044,7 +2137,9 @@ local function step()
             end
             wheel.timer(selected_row)
         end
-        display.step(api.enabled,snapshot or {open=false})
+        display.step(api.enabled,empty and api.mode~=2 and {open=false} or snapshot or {open=false})
+        if empty then api.selection_status='No selectable stratagems remain after filtering' end
+        hidden_rows.step(api.enabled and api.mode==2 and snapshot or nil)
         if was_open then native_checkpoint('layout returned') end
         api.count=display.count
         api.observation=display.observation
@@ -2061,6 +2156,7 @@ local function step()
         if duplicates then pcall(duplicates.hide) end
         if wheel then pcall(wheel.hide) end
         if expanded then pcall(expanded.hide) end
+        if hidden_rows then pcall(hidden_rows.restore) end
         api.count=0
         report('disabled after error: '..tostring(why))
     end

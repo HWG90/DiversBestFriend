@@ -4,6 +4,13 @@ All documented changes to **Diver's Best Friend / DiversBestFriend** through **R
 
 R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
 
+## Unreleased — Stratagem blacklist
+
+- Add a persistent SOS Beacon exclusion toggle and eight extra native-kind ID slots, empty by default.
+- Filter all DBF selection layouts before navigation and geometry; preserve native gameplay availability. Hide excluded copied cards and temporarily hide excluded stock rows in DBF list mode, restoring their scale on close/disable/mode change.
+- Cancel queued/armed input when applied exclusions change. Empty filtered lists release camera capture and cannot confirm. Guard against reused card addresses changing kind.
+- Local build only; in-game verification remains pending.
+
 ## R35 — Bindings Compatibility — 2026-10-01
 
 [Release and download](https://github.com/HWG90/DiversBestFriend/releases/tag/r35)

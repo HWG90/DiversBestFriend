@@ -121,12 +121,16 @@ local function duplicate_cards(b)
         end
         check_bounds()
         local rows={}
+        local allowed={}
         for _,original in ipairs(snapshot.rows) do
             assert(original.entry>=0 and original.entry<16,'Native card entry out of bounds')
             local card=address+0x110+original.entry*0x3760
             assert(self.owns(card),'Radial card ownership changed')
             rows[#rows+1]={address=card,entry=original.entry,kind=original.kind,width=original.width,height=original.height}
+            allowed[original.entry]=true
         end
+        -- Native updates populate all mission entries, including excluded ones.
+        for i=0,15 do visible(address+0x110+i*0x3760,allowed[i] and 1 or 0) end
         visible(address,1)
         return {identity=identity,panel=snapshot.panel,list=address,rows=rows,open=true,center=snapshot.center,geometry=snapshot.geometry}
     end

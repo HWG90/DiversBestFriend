@@ -26,12 +26,13 @@ class PackageTest(unittest.TestCase):
             body = payload[8:]
             self.assertEqual(body, (ROOT / 'NativeStratagemRadial.lua').read_bytes())
             self.assertTrue(body.startswith(('-- HD2-Addon: ' + builder.RESOURCE + '\n').encode()))
-            for filename in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'entry.lua'):
+            for filename in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'blacklist.lua', 'entry.lua'):
                 self.assertIn((ROOT / filename).read_text().encode(), body)
             self.assertEqual(manifest['Guid'], builder.GUID)
             self.assertEqual(manifest['Name'], builder.DISPLAY_NAME)
             self.assertEqual(manifest['Version'], 1)
             self.assertEqual(package.read('INSTALL.txt'), (ROOT / 'INSTALL.txt').read_bytes())
+            self.assertEqual(package.read('docs/BLACKLIST.md'), (ROOT.parent / 'docs/BLACKLIST.md').read_bytes())
 
     def test_deterministic_build(self):
         first = builder.OUTPUT.read_bytes()

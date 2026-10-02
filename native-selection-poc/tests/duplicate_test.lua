@@ -79,6 +79,14 @@ end
 d.hide();assert(visibility[copy.list]==0)
 local again=d.prepare(snapshot,context,1/60)
 assert(again.list==copy.list and roots==1 and constructors==16 and updates==32,'reuse widgets across reopen')
+local original_rows=snapshot.rows
+snapshot.rows={original_rows[1],original_rows[4]}
+local filtered=d.prepare(snapshot,context,1/60)
+assert(#filtered.rows==2 and visibility[copy.list+0x110]==1)
+assert(visibility[copy.list+0x110+0x3760]==0,'excluded copied card must be hidden after native updates')
+assert(visibility[copy.list+0x110+3*0x3760]==1,'allowed copied cards retain their native entry indices')
+snapshot.rows=original_rows;d.prepare(snapshot,context,1/60)
+assert(visibility[copy.list+0x110+0x3760]==1,'restoring membership must restore copied-card visibility')
 identity=identity+8
 assert(not d.owns(copy.rows[1].address),'reject stale HUD owner')
 d.hide();assert(visibility[copy.list]==1,'do not write stale HUD')

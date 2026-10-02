@@ -17,6 +17,12 @@ local function canary_settings(menu,api,radial)
         {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
         {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
     }
+    specs[#specs+1]={'hide_sos','Blacklist','Hide SOS Beacon','toggle',false,nil,nil,nil,
+        'Exclude SOS Beacon from every DBF selection layout. Manual vanilla stratagem input remains available.'}
+    for i=1,8 do
+        specs[#specs+1]={'blacklist_kind_'..i,'Blacklist','Extra stratagem ID '..i,'slider',0,0,149,1,
+            '0 = empty. Exclude this native stratagem ID in every DBF layout. Examples: 145 SOS Beacon, 33 Resupply, 124 Reinforce. See docs/BLACKLIST.md for the ID reference. Duplicates are harmless.'}
+    end
     local values={}
     api.values=api.values or {}
     local previous
@@ -29,7 +35,9 @@ local function canary_settings(menu,api,radial)
         if s[4]=='toggle' then valid=type(v)=='boolean'
         elseif type(v)=='number' and v==v then
             if s[4]=='choice' then valid=v%1==0 and v>=1 and v<=#s[6]
-            else valid=v>=s[6] and v<=s[7] end
+            else valid=v>=s[6] and v<=s[7]
+                if s[1]:find('blacklist_kind_',1,true) then valid=valid and v%1==0 end
+            end
         end
         if valid then api.values[s[1]]=v end
         if api.values[s[1]]==nil then api.values[s[1]]=s[5] end

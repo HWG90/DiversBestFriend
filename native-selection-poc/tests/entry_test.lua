@@ -8,6 +8,7 @@ local buttons={next=false,previous=false,confirm=false}
 local snapshot={identity=1,open=true,rows={{address=10,kind=3},{address=20,kind=33}}}
 local logs={}
 local mode,enabled,experimental_layout=2,true,1
+local blacklist_values={}
 local full_color=true
 local release_enabled=false
 local release_down,release_calls=true,0
@@ -20,6 +21,9 @@ local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
+local blacklist_chunk=assert(loadstring(source('blacklist.lua')..'\nreturn stratagem_blacklist,blacklist_signature,blacklist_snapshot'))
+env.stratagem_blacklist,env.blacklist_signature,env.blacklist_snapshot=blacklist_chunk()
+env.blacklist_list_visibility=function() return {restore=function() end,step=function() end} end
 env.canary_settings=assert(loadstring(source('settings.lua')..'\nreturn canary_settings'))()
 env.selection_feedback=assert(loadstring(source('feedback.lua')..'\nreturn selection_feedback'))()
 env.release_controller=make_release
@@ -39,6 +43,8 @@ env.ModOptionsMenu={api=1,register_option=function(id,spec)
     if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3 and spec.default==1) end
     return true
 end,get=function(id)
+    local key=id:match('native_stratagem_radial%.(.*)')
+    if key=='hide_sos' or key:find('blacklist_kind_',1,true) then return blacklist_values[key] end
     if id:find('select_on_release',1,true) then return release_enabled end
     if id:find('selection_mode',1,true) then return mode end
     if id:find('enabled',1,true) then return enabled end
@@ -208,3 +214,38 @@ rejects(3,2)
 env.ModBindingsMenu.api=1;env.ModBindingsMenu.version=3;tick()
 assert(captured,'dependency recovery must resume pointing')
 print('Bindings compatibility passed: versions 2, 3 and future versions, invalid versions, API guard and recovery.')
+
+-- All layouts receive the same filter before they build navigation/geometry.
+release_enabled=false;release_down=true;buttons.confirm=false
+local sos={address=30,kind=145,entry=2,width=100,height=60}
+snapshot.rows={{address=10,kind=3,entry=0,width=100,height=60},sos}
+blacklist_values.hide_sos=true
+for _,layout in ipairs({{1,1},{2,1},{3,1},{3,2}}) do
+    mode,experimental_layout=layout[1],layout[2];tick()
+    assert(env.NativeStratagemRadial.last_open:find('3',1,true))
+    assert(not env.NativeStratagemRadial.last_open:find(':145:',1,true),'excluded SOS must never reach a selection layout')
+    assert(#snapshot.rows==2 and snapshot.rows[2]==sos,'filter must preserve original mission membership')
+end
+-- Applying an exclusion cancels an existing input before it can advance.
+mode=2;blacklist_values.hide_sos=false;tick();buttons.confirm=false;tick();buttons.confirm=true;tick()
+local before=advances
+blacklist_values.blacklist_kind_1=3;tick()
+assert(advances==before,'a blacklist edit must cancel pending Confirm input')
+blacklist_values.hide_sos=true;buttons.confirm=false
+for _,layout in ipairs({{1,1},{2,1},{3,1},{3,2}}) do
+    mode,experimental_layout=layout[1],layout[2];local old=samples;tick()
+    assert(not captured and samples==old and not env.radial.selected,'all-excluded lists must release camera and clear selection')
+    assert(env.NativeStratagemRadial.selection_status=='No selectable stratagems remain after filtering')
+end
+blacklist_values={hide_sos=false,blacklist_kind_1=0};mode=1;tick();assert(captured,'clearing exclusions restores the layout')
+print('Blacklist integration passed: all four layouts, original membership, queued input cancellation, empty list safety and recovery.')
+-- Applying an exclusion must also disarm a pending Select on Release.
+release_enabled=true;release_down=true;snapshot.open=true;vector={0,1};tick()
+local old_release_calls=release_calls
+blacklist_values.blacklist_kind_1=3;tick()
+release_down=false;snapshot.open=false;tick()
+assert(release_calls==old_release_calls,'an excluded previously armed kind must never start on release')
+snapshot.open=true;release_down=true;tick()
+release_down=false;snapshot.open=false;tick()
+assert(release_calls==old_release_calls+1,'a fresh menu opening may arm the remaining allowed stratagem')
+print('Blacklist release safety passed: applied exclusions disarm pending release selection.')

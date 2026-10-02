@@ -20,6 +20,10 @@ Package checks and isolated LuaJIT tests pass. This build still needs in-game ve
 
 Install only one revision; stable and canary share addon identity, settings and bindings. Earlier [canary R34](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) remains available for comparison; it lacks the bindings compatibility fix.
 
+## Local development: stratagem blacklist
+
+The local R36 build adds **Blacklist / Hide SOS Beacon** and eight extra stratagem ID slots in the existing settings menu. Nothing is excluded by default. See [configuration and ID reference](docs/BLACKLIST.md). This feature has not been published or tested in-game.
+
 ## Selection modes
 
 | Mode | Controls | Layout |

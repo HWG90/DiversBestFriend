@@ -14,6 +14,10 @@ tick();assert(s.selected==30,'open selects the displayed top row')
 for _,address in ipairs({10,20,30,10,20,30}) do press('next');assert(s.selected==address,'next follows visual order and wraps') end
 for _,address in ipairs({20,10,30,20,10,30}) do press('previous');assert(s.selected==address,'previous follows reverse visual order and wraps') end
 assert(rows[1].address==10 and rows[2].address==20,'sorting does not mutate native/radial storage order')
+local old_kind=rows[3].kind
+rows[3].kind=145;local before=confirmed
+tick({next=false,previous=false,confirm=true});assert(confirmed==before,'reused card addresses must not confirm a different stratagem immediately')
+rows[3].kind=old_kind;s.step(nil,nil,now);tick()
 -- Native resorting keeps the same selected item, then navigates its new neighbor.
 rows[1].list_y=0;rows[3].list_y=-68;tick();assert(s.selected==30)
 press('next');assert(s.selected==20)

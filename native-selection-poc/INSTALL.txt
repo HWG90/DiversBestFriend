@@ -5,8 +5,14 @@ Restores wheel input compatibility with the updated megapack by accepting
 Mod Bindings Menu interface versions 2 or newer with API 1. Includes R34
 page-change sounds and R33 sound, size and appearance controls.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Revision 35 - BindingsCompatibility. Select on Release remains optional and off by default.
+Local unreleased Revision 36 - Blacklist. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 or newer (API 1) and Mod Options Menu.
+
+Mod Options > Diver's Best Friend > Blacklist:
+Hide SOS Beacon is off by default. Extra stratagem ID 1-8 are 0 (empty).
+Use the native ID reference in docs/BLACKLIST.md for other exclusions.
+Apply edits; they cancel queued/armed DBF input. Exclusions persist through
+Mod Options Menu and affect every DBF layout, not vanilla availability.
 
 Mod Options > Diver's Best Friend > Selection / Mode:
 
