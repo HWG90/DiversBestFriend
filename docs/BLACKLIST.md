@@ -1,4 +1,4 @@
-# Stratagem blacklist (local R36 build)
+# Stratagem blacklist (Canary R36)
 
 Open **MODS > Diver's Best Friend > Blacklist**. Turn **Hide SOS Beacon** on and press **Apply** to omit SOS Beacon from every DBF layout. It defaults off.
 
@@ -8,7 +8,7 @@ IDs identify stratagems, rather than loadout positions or arrow sequences. SOS B
 
 Exclusions remove entries before native-wheel paging, expanded-wedge geometry, copied-card layout and list navigation. The original top-left vanilla HUD remains present in radial layouts. In DBF list mode, excluded native rows are temporarily hidden; native positions are retained, so gaps can remain. Vanilla manual input and native availability are unchanged. Closing the menu, disabling DBF or switching modes restores stock-row scale with owner and later-change guards.
 
-Applying a blacklist edit cancels queued/armed DBF input. Close and reopen the stratagem menu before using Select on Release again; an edit cannot rearm a different entry during the same held-menu session. If all entries are excluded, DBF clears selection and releases camera capture; Confirm and Select on Release cannot start a sequence. The local build has isolated regression coverage but still needs an in-game smoke test for all layouts, visibility/restoration, persistence, loadout changes and empty lists.
+Applying a blacklist edit cancels queued/armed DBF input. Close and reopen the stratagem menu before using Select on Release again; an edit cannot rearm a different entry during the same held-menu session. If all entries are excluded, DBF clears selection and releases camera capture; Confirm and Select on Release cannot start a sequence. The prerelease has isolated regression coverage but still needs an in-game smoke test for all layouts, visibility/restoration, persistence, loadout changes and empty lists.
 
 ## Stratagem ID reference
 
