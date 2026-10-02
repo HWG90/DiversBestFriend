@@ -24,8 +24,8 @@ native.open=false;assert(filter(native,excluded)==native);native.open=true
 local scale={[10]={1,1},[70]={0.9,0.8},[20]={1,1}}
 local valid=true;local writes=0
 local controller=visibility({valid=function(id) return valid and id==1 end,
-    get=function(address,property) assert(property=='scale');return scale[address] end,
-    set=function(address,property,v) assert(property=='scale');scale[address]={v[1],v[2]};writes=writes+1 end})
+    get=function(address,property) return property=='scale' and scale[address] or {0,address==70 and 0 or -68} end,
+    set=function(address,property,v) if property=='scale' then scale[address]={v[1],v[2]} end;writes=writes+1 end})
 controller.step(filter(native,excluded));assert(scale[70][1]==0 and scale[70][2]==0)
 controller.step(filter(native,{}));assert(scale[70][1]==0.9 and scale[70][2]==0.8)
 controller.step(filter(native,excluded));scale[70]={0.7,0.7};controller.restore()

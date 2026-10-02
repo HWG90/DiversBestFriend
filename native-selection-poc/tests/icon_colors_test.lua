@@ -8,7 +8,7 @@ local native={
  [0x14498c0]=function(icon,key,v) assert(icon==12345);uniforms[key]={v[0],v[1],v[2],v[3]} end,
 }
 local proxy=setmetatable({}, {__index=ffi})
-proxy.cast=function(t,v) if t:find('(*)',1,true) then return assert(native[v-base]) end;return ffi.cast(t,v) end
+proxy.cast=function(t,v) if t:find('(*)',1,true) then ffi.cast(t,0);return assert(native[v-base]) end;return ffi.cast(t,v) end
 local env=setmetatable({require=function() return proxy end,radial={full_color=true}},{__index=_G})
 local chunk=assert(loadstring(source('icon_colors.lua')..'\nreturn configure_stratagem_icon'));setfenv(chunk,env);local apply=chunk()
 local palette={}
@@ -35,6 +35,11 @@ env.radial.full_color=false;uniforms={};apply(b,12345,info)
 assert(material==0x57fcf14ad069020bULL and next(uniforms)==nil,'off restores raw material')
 env.radial.full_color=true;apply(b,12345,info)
 assert(material==0xaf73e09d6d725398ULL and uniforms[0x28723f4d],'reenable restores channel colors')
+for i=1,10000 do
+    env.radial.full_color=i%2==0
+    apply(b,12345,info,i%3==0)
+end
+print('Icon FFI stress passed: 10000 repaints with real type parsing and mocked native calls.')
 info.category=16;local before=calls;assert(not pcall(apply,b,12345,info) and calls==before,'reject invalid category before native assignment')
 info.category=3;palette[0x3318040+48][1]=0/0
 assert(not pcall(apply,b,12345,info) and calls==before,'reject invalid palette before native assignment')

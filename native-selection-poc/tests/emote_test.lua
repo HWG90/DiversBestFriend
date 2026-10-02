@@ -122,6 +122,29 @@ table.remove(rows);table.remove(rows)
 w.prepare(snap,idle,false)
 local single,single_changed,single_paged=w.prepare(snap,next_button,false)
 assert(w.pages==1 and not single_changed and not single_paged and w.page==1,'single page ignores paging edges')
+local filter=assert(loadstring(source('blacklist.lua')..'\nreturn blacklist_snapshot'))()
+local compact_rows={};for i=1,16 do compact_rows[i]={address=4000+i,kind=17-i,entry=i-1} end
+for _,removed in ipairs({{1},{8},{16},{1,7,9,16},{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}}) do
+    local excluded={};for _,i in ipairs(removed) do excluded[compact_rows[i].kind]=true end
+    local filtered=filter({identity=id,list=parent,center={0,0},open=true,rows=compact_rows},excluded)
+    w.hide();local packed=w.prepare(filtered,idle,false)
+    if #filtered.rows>0 then
+        for page_number=1,w.pages do
+            for slot,row in ipairs(packed.rows) do
+                assert(row==filtered.rows[(page_number-1)*8+slot],'native sectors pack survivor order')
+                local started
+                local sel=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
+                local vector={0,1,slot=slot}
+                sel.step(packed,idle,0,vector)
+                sel.step(packed,{next=false,previous=false,confirm=true},1,vector)
+                assert(started==row.kind,'native packed sector Confirm maps to original kind')
+            end
+            if page_number<w.pages then w.prepare(filtered,idle,false);packed=w.prepare(filtered,next_button,false) end
+        end
+    else assert(not packed.open or #packed.rows==0,'empty filtered wheel has no selection rows') end
+end
+print('Native wheel blacklist packing passed: first/middle/last/multiple/all removals and Confirm mapping across page boundaries.')
+w.prepare(snap,idle,false)
 id=id+8;w.hide();assert(shown[w.address]==1,'never touch stale HUD')
 print('Native wheel adapter passed: constructor ABI/scope, bounded paging/order, owned visuals, native cursor/sector state, empty-slot rejection, busy/held paging, offset, reuse and stale owner.')
 

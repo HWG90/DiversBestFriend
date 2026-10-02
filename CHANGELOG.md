@@ -1,6 +1,6 @@
 # Changelog
 
-All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R36**.
+All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R39**.
 
 R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
 

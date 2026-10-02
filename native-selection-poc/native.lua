@@ -106,8 +106,10 @@ local function native_backend()
             local root=hud()
             assert(root and root==endpoint_owner,'Animation owner changed')
             local index=(address-(root+0x24e340+0x146dc0+0x1150))/0x3760
-            assert((backend.radial_card and backend.radial_card(address)) or
-                (not backend.radial_card and index>=0 and index<16 and index%1==0),'Invalid animation card')
+            local original_card=index>=0 and index<16 and index%1==0
+                and pointer(address+0xf0)==root+0x24e340+0x146dc0+0x1040
+            assert(original_card or (backend.radial_card and backend.radial_card(address)),
+                'Invalid animation card')
             float_pair[0],float_pair[1]=value[1],value[2]
             assert(read(address+spec.offset,8),'Animation data unavailable')
             assert(kernel.WriteProcessMemory(process,ffi.cast('void *',address+spec.offset),
@@ -166,6 +168,12 @@ local function native_backend()
     end
     backend.read=read; backend.pointer=pointer; backend.u32=u32; backend.base=base
     local input_handler=ffi.cast('void (*)(uintptr_t)',base+0xa900d0)
+    -- Parse anonymous function types once: repeated ffi.cast strings exhaust LuaJIT's type table.
+    local open_input=ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)
+    local close_input=ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)
+    local ui_sound=ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)
+    local scramble_effect=ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',base+0xa10820)
+    local request_slot=ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)
     local byte=ffi.new('uint8_t[1]')
     function backend.pulse_byte(address,value)
         byte[0]=value
@@ -181,10 +189,10 @@ local function native_backend()
         return true
     end
     function backend.open_input(component)
-        return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
+        return open_input(component)~=0
     end
     function backend.close_input(component)
-        ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+        close_input(component)
     end
     function backend.ui_sound(event)
         local events={move=0x39425a55,confirm=0xdd274583}
@@ -192,17 +200,16 @@ local function native_backend()
         local engine=assert(pointer(base+0x3326318),'Audio engine unavailable')
         local game=assert(pointer(base+0x3326340),'Game state unavailable')
         assert(pointer(engine+0x288) and pointer(engine+0x338) and pointer(game+0x10f8),'UI audio unavailable')
-        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)(0,sound)
+        ui_sound(0,sound)
     end
     function backend.scramble_effect(effects,key,kind)
         local result=ffi.new('uint32_t[1]',0xffffffff)
         -- Same six-argument query as the matcher; optional outputs are null.
-        ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',
-            base+0xa10820)(effects,result,key,kind,0,0)
+        scramble_effect(effects,result,key,kind,0,0)
         return tonumber(result[0])
     end
     function backend.request_stratagem_slot(weapon)
-        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
+        request_slot(weapon,5)
     end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end

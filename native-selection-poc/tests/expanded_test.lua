@@ -156,5 +156,25 @@ w.prepare(snap);assert(constructors==33,'reopen reuses storage')
 env.radial.wheel_scale=1.2;env.radial.icon_scale=0.8
 w.prepare(snap)
 assert(props[root].scale[1]==1.2 and props[root+0x110+0x380].scale[1]==0.8,'independent root/icon scales')
+local filter=assert(loadstring(source('blacklist.lua')..'\nreturn blacklist_snapshot'))()
+local compact_rows={};for i=1,16 do compact_rows[i]={address=4000+i,kind=17-i,entry=i-1} end
+for _,removed in ipairs({{1},{8},{16},{1,7,9,16},{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}}) do
+    local excluded={};for _,i in ipairs(removed) do excluded[compact_rows[i].kind]=true end
+    local filtered=filter({identity=id,list=parent,center={0,0},open=true,rows=compact_rows},excluded)
+    local packed=w.prepare(filtered)
+    for slot,row in ipairs(packed.rows) do
+        assert(row==filtered.rows[slot],'expanded icons pack survivor order')
+        local _,_,position=geometry(#packed.rows,slot)
+        local vector={position[1]/185,position[2]/185}
+        assert(point(packed.rows,vector)==slot,'expanded packed wedge points to its icon')
+        local started
+        local sel=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
+        sel.step(packed,idle,0,vector);sel.step(packed,confirm,1,vector)
+        assert(started==row.kind and w.draw(row.address,packed.rows)==row.kind,'expanded packed Confirm and caption preserve kind')
+    end
+    if #filtered.rows==0 then assert(#packed.rows==0 and point(packed.rows,{0,1})==nil) end
+end
+print('Expanded blacklist packing passed: first/middle/last/multiple/all removals, icon positions and Confirm/caption mapping.')
+w.prepare(snap)
 id=id+8;w.hide();assert(shown[root]==1,'stale owner is never mutated')
 print('Expanded wedges passed: '..checks..' geometry/selection checks, 16-slot construction, scope/ownership, transformed width, slot-16 Confirm, membership resize, empty slots, reopen and stale HUD.')

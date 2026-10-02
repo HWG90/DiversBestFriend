@@ -1,11 +1,14 @@
 Diver's Best Friend Canary - Automated Stratagem System (ASS)
 
+Fixes R38 animation-card validation when blacklist compaction moves original list cards.
+Blacklisted list entries leave no internal gaps; remaining rows shift together.
+Caches native input, sound and icon function pointers to prevent LuaJIT table overflow.
 Close the game, import this ZIP into Arsenal, deploy and restart.
 Restores wheel input compatibility with the updated megapack by accepting
 Mod Bindings Menu interface versions 2 or newer with API 1. Includes R34
 page-change sounds and R33 sound, size and appearance controls.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Canary Revision 36 - Blacklist. Select on Release remains optional and off by default.
+Canary Revision 39 - AnimationCardValidation. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 or newer (API 1) and Mod Options Menu.
 
 Mod Options > Diver's Best Friend > Blacklist:

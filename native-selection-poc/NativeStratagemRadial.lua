@@ -365,8 +365,10 @@ local function native_backend()
             local root=hud()
             assert(root and root==endpoint_owner,'Animation owner changed')
             local index=(address-(root+0x24e340+0x146dc0+0x1150))/0x3760
-            assert((backend.radial_card and backend.radial_card(address)) or
-                (not backend.radial_card and index>=0 and index<16 and index%1==0),'Invalid animation card')
+            local original_card=index>=0 and index<16 and index%1==0
+                and pointer(address+0xf0)==root+0x24e340+0x146dc0+0x1040
+            assert(original_card or (backend.radial_card and backend.radial_card(address)),
+                'Invalid animation card')
             float_pair[0],float_pair[1]=value[1],value[2]
             assert(read(address+spec.offset,8),'Animation data unavailable')
             assert(kernel.WriteProcessMemory(process,ffi.cast('void *',address+spec.offset),
@@ -425,6 +427,12 @@ local function native_backend()
     end
     backend.read=read; backend.pointer=pointer; backend.u32=u32; backend.base=base
     local input_handler=ffi.cast('void (*)(uintptr_t)',base+0xa900d0)
+    -- Parse anonymous function types once: repeated ffi.cast strings exhaust LuaJIT's type table.
+    local open_input=ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)
+    local close_input=ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)
+    local ui_sound=ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)
+    local scramble_effect=ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',base+0xa10820)
+    local request_slot=ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)
     local byte=ffi.new('uint8_t[1]')
     function backend.pulse_byte(address,value)
         byte[0]=value
@@ -440,10 +448,10 @@ local function native_backend()
         return true
     end
     function backend.open_input(component)
-        return ffi.cast('uint8_t (*)(uintptr_t)',base+0xa8e850)(component)~=0
+        return open_input(component)~=0
     end
     function backend.close_input(component)
-        ffi.cast('void (*)(uintptr_t)',base+0xa8fb50)(component)
+        close_input(component)
     end
     function backend.ui_sound(event)
         local events={move=0x39425a55,confirm=0xdd274583}
@@ -451,17 +459,16 @@ local function native_backend()
         local engine=assert(pointer(base+0x3326318),'Audio engine unavailable')
         local game=assert(pointer(base+0x3326340),'Game state unavailable')
         assert(pointer(engine+0x288) and pointer(engine+0x338) and pointer(game+0x10f8),'UI audio unavailable')
-        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0x1327f50)(0,sound)
+        ui_sound(0,sound)
     end
     function backend.scramble_effect(effects,key,kind)
         local result=ffi.new('uint32_t[1]',0xffffffff)
         -- Same six-argument query as the matcher; optional outputs are null.
-        ffi.cast('uintptr_t (*)(uintptr_t, uint32_t *, uint32_t, uint32_t, uintptr_t, uintptr_t)',
-            base+0xa10820)(effects,result,key,kind,0,0)
+        scramble_effect(effects,result,key,kind,0,0)
         return tonumber(result[0])
     end
     function backend.request_stratagem_slot(weapon)
-        ffi.cast('void (*)(uintptr_t, uint32_t)',base+0xa93e90)(weapon,5)
+        request_slot(weapon,5)
     end
     ffi.cdef 'unsigned long long GetTickCount64(void);'
     function backend.milliseconds() return tonumber(kernel.GetTickCount64()) end
@@ -992,10 +999,21 @@ local function camera_capture(b)
     return self
 end
 
+-- Keep pointers per backend; parsing anonymous function types on each repaint leaks ctypes.
+local icon_native_calls=setmetatable({}, {__mode='k'})
 -- Called within the owner's HUD resource scope, only for separately owned icons.
 local function configure_stratagem_icon(b,icon,info,cooling)
     local ffi=require('ffi')
-    local texture=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint8_t)',b.base+0x1450230)
+    local calls=icon_native_calls[b]
+    if not calls then
+        calls={
+            texture=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint8_t)',b.base+0x1450230),
+            material=ffi.cast('uintptr_t (*)(uintptr_t)',b.base+0x144f6e0),
+            parameter=ffi.cast('void (*)(uintptr_t, uint32_t, const float *)',b.base+0x14498c0),
+        }
+        icon_native_calls[b]=calls
+    end
+    local texture,material,parameter=calls.texture,calls.material,calls.parameter
     local hash=ffi.new('uint64_t[1]');ffi.copy(hash,info.texture,8)
     if radial.full_color==false and not cooling then
         texture(icon,0x57fcf14ad069020bULL,hash[0],0)
@@ -1025,8 +1043,6 @@ local function configure_stratagem_icon(b,icon,info,cooling)
         end
     end
     texture(icon,0xaf73e09d6d725398ULL,hash[0],0)
-    local material=ffi.cast('uintptr_t (*)(uintptr_t)',b.base+0x144f6e0)
-    local parameter=ffi.cast('void (*)(uintptr_t, uint32_t, const float *)',b.base+0x14498c0)
     assert(tonumber(material(icon))~=0,'Stratagem icon material unavailable')
     parameter(icon,0x28723f4d,accent)
     parameter(icon,0x851fd4fd,foreground)
@@ -1757,15 +1773,22 @@ local function blacklist_snapshot(snapshot,excluded)
     end
     return filtered
 end
--- Hide excluded stock rows only while DBF list mode is active. Do not touch
--- card membership, native availability, binding files or gameplay definitions.
+-- Compact the displayed stock list without changing native entry/kind identity.
+-- Restore only values still owned by DBF, including both native animation endpoints.
 local function blacklist_list_visibility(b)
     local saved={}
     local function same(a,c) return a and c and a[1]==c[1] and a[2]==c[2] end
     local function restore(item)
-        if b.valid(item.identity) and same(b.get(item.address,'scale'),item.applied) then
-            b.set(item.address,'scale',item.before)
+        if b.valid(item.identity) and same(b.get(item.address,item.property),item.applied) then
+            b.set(item.address,item.property,item.before)
         end
+    end
+    local function key(address,property) return address..':'..property end
+    local function baseline(address,property,identity)
+        local current=assert(b.get(address,property),'Blacklist row geometry unavailable')
+        local item=saved[key(address,property)]
+        if item and item.identity==identity and same(current,item.applied) then return item.before end
+        return current
     end
     local self={}
     function self.restore()
@@ -1773,20 +1796,55 @@ local function blacklist_list_visibility(b)
         saved={}
     end
     function self.step(snapshot)
-        local active={}
-        if snapshot and snapshot.open then
-            for _,row in ipairs(snapshot.excluded_rows or {}) do active[row.address]=true end
+        local plan={}
+        local function add(address,property,value)
+            plan[key(address,property)]={address=address,property=property,value=value}
         end
-        for address,item in pairs(saved) do
-            if not active[address] or item.identity~=snapshot.identity then restore(item);saved[address]=nil end
-        end
-        for address in pairs(active) do
+        if snapshot and snapshot.open and #(snapshot.excluded_rows or {})>0 then
             assert(b.valid(snapshot.identity),'Blacklist HUD changed')
-            local current=assert(b.get(address,'scale'),'Excluded row scale unavailable')
-            local item=saved[address]
-            if not item then item={identity=snapshot.identity,address=address,before=current};saved[address]=item
+            -- Include hidden cards when finding the original top-to-bottom slots.
+            -- Use saved native endpoints if the previous frame still has our values.
+            local ordered={}
+            for _,group in ipairs({snapshot.rows,snapshot.excluded_rows}) do
+                for _,row in ipairs(group) do
+                    ordered[#ordered+1]={row=row,target=baseline(row.address,'animation_b',snapshot.identity),
+                        position=baseline(row.address,'position',snapshot.identity),animation_a=baseline(row.address,'animation_a',snapshot.identity)}
+                end
+            end
+            table.sort(ordered,function(a,c)
+                if a.target[2]~=c.target[2] then return a.target[2]>c.target[2] end
+                if a.row.entry~=c.row.entry then return (a.row.entry or 0)<(c.row.entry or 0) end
+                return a.row.address<c.row.address
+            end)
+            local excluded={}
+            for _,row in ipairs(snapshot.excluded_rows) do
+                excluded[row.address]=true;add(row.address,'scale',{0,0})
+            end
+            local slot=0
+            for _,item in ipairs(ordered) do
+                if not excluded[item.row.address] then
+                    slot=slot+1
+                    local y=ordered[slot].target[2]
+                    if item.target[2]~=y then
+                        add(item.row.address,'position',{item.position[1],y})
+                        add(item.row.address,'animation_a',{item.animation_a[1],y})
+                        add(item.row.address,'animation_b',{item.target[1],y})
+                    end
+                end
+            end
+        end
+        for id,item in pairs(saved) do
+            if not plan[id] or item.identity~=snapshot.identity then restore(item);saved[id]=nil end
+        end
+        for id,change in pairs(plan) do
+            assert(b.valid(snapshot.identity),'Blacklist HUD changed')
+            local current=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
+            local item=saved[id]
+            if not item then
+                item={identity=snapshot.identity,address=change.address,property=change.property,before=current};saved[id]=item
             elseif not same(current,item.applied) then item.before=current end
-            b.set(address,'scale',{0,0});item.applied={0,0}
+            b.set(change.address,change.property,change.value)
+            item.applied=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
         end
     end
     return self
@@ -1880,7 +1938,7 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=36,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=39,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1903,7 +1961,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R36 - Blacklist\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1926,7 +1984,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriendCanary.log')
         if file then
-            file:write(MOD_NAME..' Canary R36 - Blacklist\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')

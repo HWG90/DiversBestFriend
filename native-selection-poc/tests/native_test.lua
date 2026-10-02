@@ -62,7 +62,7 @@ local offsets={[0x14476a0]=4,[0x1447160]=12,[0x1447ed0]=20,[0x144f160]=44,[0x144
 local proxy=setmetatable({}, {__index=ffi})
 proxy.load=function(name) assert(name=='kernel32' or name=='user32');return kernel end
 proxy.cast=function(kind,value)
-    if kind=='void (*)(uintptr_t)' then assert(value==base+0xa900d0);return function() error('must not invoke input during drawing') end end
+    if kind=='void (*)(uintptr_t)' then assert(value==base+0xa900d0 or value==base+0xa8fb50);return function() error('must not invoke input during drawing') end end
     if kind=='void (*)(uintptr_t, NSR_vec2)' then
         local offset=assert(offsets[value-base])
         return function(address,vector) pair(address+offset,vector.x,vector.y) end
@@ -100,6 +100,81 @@ backend.set(list+0x110,'animation_a',{123,456})
 assert(backend.get(list+0x110,'animation_a')[1]==123)
 assert(backend.get(list+0x110,'animation_b')[1]==0,'only the requested endpoint changes')
 assert(not pcall(backend.set,list,'animation_a',{1,2}),'reject writes outside native cards')
+-- Production initialization always installs the copied-card validator, even in list mode.
+-- Cast its native pointers without invoking them: all compaction writes use the real
+-- native backend above, whose OS reads/writes are confined to the fake address space.
+local duplicate=assert(loadstring(source('duplicate.lua')..'\nreturn duplicate_cards'))()(backend)
+assert(type(backend.radial_card)=='function' and not duplicate.owns(list+0x110))
+local filter,compact=assert(loadstring(source('blacklist.lua')..'\nreturn blacklist_snapshot,blacklist_list_visibility'))()
+for i=0,3 do pair(list+0x110+i*0x3760+4,0,-i*68);pair(list+0x110+i*0x3760+0x3738,0,-i*68) end
+local raw=assert(backend.snapshot())
+for i,row in ipairs(raw.rows) do row.kind=({124,145,33,136})[i] end
+local packed=filter(raw,{[145]=true})
+local hidden=compact(backend)
+hidden.step(packed);hidden.step(packed)
+assert(backend.get(raw.rows[2].address,'scale')[1]==0)
+for i,row in ipairs(packed.rows) do
+    assert(backend.get(row.address,'position')[2]==-(i-1)*68)
+    assert(backend.get(row.address,'animation_a')[2]==-(i-1)*68)
+    assert(backend.get(row.address,'animation_b')[2]==-(i-1)*68)
+end
+hidden.step(nil) -- switching layout/closing/disabling restores native geometry
+for i,row in ipairs(raw.rows) do
+    assert(backend.get(row.address,'animation_b')[2]==-(i-1)*68)
+    assert(backend.get(row.address,'scale')[1]>0)
+end
+hidden.step(packed);hidden.step(filter(raw,{})) -- clearing exclusions restores too
+assert(backend.get(raw.rows[3].address,'animation_b')[2]==-136)
+for _,address in ipairs({list,list+0x111,list+0x110-0x3760,list+0x110+16*0x3760}) do
+    assert(not pcall(backend.set,address,'animation_b',{0,0}),'reject non-card, misaligned and out-of-range writes with validator installed')
+end
+ptr(list+0x110+0xf0,1234)
+assert(not pcall(backend.set,list+0x110,'animation_b',{0,0}),'reject detached original card')
+ptr(list+0x110+0xf0,list)
+put(root+0x24e334,'\0')
+assert(not pcall(backend.set,list+0x110,'animation_b',{0,0}),'reject stale gameplay HUD owner')
+put(root+0x24e334,'\1')
+print('Native/duplicate/blacklist integration passed: stock compaction with real validator installed, repeated frames, mode/close/disable/clear restoration and address/ownership guards.')
+-- Also exercise constructed copied cards through the actual native write guard.
+local manager=0x50000000
+local resource=manager+5*0x3698
+ptr(base+0x347ce90,manager);ptr(list+0xf8,resource);ptr(resource+8,0x51000000)
+word(manager+0x2c5bc,0xffffffff)
+pair(list+4,0,0);pair(list+12,355,544);pair(list+20,1,1);pair(list+44,0,0);pair(list+60,0,0)
+local calls={}
+calls[0x1446840]=function(p) ptr(p+0xf8,resource);ptr(p+0xf0,0) end
+calls[0x18358d0]=function(p) ptr(p+0xf8,resource);ptr(p+0xf0,0);pair(p+0x3738,0,0);pair(p+0x3740,0,0) end
+calls[0x1836510]=function() end
+calls[0x144c5c0]=function(parent,child) ptr(child+0xf0,parent) end
+calls[0x144c2c0]=function() end
+calls[0x144cfb0]=function() end
+calls[0x144dd70]=function(p) ptr(p+0xf0,0) end
+calls[0x1448ad0]=function() end
+calls[0x12ef4b0]=function(p,index) word(p+0x2c5bc,0);put(p+0x2c5b8,string.char(index)) end
+calls[0x12ef4d0]=function(p) word(manager+0x2c5bc,0xffffffff) end
+local duplicate_ffi=setmetatable({}, {__index=ffi})
+duplicate_ffi.cast=function(t,v)
+    if t:find('(*)',1,true) then return assert(calls[v-base],'unexpected duplicate native function') end
+    return ffi.cast(t,v)
+end
+local duplicate_env=setmetatable({require=function() return duplicate_ffi end},{__index=_G})
+local duplicate_chunk=assert(loadstring(source('duplicate.lua')..'\nreturn duplicate_cards'))
+setfenv(duplicate_chunk,duplicate_env)
+local owned=duplicate_chunk()(backend)
+local copied=owned.prepare(raw,{context=5,payload=123},1/60)
+local card=copied.rows[1].address
+assert(owned.owns(card))
+backend.set(card,'animation_a',{12,34});assert(backend.get(card,'animation_a')[2]==34)
+backend.set(list+0x110,'animation_b',{0,0}) -- original and copied paths coexist
+assert(not pcall(backend.set,card+1,'animation_b',{0,0}),'reject misaligned copied card')
+assert(not pcall(backend.set,copied.list+0x110+16*0x3760,'animation_b',{0,0}),'reject copied index 16')
+ptr(card+0xf0,1234)
+assert(not pcall(backend.set,card,'animation_b',{0,0}),'reject detached copied card')
+ptr(card+0xf0,copied.list);ptr(copied.list+0xf0,1234)
+assert(not pcall(backend.set,card,'animation_b',{0,0}),'reject copied root with changed parent')
+ptr(copied.list+0xf0,panel+0x220)
+assert(owned.owns(card))
+print('Constructed copied/native animation integration passed: both card classes, copied range/alignment and card/root parent rejection.')
 reject_write=true
 assert(not pcall(backend.set,list+0x110,'animation_b',{1,2}),'propagate write failures')
 reject_write=false

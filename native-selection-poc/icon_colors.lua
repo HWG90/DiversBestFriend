@@ -1,7 +1,18 @@
+-- Keep pointers per backend; parsing anonymous function types on each repaint leaks ctypes.
+local icon_native_calls=setmetatable({}, {__mode='k'})
 -- Called within the owner's HUD resource scope, only for separately owned icons.
 local function configure_stratagem_icon(b,icon,info,cooling)
     local ffi=require('ffi')
-    local texture=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint8_t)',b.base+0x1450230)
+    local calls=icon_native_calls[b]
+    if not calls then
+        calls={
+            texture=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint8_t)',b.base+0x1450230),
+            material=ffi.cast('uintptr_t (*)(uintptr_t)',b.base+0x144f6e0),
+            parameter=ffi.cast('void (*)(uintptr_t, uint32_t, const float *)',b.base+0x14498c0),
+        }
+        icon_native_calls[b]=calls
+    end
+    local texture,material,parameter=calls.texture,calls.material,calls.parameter
     local hash=ffi.new('uint64_t[1]');ffi.copy(hash,info.texture,8)
     if radial.full_color==false and not cooling then
         texture(icon,0x57fcf14ad069020bULL,hash[0],0)
@@ -31,8 +42,6 @@ local function configure_stratagem_icon(b,icon,info,cooling)
         end
     end
     texture(icon,0xaf73e09d6d725398ULL,hash[0],0)
-    local material=ffi.cast('uintptr_t (*)(uintptr_t)',b.base+0x144f6e0)
-    local parameter=ffi.cast('void (*)(uintptr_t, uint32_t, const float *)',b.base+0x14498c0)
     assert(tonumber(material(icon))~=0,'Stratagem icon material unavailable')
     parameter(icon,0x28723f4d,accent)
     parameter(icon,0x851fd4fd,foreground)

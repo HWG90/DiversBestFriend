@@ -24,15 +24,22 @@ local function blacklist_snapshot(snapshot,excluded)
     end
     return filtered
 end
--- Hide excluded stock rows only while DBF list mode is active. Do not touch
--- card membership, native availability, binding files or gameplay definitions.
+-- Compact the displayed stock list without changing native entry/kind identity.
+-- Restore only values still owned by DBF, including both native animation endpoints.
 local function blacklist_list_visibility(b)
     local saved={}
     local function same(a,c) return a and c and a[1]==c[1] and a[2]==c[2] end
     local function restore(item)
-        if b.valid(item.identity) and same(b.get(item.address,'scale'),item.applied) then
-            b.set(item.address,'scale',item.before)
+        if b.valid(item.identity) and same(b.get(item.address,item.property),item.applied) then
+            b.set(item.address,item.property,item.before)
         end
+    end
+    local function key(address,property) return address..':'..property end
+    local function baseline(address,property,identity)
+        local current=assert(b.get(address,property),'Blacklist row geometry unavailable')
+        local item=saved[key(address,property)]
+        if item and item.identity==identity and same(current,item.applied) then return item.before end
+        return current
     end
     local self={}
     function self.restore()
@@ -40,20 +47,55 @@ local function blacklist_list_visibility(b)
         saved={}
     end
     function self.step(snapshot)
-        local active={}
-        if snapshot and snapshot.open then
-            for _,row in ipairs(snapshot.excluded_rows or {}) do active[row.address]=true end
+        local plan={}
+        local function add(address,property,value)
+            plan[key(address,property)]={address=address,property=property,value=value}
         end
-        for address,item in pairs(saved) do
-            if not active[address] or item.identity~=snapshot.identity then restore(item);saved[address]=nil end
-        end
-        for address in pairs(active) do
+        if snapshot and snapshot.open and #(snapshot.excluded_rows or {})>0 then
             assert(b.valid(snapshot.identity),'Blacklist HUD changed')
-            local current=assert(b.get(address,'scale'),'Excluded row scale unavailable')
-            local item=saved[address]
-            if not item then item={identity=snapshot.identity,address=address,before=current};saved[address]=item
+            -- Include hidden cards when finding the original top-to-bottom slots.
+            -- Use saved native endpoints if the previous frame still has our values.
+            local ordered={}
+            for _,group in ipairs({snapshot.rows,snapshot.excluded_rows}) do
+                for _,row in ipairs(group) do
+                    ordered[#ordered+1]={row=row,target=baseline(row.address,'animation_b',snapshot.identity),
+                        position=baseline(row.address,'position',snapshot.identity),animation_a=baseline(row.address,'animation_a',snapshot.identity)}
+                end
+            end
+            table.sort(ordered,function(a,c)
+                if a.target[2]~=c.target[2] then return a.target[2]>c.target[2] end
+                if a.row.entry~=c.row.entry then return (a.row.entry or 0)<(c.row.entry or 0) end
+                return a.row.address<c.row.address
+            end)
+            local excluded={}
+            for _,row in ipairs(snapshot.excluded_rows) do
+                excluded[row.address]=true;add(row.address,'scale',{0,0})
+            end
+            local slot=0
+            for _,item in ipairs(ordered) do
+                if not excluded[item.row.address] then
+                    slot=slot+1
+                    local y=ordered[slot].target[2]
+                    if item.target[2]~=y then
+                        add(item.row.address,'position',{item.position[1],y})
+                        add(item.row.address,'animation_a',{item.animation_a[1],y})
+                        add(item.row.address,'animation_b',{item.target[1],y})
+                    end
+                end
+            end
+        end
+        for id,item in pairs(saved) do
+            if not plan[id] or item.identity~=snapshot.identity then restore(item);saved[id]=nil end
+        end
+        for id,change in pairs(plan) do
+            assert(b.valid(snapshot.identity),'Blacklist HUD changed')
+            local current=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
+            local item=saved[id]
+            if not item then
+                item={identity=snapshot.identity,address=change.address,property=change.property,before=current};saved[id]=item
             elseif not same(current,item.applied) then item.before=current end
-            b.set(address,'scale',{0,0});item.applied={0,0}
+            b.set(change.address,change.property,change.value)
+            item.applied=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
         end
     end
     return self

@@ -87,6 +87,30 @@ assert(visibility[copy.list+0x110+0x3760]==0,'excluded copied card must be hidde
 assert(visibility[copy.list+0x110+3*0x3760]==1,'allowed copied cards retain their native entry indices')
 snapshot.rows=original_rows;d.prepare(snapshot,context,1/60)
 assert(visibility[copy.list+0x110+0x3760]==1,'restoring membership must restore copied-card visibility')
+local function read_source(n) local f=assert(io.open('native-selection-poc/'..n));local s=f:read('*a');f:close();return s end
+local filter=assert(loadstring(read_source('blacklist.lua')..'\nreturn blacklist_snapshot'))()
+local layout,point,make_selection=assert(loadstring(read_source('layout.lua')..'\n'..read_source('input.lua')..'\n'..read_source('pointing.lua')..'\n'..read_source('selection.lua')..'\nreturn radial.layout,pointing_index,selection_controller'))()
+for _,removed in ipairs({{1},{4},{8},{1,4,7},{1,2,3,4,5,6,7,8}}) do
+    local excluded={};for _,i in ipairs(removed) do excluded[original_rows[i].kind]=true end
+    local packed=d.prepare(filter(snapshot,excluded),context,1/60)
+    local placements=layout(packed.rows,{0,0})
+    for slot,row in ipairs(packed.rows) do
+        assert(not excluded[row.kind] and d.owns(row.address),'copied survivor keeps native entry ownership')
+        assert(row.address==packed.list+0x110+row.entry*0x3760,'packing does not reinterpret native entry indices')
+        local position=placements[slot].position
+        local length=math.sqrt(position[1]^2+position[2]^2)
+        local vector={position[1]/length,position[2]/length}
+        assert(point(packed.rows,vector)==slot,'copied radial placement is contiguous survivor order')
+        local started
+        local sel=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
+        sel.step(packed,{next=false,previous=false,confirm=false},0,vector)
+        sel.step(packed,{next=false,previous=false,confirm=true},1,vector)
+        assert(started==row.kind,'copied radial Confirm preserves kind')
+    end
+    if #packed.rows==0 then assert(#placements==0 and point(packed.rows,{0,1})==nil) end
+end
+d.prepare(snapshot,context,1/60)
+print('Copied radial blacklist packing passed: first/middle/last/multiple/all removals, entry ownership, contiguous geometry and Confirm mapping.')
 identity=identity+8
 assert(not d.owns(copy.rows[1].address),'reject stale HUD owner')
 d.hide();assert(visibility[copy.list]==1,'do not write stale HUD')

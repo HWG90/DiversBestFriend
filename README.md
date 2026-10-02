@@ -8,7 +8,7 @@
 
 Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through Bingus Shared Loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
-[Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r36) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+[Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
 ## Current release: R35 - Bindings Compatibility
 
@@ -20,11 +20,13 @@ Package checks and isolated LuaJIT tests pass. This build still needs in-game ve
 
 Install only one revision; stable and canary share addon identity, settings and bindings. Earlier [canary R34](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) remains available for comparison; it lacks the bindings compatibility fix.
 
-## Current canary: R36 - Blacklist
+## Current canary: R39 - Animation Card Validation
 
-[Download DiversBestFriendCanary-R36-Blacklist.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r36/DiversBestFriendCanary-R36-Blacklist.zip) | [Release notes](docs/RELEASE-canary-r36.md)
+[Download DiversBestFriendCanary-R39-AnimationCardValidation.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r39/DiversBestFriendCanary-R39-AnimationCardValidation.zip) | [Release notes](docs/RELEASE-canary-r39.md)
 
-Canary R36 adds **Blacklist / Hide SOS Beacon** and eight extra stratagem ID slots in the existing settings menu. Nothing is excluded by default. See [configuration and ID reference](docs/BLACKLIST.md). This is a prerelease. In-game verification remains pending; stable remains R35.
+Canary R39 retains R36's **Blacklist / Hide SOS Beacon** and eight extra stratagem ID slots in the existing settings menu. Nothing is excluded by default. See [configuration and ID reference](docs/BLACKLIST.md). This is a prerelease. In-game verification remains pending; stable remains R35.
+
+R39 also includes native function-pointer caching, blacklist gap compaction and the corrected animation-card guard that prevents the R38 list-mode failure. Full isolated tests pass; fresh-session gameplay verification remains pending.
 
 ## Selection modes
 
