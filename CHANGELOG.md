@@ -4,6 +4,15 @@ All documented changes to **Diver's Best Friend / DiversBestFriend** through **C
 
 R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.
 
+## Canary R39 - Animation Card Validation - 2026-10-02
+
+[Release and download](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39)
+
+- Fix the R38 animation-card guard regression: accept validated original list cards or owned copied cards independently, retaining range/alignment/parent checks.
+- Include R37 input, sound and icon pointer caching to avoid repeated LuaJIT function-type allocation and table overflow.
+- Include R38 blacklist gap compaction with guarded restoration of list positions and both animation endpoints.
+- Full isolated LuaJIT and deterministic package checks pass, including actual native/duplicate/blacklist integration and all four layouts. R37/R38 were local test packages; R39 is the published prerelease. Gameplay verification remains pending. See [release notes](docs/RELEASE-canary-r39.md).
+
 ## Canary R36 — Blacklist — 2026-10-02
 
 [Release and download](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r36)
