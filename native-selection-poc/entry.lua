@@ -1,4 +1,4 @@
-local api={api=1,revision=39,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=40,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -9,6 +9,8 @@ local backend,selection,input,duplicates,pointing,last_tick,list_controller,came
 local wheel,expanded,release_selection
 local excluded,exclusion_signature,hidden_rows={},'',nil
 local blacklist_release_blocked=false
+local mission_blacklist_state={}
+local next_blacklist_sample=0
 local select_on_release=false
 local input_interval_ms=70
 local binding_owner={}
@@ -19,9 +21,9 @@ local function native_checkpoint(message)
     -- bypasses pcall and the ordinary end-of-frame status logger.
     if native_seen[message] then return end
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
-    local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
+    local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R40 - MissionBlacklist\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -42,9 +44,9 @@ local function report(status,force)
     pcall(function()
         local loader=rawget(_G,'CowboyBingusModLoader')
         if not loader or type(loader.open_log)~='function' then return end
-        local file=loader.open_log('DiversBestFriendCanary.log')
+        local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R40 - MissionBlacklist\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -92,7 +94,7 @@ local function options()
     local values=canary_settings(menu,settings_state,radial)
     api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
     select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
-    excluded=stratagem_blacklist(values)
+
     if migrate_expanded then
         api.mode,api.experimental_layout=3,2
         if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
@@ -142,6 +144,17 @@ local function step()
             expanded=expanded_wheel(backend,duplicates,input)
         end
         local now=backend.milliseconds()
+        if now>=next_blacklist_sample then
+            next_blacklist_sample=now+1000
+            local sampled,available=pcall(input.mission_blacklist_kinds)
+            local menu=rawget(_G,'ModOptionsMenu')
+            if menu and menu.api==1 then
+                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
+                mission_blacklist_state.available=sampled and available or nil
+            end
+        end
+        local menu=rawget(_G,'ModOptionsMenu')
+        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or {}
         local signature=blacklist_signature(excluded)
         if signature~=exclusion_signature then
             -- An applied edit cancels queued/armed input before any more pulses.

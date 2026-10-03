@@ -1,7 +1,7 @@
 local function source(name)
     local f=assert(io.open('native-selection-poc/'..name,'rb')); local s=f:read('*a'); f:close(); return s
 end
-local factory=assert(loadstring(source('menu_latch.lua')..'\n'..source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn input_backend,selection_controller'))
+local factory=assert(loadstring(source('menu_latch.lua')..'\n'..source('mission_blacklist.lua')..'\n'..source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn input_backend,selection_controller'))
 local make_input,make_selection=factory()
 local memory={}
 local function put(at,s) for i=1,#s do memory[at+i-1]=s:sub(i,i) end end
@@ -84,6 +84,25 @@ function b.invoke_input(at)
     if not reject and n==#expected[2] then num(component+0x14,expected[1]) end
 end
 local input=make_input(b)
+for i,c in ipairs(cases) do
+    local info=settings+i*400+(c[1]==50 and 4 or 0)
+    num(info+0x28,c[1]);put(info+0xb0,string.rep('\0',8));num(info+0xb8,0)
+end
+local mission_choices=input.mission_blacklist_kinds()
+assert(#mission_choices==2 and mission_choices[1]==33 and mission_choices[2]==124,'equipment is excluded from mission choices')
+num(payload+0x788,33);assert(not pcall(input.mission_blacklist_kinds),'reject oversized payload')
+num(payload+0x788,7)
+for i,kind in ipairs({28,145}) do
+    num(payload+0x188+(i+6)*0x30,kind)
+    local info=settings+6000+i*400
+    ptr(base+0x37cb600+kind*8,info);num(info,kind);num(info+0x28,kind)
+    put(info+0xb0,string.rep('\0',8));num(info+0xb8,0)
+end
+num(payload+0x788,9)
+mission_choices=input.mission_blacklist_kinds()
+assert(#mission_choices==4 and mission_choices[1]==28 and mission_choices[4]==145,'SEAF and SOS from verified local payload')
+num(payload+0x788,7)
+
 local cards={open=true,rows={{address=123,entry=0},{address=456,entry=4},{address=789,entry=20}}}
 input.decorate(cards)
 assert(cards.rows[1].kind==3 and cards.rows[2].kind==33 and cards.rows[3].kind==nil,'cards use local payload index')

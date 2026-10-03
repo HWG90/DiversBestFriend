@@ -23,6 +23,7 @@ local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
 local blacklist_chunk=assert(loadstring(source('blacklist.lua')..'\nreturn stratagem_blacklist,blacklist_signature,blacklist_snapshot'))
 env.stratagem_blacklist,env.blacklist_signature,env.blacklist_snapshot=blacklist_chunk()
+env.mission_blacklist_settings=function() return env.stratagem_blacklist(blacklist_values) end
 env.blacklist_list_visibility=function() return {restore=function() end,step=function() end} end
 env.canary_settings=assert(loadstring(source('settings.lua')..'\nreturn canary_settings'))()
 env.selection_feedback=assert(loadstring(source('feedback.lua')..'\nreturn selection_feedback'))()

@@ -151,6 +151,23 @@ local function input_backend(b)
         for a=1,4 do assert(read(c.actions+32*a,1)=='\0','Manual direction input detected') end
     end
     local out={presentation=presentation,view_context=function() return context(false) end}
+    function out.mission_blacklist_kinds()
+        local c=context(false,true)
+        local count=num(c.payload+0x788)
+        assert(count<=32,'Invalid mission stratagem count')
+        local result,seen={},{}
+        for i=0,count-1 do
+            local kind=num(c.payload+0x188+i*0x30)
+            assert(kind<150,'Invalid mission stratagem kind')
+            if mission_blacklist_names[kind] and not seen[kind] then
+                -- Validate the same settings descriptor used by native UI.
+                presentation(kind)
+                seen[kind]=true;result[#result+1]=kind
+            end
+        end
+        table.sort(result)
+        return result
+    end
     function out.decorate(snapshot)
         if not snapshot or not snapshot.open then return end
         -- Highlighting only needs the same peer-owned list used by the HUD.

@@ -35,16 +35,4 @@ assert(writes==before,'never restore an invalid HUD owner')
 valid=true;scale[70]={1,1};controller.step(filter(native,excluded));controller.step(nil)
 assert(scale[70][1]==1,'closing/disabling/switching restores the vanilla row')
 
--- Persistence belongs to Mod Options Menu, keyed by stable IDs, not loadout slots.
-local settings=assert(loadstring(source('settings.lua')..'\nreturn canary_settings'))()
-local applied={['native_stratagem_radial.hide_sos']=true,['native_stratagem_radial.blacklist_kind_1']=33}
-local ids={}
-local menu={get=function(id) return applied[id] end,register_option=function(id,spec)
-    ids[id]=spec;return true end}
-local v=settings(menu,{registered={}},{})
-assert(signature(configure(v))=='33,145')
-v=settings(menu,{registered={}},{})
-assert(signature(configure(v))=='33,145','a fresh addon instance must read saved applied values')
-assert(ids['native_stratagem_radial.hide_sos'].default==false)
-assert(ids['native_stratagem_radial.blacklist_kind_8'].default==0)
-print('Blacklist passed: default, stable IDs, duplicates/invalid values, loadout reorder, empty filtering, nonmutation, visibility ownership/restoration and saved settings.')
+print('Blacklist geometry/filter tests passed.')

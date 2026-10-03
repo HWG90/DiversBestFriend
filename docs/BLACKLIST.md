@@ -1,14 +1,14 @@
-# Stratagem blacklist (Canary R36)
+# Mission stratagem blacklist (R40)
 
-Open **MODS > Diver's Best Friend > Blacklist**. Turn **Hide SOS Beacon** on and press **Apply** to omit SOS Beacon from every DBF layout. It defaults off.
+Open the native stratagem menu once in a mission, then **MODS > Diver's Best Friend > Blacklist**. Three named dropdowns list mission-provided entries and **None**. SOS Beacon and SEAF Artillery appear when present in the local mission payload. There is no separate SOS toggle. Player-equipped stratagem kinds are excluded from the supported-build mission catalog and cannot be blacklisted, including through old saved settings.
 
-For other exclusions, set **Extra stratagem ID 1–8** to an ID in the reference below, then Apply. Each slot holds one exclusion; **0 means empty**. Duplicate IDs are harmless. There are eight extra slots plus the SOS toggle. To restore an entry, clear every slot containing its ID; SOS also requires turning its dedicated toggle off. Changes persist through Mod Options Menu's normal applied settings, including restarts and changing loadouts.
+Apply changes to save stable native IDs to `DiversBestFriendBlacklist.log` in the loader log directory. None clears a slot. Duplicates are harmless. Initial migration retains up to three distinct mission-only exclusions from the older eight slots and SOS toggle, where present in the first mission. Old equipment exclusions are discarded; additional entries beyond three are not kept as hidden filters. The original Bingus values file is left intact.
 
-IDs identify stratagems, rather than loadout positions or arrow sequences. SOS Beacon is **145**, Resupply **33**, and Reinforce **124**. The numeric slots fit the existing 32-row settings limit without requiring a new menu dependency. The reference is for supported Steam build **25480438**; a future game build may need an updated reference and adapter.
+Bingus API 1 cannot replace registered choice lists. Choices therefore come from the first successfully read mission payload this game session; restart the game to refresh for another mission. Filtering always checks the current mission payload, so absent entries and unreadable ownership are never excluded. The verified payload reader supplies IDs; names come from the repository's retained supported-build catalog, with SEAF Gun displayed as SEAF Artillery. Unknown equipment and unknown kinds are protected. Bingus supports up to 16 choices; at most 15 mission entries plus None are shown, in native-ID order.
 
-Exclusions remove entries before native-wheel paging, expanded-wedge geometry, copied-card layout and list navigation. The original top-left vanilla HUD remains present in radial layouts. In DBF list mode, excluded native rows are temporarily hidden; native positions are retained, so gaps can remain. Vanilla manual input and native availability are unchanged. Closing the menu, disabling DBF or switching modes restores stock-row scale with owner and later-change guards.
+Exclusions apply before paging, geometry and navigation in all four DBF layouts. List mode compacts the remaining rows and restores guarded native geometry on close/disable/switch. Applying an edit cancels pending Confirm and Select on Release jobs; reopen the stratagem menu to rearm release. Empty lists cannot start automation. Vanilla availability and manual input remain unchanged.
 
-Applying a blacklist edit cancels queued/armed DBF input. Close and reopen the stratagem menu before using Select on Release again; an edit cannot rearm a different entry during the same held-menu session. If all entries are excluded, DBF clears selection and releases camera capture; Confirm and Select on Release cannot start a sequence. The prerelease has isolated regression coverage but still needs an in-game smoke test for all layouts, visibility/restoration, persistence, loadout changes and empty lists.
+Package and isolated LuaJIT verification do not establish live-game menu rendering or gameplay validation. This promotion still needs a fresh-session game smoke test.
 
 ## Stratagem ID reference
 

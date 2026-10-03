@@ -1,4 +1,4 @@
-Diver's Best Friend Canary - Automated Stratagem System (ASS)
+Diver's Best Friend - Automated Stratagem System (ASS)
 
 Fixes R38 animation-card validation when blacklist compaction moves original list cards.
 Blacklisted list entries leave no internal gaps; remaining rows shift together.
@@ -8,11 +8,14 @@ Restores wheel input compatibility with the updated megapack by accepting
 Mod Bindings Menu interface versions 2 or newer with API 1. Includes R34
 page-change sounds and R33 sound, size and appearance controls.
 The stable addon GUID and bindings are retained. Enable only one revision.
-Canary Revision 39 - AnimationCardValidation. Select on Release remains optional and off by default.
+Revision 40 - MissionBlacklist. Select on Release remains optional and off by default.
 Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 or newer (API 1) and Mod Options Menu.
 
 Mod Options > Diver's Best Friend > Blacklist:
-Hide SOS Beacon is off by default. Extra stratagem ID 1-8 are 0 (empty).
+Three named mission-only dropdowns default to None. SOS is in the list;
+there is no separate SOS toggle. Apply saves native IDs. Equipped stratagems
+cannot be excluded. Open the native stratagem menu once in a mission to
+initialize choices. Restart the game to refresh choices for another mission.
 Use the native ID reference in docs/BLACKLIST.md for other exclusions.
 Apply edits; they cancel queued/armed DBF input. Close and reopen the
 stratagem menu before using Select on Release again. Exclusions persist through

@@ -1,3 +1,11 @@
+# R40 - Mission Blacklist
+
+- Promote current Canary R39 to main.
+- Three named Bingus mission-only selectors with None; SOS is in the list.
+- Protect equipped kinds, persist native IDs and migrate supported legacy exclusions.
+- Retain all-layout filtering, compaction and queued-input cancellation.
+- Package and isolated LuaJIT verification; live-game verification pending.
+
 # Changelog
 
 All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R39**.

@@ -10,23 +10,13 @@ Select stratagems through a native in-game wheel or list, then throw the beacon 
 
 [Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current release: R35 - Bindings Compatibility
+## Current main build: R40 - Mission Blacklist
 
-[Download DiversBestFriend-R35-BindingsCompatibility.zip](https://github.com/HWG90/DiversBestFriend/releases/download/r35/DiversBestFriend-R35-BindingsCompatibility.zip) | [Release notes](docs/RELEASE-r35.md)
+Promotes Canary R39's animation validation, native function caching and blacklist compaction to main. Bingus Mod Options Menu shows three named mission-only blacklist dropdowns with None. SOS Beacon and SEAF Artillery are selectable when mission-provided; equipped stratagems are protected. Apply saves native IDs and filters all four layouts. See [configuration, migration and session refresh details](docs/BLACKLIST.md).
 
-R35 restores compatibility with the updated Vanilla Plus Megapack by accepting Mod Bindings Menu interface versions 2 and newer with API 1. It includes R34 page-change sounds and R33 selection sounds, size presets, background opacity and grouped settings. Scrambled-code recovery and optional Select on Release remain available; Select on Release defaults off.
+Build with `python scripts/build.py` to produce `DiversBestFriend-R40-MissionBlacklist.zip`. Hosted releases remain available through the download links above. Install one revision; stable and canary share addon identity, settings and bindings.
 
-Package checks and isolated LuaJIT tests pass. This build still needs in-game verification of selection, sound cues, sizing and cursor alignment. The confirmation sound marks an accepted sequence; normal game feedback confirms the beacon is ready.
-
-Install only one revision; stable and canary share addon identity, settings and bindings. Earlier [canary R34](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r34) remains available for comparison; it lacks the bindings compatibility fix.
-
-## Current canary: R39 - Animation Card Validation
-
-[Download DiversBestFriendCanary-R39-AnimationCardValidation.zip](https://github.com/HWG90/DiversBestFriend/releases/download/canary-r39/DiversBestFriendCanary-R39-AnimationCardValidation.zip) | [Release notes](docs/RELEASE-canary-r39.md)
-
-Canary R39 retains R36's **Blacklist / Hide SOS Beacon** and eight extra stratagem ID slots in the existing settings menu. Nothing is excluded by default. See [configuration and ID reference](docs/BLACKLIST.md). This is a prerelease. In-game verification remains pending; stable remains R35.
-
-R39 also includes native function-pointer caching, blacklist gap compaction and the corrected animation-card guard that prevents the R38 list-mode failure. Full isolated tests pass; fresh-session gameplay verification remains pending.
+Package and isolated LuaJIT verification are covered in [R40 notes](docs/RELEASE-r40.md). Fresh-session live-game validation remains pending.
 
 ## Selection modes
 

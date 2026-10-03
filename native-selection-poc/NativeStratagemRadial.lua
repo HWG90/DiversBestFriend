@@ -575,6 +575,133 @@ local function native_menu_latch(b)
     return self
 end
 
+local mission_blacklist_names={
+    [5]='ORBITAL ILLUMINATION FLARE',
+    [7]='EXTRACTION BEACON',
+    [11]='RAISE FLAG',
+    [17]='BUG THUMPER',
+    [19]='SEISMIC PROBE',
+    [28]='SEAF Artillery',
+    [29]='DARK FLUID BACKPACK',
+    [33]='Resupply',
+    [36]='OIL RIG EXTRACT',
+    [42]='HELLBOMB',
+    [48]='DATA JACK',
+    [64]='TCS 03 THUMPER',
+    [70]='PROSPECTING DRILL',
+    [71]='CARGO CONTAINER',
+    [72]='BUG PLUG',
+    [76]='Cyborg Carry Data',
+    [78]='SHOULDER MOUNTED CAMERA',
+    [79]='Carry Data',
+    [84]='JAMMED PINATA',
+    [85]='RAISE FLAG NO CLEAR AREA',
+    [86]='REMOTE EXPLOSIVES',
+    [94]='POISON DRILL',
+    [98]='EMERGENCY EXTRACTION BEACON',
+    [102]='MOBILE COMMS RELAY',
+    [103]='Carpet Bombing Run',
+    [108]='Scrambler',
+    [111]='IMMEDIATE EXTRACTION BEACON',
+    [122]='SPIRE STERILIZER',
+    [123]='CALL IN DESTROYER',
+    [124]='Reinforce',
+    [128]='Upload Discovery',
+    [129]='DRILLING CHARGE',
+    [132]='Nuke',
+    [138]='CARGO CONTAINER',
+    [145]='SOS Beacon',
+    [148]='EXTRACTION',
+}
+local function mission_blacklist_settings(menu,state,available)
+    local prefix='native_stratagem_radial.'
+    if not state.kinds then
+        state.kinds={0,0,0}
+        local loader=rawget(_G,'CowboyBingusModLoader')
+        local dir=loader and loader.log_directory
+        local data=os.getenv('LOCALAPPDATA')
+        dir=dir or (data and data..'/CowboyBingus/Helldivers2/Logs')
+        local function read_values(name)
+            local file=dir and io.open(dir..'/'..name,'rb')
+            local values={}
+            if file then
+                for id,value in file:read('*a'):gmatch('([^\t\r\n]+)\t([^\r\n]*)') do values[id]=value end
+                file:close()
+            end
+            return values
+        end
+        local saved=read_values('DiversBestFriendBlacklist.log')
+        local legacy=read_values('ModOptionsMenu.values')
+        local used={};local next_slot=1
+        if saved.version=='1' then
+            for i=1,3 do
+                local kind=tonumber(saved[tostring(i)])
+                state.kinds[i]=mission_blacklist_names[kind] and kind or 0
+            end
+        else
+            for i=1,8 do
+                local kind=tonumber(legacy[prefix..'blacklist_kind_'..i])
+                if mission_blacklist_names[kind] and not used[kind] and next_slot<=3 then
+                    state.kinds[next_slot]=kind;used[kind]=true;next_slot=next_slot+1
+                end
+            end
+            if legacy[prefix..'hide_sos']=='true' and not used[145] and next_slot<=3 then state.kinds[next_slot]=145 end
+        end
+        state.save=function()
+            if not loader or type(loader.open_log)~='function' then return false end
+            local file=loader.open_log('DiversBestFriendBlacklist.log')
+            if not file then return false end
+            local ok=file:write('version\t1\n1\t'..state.kinds[1]..'\n2\t'..state.kinds[2]..'\n3\t'..state.kinds[3]..'\n')
+            file:close();return ok~=nil
+        end
+    end
+    -- Bingus does not support replacing an option schema. Freeze kind/index
+    -- mapping for this process; IDs, not choice indices, persist across restarts.
+    if not state.choices and available and #available>0 then
+        state.choices={'None'};state.ids={0};state.index={[0]=1}
+        for _,kind in ipairs(available) do
+            if mission_blacklist_names[kind] and not state.index[kind] then
+                if #state.choices>=16 then state.overflow=true;break end
+                state.choices[#state.choices+1]=mission_blacklist_names[kind]
+                state.ids[#state.ids+1]=kind;state.index[kind]=#state.ids
+            end
+        end
+        if #state.choices<2 then state.choices=nil end
+    end
+    state.registered=state.registered or {}
+    if state.choices and type(menu.set)=='function' and type(menu.on_change)=='function' then
+        for i=1,3 do
+            local id=prefix..'mission_blacklist_'..i
+            if not state.registered[i] then
+                local ok=menu.register_option(id,{mod="Diver's Best Friend",label='Blacklist / Entry '..i,
+                    type='choice',choices=state.choices,default=1,gap=i==1,
+                    description='Mission-provided stratagems only. None clears this entry. Apply saves the native ID. Choices come from the first mission this session; restart to refresh for another mission. Equipped stratagems cannot be excluded.'})
+                if ok then
+                    if not state.index[state.kinds[i]] then state.kinds[i]=0 end
+                    menu.set(id,state.index[state.kinds[i]] or 1)
+                    local slot=i
+                    menu.on_change(id,function(value)
+                        state.kinds[slot]=state.ids[value] or 0
+                        state.save_pending=not state.save()
+                    end)
+                    state.registered[i]=true
+                end
+            end
+        end
+        state.save_pending=state.save_pending==nil and true or state.save_pending
+        if state.save_pending then state.save_pending=not state.save() end
+    end
+    local allowed={}
+    for _,kind in ipairs(available or {}) do allowed[kind]=true end
+    local excluded={}
+    for i=1,3 do
+        local kind=state.kinds[i]
+        -- Unknown/unreadable mission ownership always leaves automation usable.
+        if state.registered[i] and allowed[kind] and mission_blacklist_names[kind] then excluded[kind]=true end
+    end
+    return excluded
+end
+
 -- Native input adapter. Only one evaluated direction byte is temporarily
 -- changed, restored synchronously after the normal input handler returns.
 -- Descriptor bounds and mission membership are checked before activation.
@@ -728,6 +855,23 @@ local function input_backend(b)
         for a=1,4 do assert(read(c.actions+32*a,1)=='\0','Manual direction input detected') end
     end
     local out={presentation=presentation,view_context=function() return context(false) end}
+    function out.mission_blacklist_kinds()
+        local c=context(false,true)
+        local count=num(c.payload+0x788)
+        assert(count<=32,'Invalid mission stratagem count')
+        local result,seen={},{}
+        for i=0,count-1 do
+            local kind=num(c.payload+0x188+i*0x30)
+            assert(kind<150,'Invalid mission stratagem kind')
+            if mission_blacklist_names[kind] and not seen[kind] then
+                -- Validate the same settings descriptor used by native UI.
+                presentation(kind)
+                seen[kind]=true;result[#result+1]=kind
+            end
+        end
+        table.sort(result)
+        return result
+    end
     function out.decorate(snapshot)
         if not snapshot or not snapshot.open then return end
         -- Highlighting only needs the same peer-owned list used by the HUD.
@@ -1869,12 +2013,6 @@ local function canary_settings(menu,api,radial)
         {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
         {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
     }
-    specs[#specs+1]={'hide_sos','Blacklist','Hide SOS Beacon','toggle',false,nil,nil,nil,
-        'Exclude SOS Beacon from every DBF selection layout. Manual vanilla stratagem input remains available.'}
-    for i=1,8 do
-        specs[#specs+1]={'blacklist_kind_'..i,'Blacklist','Extra stratagem ID '..i,'slider',0,0,149,1,
-            '0 = empty. Exclude this native stratagem ID in every DBF layout. Examples: 145 SOS Beacon, 33 Resupply, 124 Reinforce. See docs/BLACKLIST.md for the ID reference. Duplicates are harmless.'}
-    end
     local values={}
     api.values=api.values or {}
     local previous
@@ -1938,7 +2076,7 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=39,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=40,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -1949,6 +2087,8 @@ local backend,selection,input,duplicates,pointing,last_tick,list_controller,came
 local wheel,expanded,release_selection
 local excluded,exclusion_signature,hidden_rows={},'',nil
 local blacklist_release_blocked=false
+local mission_blacklist_state={}
+local next_blacklist_sample=0
 local select_on_release=false
 local input_interval_ms=70
 local binding_owner={}
@@ -1959,9 +2099,9 @@ local function native_checkpoint(message)
     -- bypasses pcall and the ordinary end-of-frame status logger.
     if native_seen[message] then return end
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
-    local file=assert(loader.open_log('DiversBestFriendCanary-native.log'),'Cannot open native checkpoint log')
+    local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R40 - MissionBlacklist\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -1982,9 +2122,9 @@ local function report(status,force)
     pcall(function()
         local loader=rawget(_G,'CowboyBingusModLoader')
         if not loader or type(loader.open_log)~='function' then return end
-        local file=loader.open_log('DiversBestFriendCanary.log')
+        local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' Canary R39 - AnimationCardValidation\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R40 - MissionBlacklist\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -2032,7 +2172,7 @@ local function options()
     local values=canary_settings(menu,settings_state,radial)
     api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
     select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
-    excluded=stratagem_blacklist(values)
+
     if migrate_expanded then
         api.mode,api.experimental_layout=3,2
         if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
@@ -2082,6 +2222,17 @@ local function step()
             expanded=expanded_wheel(backend,duplicates,input)
         end
         local now=backend.milliseconds()
+        if now>=next_blacklist_sample then
+            next_blacklist_sample=now+1000
+            local sampled,available=pcall(input.mission_blacklist_kinds)
+            local menu=rawget(_G,'ModOptionsMenu')
+            if menu and menu.api==1 then
+                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
+                mission_blacklist_state.available=sampled and available or nil
+            end
+        end
+        local menu=rawget(_G,'ModOptionsMenu')
+        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or {}
         local signature=blacklist_signature(excluded)
         if signature~=exclusion_signature then
             -- An applied edit cancels queued/armed input before any more pulses.
