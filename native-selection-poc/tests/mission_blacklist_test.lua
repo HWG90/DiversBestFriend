@@ -47,3 +47,13 @@ excluded=configure(menu,restarted,{145,28})
 assert(excluded[28] and excluded[145],'restart reads native IDs independently of choice ordering')
 io.open=old_open;CowboyBingusModLoader=old_loader
 print('Mission blacklist: three named choices, None/SOS, equipment protection, ownership failure, migration, persistence and index stability passed.')
+
+local eagle={kinds={49,0,0},save=function()return true end}
+local eagle_excluded=configure(menu,eagle,{3,49,145})
+assert(eagle.choices[2]=='Eagle Rearm' and eagle.ids[2]==49 and eagle_excluded[49] and not eagle_excluded[3])
+callbacks['native_stratagem_radial.mission_blacklist_1'](1)
+assert(not configure(menu,eagle,{49,145})[49],'None clears Eagle Rearm')
+callbacks['native_stratagem_radial.mission_blacklist_1'](2)
+assert(configure(menu,eagle,{49,145})[49],'Eagle Rearm persists by native ID')
+assert(not configure(menu,eagle,{145})[49],'Absent Eagle Rearm cannot be filtered')
+print('Eagle Rearm: named choice, stable kind 49, selection, None, absence guard and equipment protection passed.')

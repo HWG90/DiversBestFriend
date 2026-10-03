@@ -7,3 +7,5 @@ Kept: Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller 
 Suppressed: wheel size, icon size, center-label size, native opacity, full-color icons, wedge darkness and wedge opacity. Existing saved appearance values are retained and presets still work. Vertical offset is disabled at zero without deleting its saved value.
 
 Retains R40 selection fixes and persistent blacklist IDs, including equipped-stratagem protection. Restart after deployment so old session registrations disappear. Offline package and LuaJIT contracts pass; the reduced menu still needs a fresh-session visual check.
+
+R41 also includes Eagle Rearm in the blacklist choices when present in the local mission payload. It uses native kind 49 and the same persistent-ID, None and availability guards.

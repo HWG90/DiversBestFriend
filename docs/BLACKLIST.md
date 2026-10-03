@@ -1,6 +1,6 @@
 # Mission stratagem blacklist (R40)
 
-Open the native stratagem menu once in a mission, then **MODS > Diver's Best Friend > Blacklist**. Three named dropdowns list mission-provided entries and **None**. SOS Beacon and SEAF Artillery appear when present in the local mission payload. There is no separate SOS toggle. Player-equipped stratagem kinds are excluded from the supported-build mission catalog and cannot be blacklisted, including through old saved settings.
+Open the native stratagem menu once in a mission, then **MODS > Diver's Best Friend > Blacklist**. Three named dropdowns list mission-provided entries and **None**. SOS Beacon, SEAF Artillery and Eagle Rearm appear when present in the local mission payload. There is no separate SOS toggle. Player-equipped stratagem kinds are excluded from the supported-build mission catalog and cannot be blacklisted, including through old saved settings.
 
 Apply changes to save stable native IDs to `DiversBestFriendBlacklist.log` in the loader log directory. None clears a slot. Duplicates are harmless. Initial migration retains up to three distinct mission-only exclusions from the older eight slots and SOS toggle, where present in the first mission. Old equipment exclusions are discarded; additional entries beyond three are not kept as hidden filters. The original Bingus values file is left intact.
 

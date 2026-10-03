@@ -376,3 +376,5 @@ R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33
 - [Commit history through Canary R33](https://github.com/HWG90/DiversBestFriend/commits/canary-r33/).
 
 Historical failures and superseded approaches are retained to explain why later revisions changed. Unrecorded early revision details have not been invented. This changelog covers documented user-facing behavior, fixes, packaging/documentation changes, and material validation limits through R33; it does not claim new live-game validation.
+
+R41 also includes Eagle Rearm in the blacklist choices when present in the local mission payload. It uses native kind 49 and the same persistent-ID, None and availability guards.

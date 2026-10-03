@@ -587,6 +587,7 @@ local mission_blacklist_names={
     [36]='OIL RIG EXTRACT',
     [42]='HELLBOMB',
     [48]='DATA JACK',
+    [49]='Eagle Rearm',
     [64]='TCS 03 THUMPER',
     [70]='PROSPECTING DRILL',
     [71]='CARGO CONTAINER',
