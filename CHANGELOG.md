@@ -1,3 +1,10 @@
+## R41 - Streamlined Options
+
+- Reduced Bingus menu controls so the three mission blacklist entries have room.
+- Retained Experimental layout, Preset, Select on Release and Input interval alongside core selection controls.
+- Suppressed other appearance controls while retaining saved values; disabled vertical offset at zero.
+- MCM support remains upcoming. I forgot that not everyone has MCM yet.
+
 # R40 - Mission Blacklist
 
 - Promote current Canary R39 to main.

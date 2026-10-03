@@ -2013,6 +2013,7 @@ local function canary_settings(menu,api,radial)
         {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
         {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
     }
+    local hidden={wheel_size=true,icon_size=true,label_size=true,native_opacity=true,full_color_icons=true,wedge_darkness=true,wedge_opacity=true,vertical_offset=true}
     local values={}
     api.values=api.values or {}
     local previous
@@ -2020,7 +2021,7 @@ local function canary_settings(menu,api,radial)
         local spec={mod="Diver's Best Friend",label=s[2]..' / '..s[3],type=s[4],default=s[5],gap=previous~=s[2],description=s[9] or s[3]}
         if s[4]=='choice' then spec.choices=s[6] end
         if s[4]=='slider' then spec.min=s[6];spec.max=s[7];spec.step=s[8] end
-        if not api.registered[s[1]] then api.registered[s[1]]=menu.register_option(prefix..s[1],spec)==true end
+        if not hidden[s[1]] and not api.registered[s[1]] then api.registered[s[1]]=menu.register_option(prefix..s[1],spec)==true end
         local v=menu.get(prefix..s[1]);local valid=false
         if s[4]=='toggle' then valid=type(v)=='boolean'
         elseif type(v)=='number' and v==v then
@@ -2032,7 +2033,7 @@ local function canary_settings(menu,api,radial)
         if valid then api.values[s[1]]=v end
         if api.values[s[1]]==nil then api.values[s[1]]=s[5] end
         values[s[1]]=api.values[s[1]]
-        previous=s[2]
+        if not hidden[s[1]] then previous=s[2] end
     end
     local presets={{values.wheel_size,values.icon_size,values.label_size},{85,100,95},{100,100,100},{115,110,110}}
     local sizes=presets[values.appearance_preset]
@@ -2040,7 +2041,7 @@ local function canary_settings(menu,api,radial)
     radial.native_opacity=values.native_opacity/100
     radial.full_color=values.full_color_icons
     radial.wedge_darkness,radial.wedge_opacity=values.wedge_darkness,values.wedge_opacity
-    radial.vertical_offset=values.vertical_offset
+    radial.vertical_offset=0
     return values
 end
 
@@ -2076,7 +2077,7 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=40,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=41,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -2101,7 +2102,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R40 - MissionBlacklist\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R41 - MissionBlacklist\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -2124,7 +2125,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R40 - MissionBlacklist\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R41 - MissionBlacklist\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')

@@ -153,7 +153,7 @@ full_color=false;tick();assert(env.radial.full_color==false)
 full_color=true;tick();assert(env.radial.full_color==true)
 print('Icon option routing passed: live off/on setting reaches render configuration.')
 
-assert(env.radial.wedge_darkness==70 and env.radial.wedge_opacity==75 and wedge_registrations==2)
+assert(env.radial.wedge_darkness==70 and env.radial.wedge_opacity==75 and wedge_registrations==0)
 wedge_darkness,wedge_opacity=0,100;tick()
 assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'valid appearance endpoints apply')
 wedge_darkness,wedge_opacity=101,-1;tick()
@@ -161,7 +161,7 @@ assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'out-of-ra
 wedge_darkness,wedge_opacity=0/0,'75';tick()
 assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'NaN and nonnumeric settings rejected')
 wedge_darkness,wedge_opacity=70,75;tick()
-assert(wedge_registrations==2,'settings are registered once per options menu instance')
+assert(wedge_registrations==0,'suppressed appearance settings are never registered')
 print('Wedge option routing passed: defaults, live changes, endpoints and invalid values.')
 
 -- A saved legacy mode 4 migrates using set after both choices register.

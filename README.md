@@ -10,13 +10,13 @@ Select stratagems through a native in-game wheel or list, then throw the beacon 
 
 [Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current main build: R40 - Mission Blacklist
+## Current main build: R41 - Streamlined Options
 
-Promotes Canary R39's animation validation, native function caching and blacklist compaction to main. Bingus Mod Options Menu shows three named mission-only blacklist dropdowns with None. SOS Beacon and SEAF Artillery are selectable when mission-provided; equipped stratagems are protected. Apply saves native IDs and filters all four layouts. See [configuration, migration and session refresh details](docs/BLACKLIST.md).
+I forgot that not everyone has MCM yet. The Bingus Mod Options Menu had too many appearance controls, leaving too little room for the blacklist. R41 trims the menu to Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus the three mission blacklist entries.
 
-Build with `python scripts/build.py` to produce `DiversBestFriend-R40-MissionBlacklist.zip`. Hosted releases remain available through the download links above. Install one revision; stable and canary share addon identity, settings and bindings.
+Wheel, icon and center-label sizing, opacity and color controls are suppressed. Their saved values remain intact; presets still work. Vertical offset is disabled at zero. MCM support remains upcoming, and MCM is not required.
 
-Package and isolated LuaJIT verification are covered in [R40 notes](docs/RELEASE-r40.md). Fresh-session live-game validation remains pending.
+Build with `python scripts/build.py` to produce `DiversBestFriend-R41-MissionBlacklist.zip`. Install one revision; stable and canary share addon identity, settings and bindings. See [R41 notes](docs/RELEASE-r41.md) and [blacklist details](docs/BLACKLIST.md).
 
 ## Selection modes
 

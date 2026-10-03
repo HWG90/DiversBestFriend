@@ -8,7 +8,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 40
+REVISION = 41
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
 RECENT_FEATURE = 'MissionBlacklist'
@@ -35,12 +35,7 @@ def build():
         'Install revision line must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: fixes animation validation to accept original list cards alongside owned copied cards, with range, alignment and parent checks. Closes blacklist gaps in the native list by compacting remaining rows with guarded geometry restoration. Caches native input, sound and icon function pointers to prevent repeated LuaJIT type creation and table overflow. Retains persistent stratagem blacklist with three named mission-only blacklist selectors in Bingus Mod Options Menu, with None and stable native-ID persistence; equipped stratagems are protected. Default excludes nothing; all DBF layouts are filtered while vanilla availability remains unchanged. Retains Mod Bindings Menu interface version 2 or newer with API 1. Includes the native wheel page-change sound cue. Retains native selection sounds, size presets and independent icon/label sizing, native background opacity, grouped settings and an illustrated guide. Optional Select on Release remains off by default. "
-                   'Input interval applies to both Confirm and release sequences (0-250 ms, default 70). '
-                   'Native and expanded wheels gray and dim icons during cooldown or delivery. '
-                   'The selected stratagem shows its native remaining time below the name, restoring colors at expiry. '
-                   'Uses the original HUD timer state, including native special cases. Retains all layouts, wedge appearance controls and centering. '
-                   'Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Bingus Shared Loader API 1.')
+    description = (f"Revision {REVISION}: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three mission blacklist entries. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
     assert description.startswith(f'Revision {REVISION}:'), \
         'Manifest description must match release metadata'
     # Version is Arsenal's schema version, NOT the release revision. Keep the
