@@ -12,9 +12,9 @@ Select stratagems through a native in-game wheel or list, then throw the beacon 
 
 ## Current main build: R41 - Streamlined Options
 
-I forgot that not everyone has MCM yet. The Bingus Mod Options Menu had too many appearance controls, leaving too little room for the blacklist. R41 trims the menu to Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus the three mission blacklist entries.
+I forgot that not everyone has MCM yet. The Bingus Mod Options Menu had too many appearance controls, leaving too little room for the blacklist. R41 trims the menu to Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles.
 
-Wheel, icon and center-label sizing, opacity and color controls are suppressed. Their saved values remain intact; presets still work. Vertical offset is disabled at zero. MCM support remains upcoming, and MCM is not required.
+Wheel, icon and center-label sizing, opacity and color controls are suppressed. Their saved values remain intact; presets still work. Vertical offset is disabled at zero. MCM is optional; its blacklist page provides additional entries.
 
 Build with `python scripts/build.py` to produce `DiversBestFriend-R41-MissionBlacklist.zip`. Install one revision; stable and canary share addon identity, settings and bindings. See [R41 notes](docs/RELEASE-r41.md) and [blacklist details](docs/BLACKLIST.md).
 
@@ -87,4 +87,4 @@ The project code is [MIT licensed](LICENSE). The game and separately installed d
 
 [Compact logo](assets/dbf-logo-4x3.png) | [Wide banner](assets/banner-dbf.png) | [Branding guide](assets/BRANDING.md)
 
-R41 includes static blacklist lists available on the ship, including Eagle Rearm. Each saved entry has three lists covering all supported mission kinds; filtering applies only to entries present in your mission.
+R41 exposes two Bingus blacklist toggles: SOS Beacon and Eagle Rearm. Additional entries require the optional MCM blacklist page. Settings persist and filtering applies only to entries present in your mission.

@@ -1,11 +1,11 @@
 # R41 - Streamlined Options
 
-I forgot that not everyone has MCM yet. The Bingus menu was overcrowded, so this revision suppresses appearance controls to make room for the blacklist. MCM support is upcoming; it is not a requirement.
+I forgot that not everyone has MCM yet. The Bingus menu was overcrowded, so I trimmed the options.
 
-Kept: Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release, Input interval and the three mission-only blacklist entries.
+Kept: Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval.
 
-Suppressed: wheel size, icon size, center-label size, native opacity, full-color icons, wedge darkness and wedge opacity. Existing saved appearance values are retained and presets still work. Vertical offset is disabled at zero without deleting its saved value.
+The Bingus blacklist now has two simple on/off options: **Blacklist SOS Beacon** and **Blacklist Eagle Rearm**. Both are available on the ship. Additional blacklist entries are available through the optional MCM blacklist page, with confirmation before changes apply.
 
-Retains R40 selection fixes and persistent blacklist IDs, including equipped-stratagem protection.
+Appearance controls are suppressed in Bingus. Existing saved appearance values are retained and presets still work. Vertical offset is disabled at zero.
 
-Blacklist choices are now available on the ship, including Eagle Rearm. Each of the three saved entries has three lists covering all supported mission stratagems. Choose one per entry; selecting from another list replaces that entry. None clears a selection. Filtering takes effect only when the stratagem is available in your mission.
+Retains R40 selection fixes. Blacklist settings are saved, and filtering applies only when the selected stratagem is present in your mission. Equipped stratagems remain protected.

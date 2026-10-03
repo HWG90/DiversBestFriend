@@ -1,66 +1,25 @@
-local f=assert(io.open('native-selection-poc/mission_blacklist.lua'));local source=f:read('*a');f:close()
+local file=assert(io.open('native-selection-poc/mission_blacklist.lua'));local source=file:read('*a');file:close()
 local configure=assert(loadstring(source..'\nreturn mission_blacklist_settings'))()
 local specs,values,callbacks={},{},{}
-local saved=0
-local menu={register_option=function(id,spec) specs[id]=spec;return true end,
-    set=function(id,v) values[id]=v;return true end,
-    on_change=function(id,fn) callbacks[id]=fn;return true end}
-local state={kinds={145,28,3},save=function() saved=saved+1;return true end}
-local excluded=configure(menu,state,{3,28,145})
-assert(excluded[145] and excluded[28] and not excluded[3])
-local n=0
-for id,s in pairs(specs) do
-    n=n+1;assert(s.type=='choice' and #s.choices<=16 and s.choices[1]=='None')
-    assert(#s.choices>1)
-    assert(not id:find('hide_sos',1,true))
-end
-assert(n==9 and values['native_stratagem_radial.mission_blacklist_3_group_1']==1)
-callbacks['native_stratagem_radial.mission_blacklist_1_group_'..state.index[145].group](1)
-excluded=configure(menu,state,{28,145})
-assert(not excluded[145] and excluded[28] and saved>=2,'None clears SOS; applies persist stable IDs')
-excluded=configure(menu,state,{3})
-assert(next(excluded)==nil,'mission changes cannot exclude equipment or absent entries')
-excluded=configure(menu,state,nil)
-assert(next(excluded)==nil,'unreadable ownership fails safe')
-assert(#state.choices==38,'indices cannot be remapped during a game session')
+local menu={register_option=function(id,spec)specs[id]=spec;return true end,set=function(id,v)values[id]=v;if callbacks[id]then callbacks[id](v)end;return true end,on_change=function(id,fn)callbacks[id]=fn end}
+local saved=0;local state={enabled={[145]=true,[49]=true,[28]=true,[3]=true},save=function()saved=saved+1;return true end}
+assert(next(configure(menu,state,nil))==nil)
+local count=0;for id,spec in pairs(specs)do count=count+1;assert(spec.type=='toggle' and not spec.choices and not id:find('mission_blacklist_',1,true))end;assert(count==2,'Bingus has exactly two blacklist toggles on the ship')
 local prefix='native_stratagem_radial.'
-local old_open=io.open
-io.open=function(path)
-    if path:find('DiversBestFriendBlacklist.log',1,true) then return nil end
-    if path:find('ModOptionsMenu.values',1,true) then
-        return {read=function() return prefix..'blacklist_kind_1\t3\n'..prefix..'blacklist_kind_2\t28\n'..prefix..'hide_sos\ttrue\n' end,close=function() end}
-    end
-    return old_open(path)
-end
-local old_loader=CowboyBingusModLoader
-local body
-CowboyBingusModLoader={log_directory='fixture',open_log=function() return {write=function(_,s) body=s;return true end,close=function() end} end}
-local migrated={}
-excluded=configure(menu,migrated,{28,145})
-assert(excluded[28] and excluded[145] and not excluded[3],'legacy SOS migrates, equipped exclusions discarded')
-assert(body:find('version\t1',1,true))
-io.open=function(path)
-    return {read=function() return body end,close=function() end}
-end
-local restarted={}
-excluded=configure(menu,restarted,{145,28})
-assert(excluded[28] and excluded[145],'restart reads native IDs independently of choice ordering')
-io.open=old_open;CowboyBingusModLoader=old_loader
-print('Mission blacklist: three named choices, None/SOS, equipment protection, ownership failure, migration, persistence and index stability passed.')
-
-local eagle={kinds={49,0,0},save=function()return true end}
-local eagle_excluded=configure(menu,eagle,{3,49,145})
-assert(eagle.index[49]~=nil and eagle_excluded[49] and not eagle_excluded[3])
-callbacks['native_stratagem_radial.mission_blacklist_1_group_'..eagle.index[49].group](1)
-assert(not configure(menu,eagle,{49,145})[49],'None clears Eagle Rearm')
-callbacks['native_stratagem_radial.mission_blacklist_1_group_'..eagle.index[49].group](eagle.index[49].index)
-assert(configure(menu,eagle,{49,145})[49],'Eagle Rearm persists by native ID')
-assert(not configure(menu,eagle,{145})[49],'Absent Eagle Rearm cannot be filtered')
-print('Eagle Rearm: named choice, stable kind 49, selection, None, absence guard and equipment protection passed.')
-
-local bridge={kinds={49,0,0},save=function()return true end}
-assert(next(configure(menu,bridge,nil))==nil)
-assert(bridge.index[49] and bridge.index[145] and #bridge.groups==3,'all static choices register without a mission')
-local sos=bridge.index[145];callbacks['native_stratagem_radial.mission_blacklist_1_group_'..sos.group](sos.index)
-assert(bridge.kinds[1]==145 and not configure(menu,bridge,{49})[49] and configure(menu,bridge,{145})[145],'switching lists keeps one persisted choice per slot')
-print('Static bridge choices: all 37 kinds, 9 bounded selectors, Eagle/SOS without mission, cross-list selection and live ownership guards passed.')
+assert(values[prefix..'hide_sos'] and values[prefix..'hide_eagle_rearm'])
+local excluded=configure(menu,state,{3,28,49,145});assert(excluded[49] and excluded[145] and not excluded[28] and not excluded[3],'only SOS and Eagle work without MCM')
+callbacks[prefix..'hide_eagle_rearm'](false);assert(not configure(menu,state,{49,145})[49] and saved>0)
+callbacks[prefix..'hide_eagle_rearm'](true);assert(configure(menu,state,{49})[49]);assert(not configure(menu,state,{145})[49],'absent Eagle is protected')
+local native_spec;DBFMCM={api=1,register=function(spec)
+ native_spec=spec;local controls,stored={},{};for _,c in ipairs(spec.pages[1].controls)do controls[c.id]=c;stored[c.id]=c.default end
+ return {set=function(key,value)local old=stored[key];stored[key]=value;if old~=value then controls[key].on_change(value)end;return true end,get=function(key)return stored[key]end,unregister=function()end}
+end}
+excluded=configure(menu,state,{3,28,49,145});assert(excluded[28] and not excluded[3] and #native_spec.pages[1].controls==37 and native_spec.pages[1].require_confirmation)
+state.native.set('kind_49',false);assert(not values[prefix..'hide_eagle_rearm'] and not configure(menu,state,{49})[49],'native changes sync the Bingus toggle')
+callbacks[prefix..'hide_sos'](false);assert(not state.native.get('kind_145'),'Bingus changes sync native MCM')
+DBFMCM=nil;assert(not configure(menu,state,{28})[28] and state.enabled[28],'advanced saved selections are preserved but inactive without MCM')
+local old_open=io.open;local body;io.open=function(path)return {read=function()return 'version\t1\n1\t49\n2\t145\n3\t28\n'end,close=function()end}end
+CowboyBingusModLoader={log_directory='fixture',open_log=function()return {write=function(_,text)body=text;return true end,close=function()end}end}
+local migrated={};excluded=configure(menu,migrated,{49,145,28});assert(excluded[49] and excluded[145] and not excluded[28] and migrated.enabled[28]);assert(body:find('version\t2',1,true) and body:find('49\ttrue',1,true))
+io.open=old_open;CowboyBingusModLoader=nil
+print('Blacklist passed: exactly two static Bingus toggles, 37 optional MCM entries, confirmation, synchronization, mission/equipment guards, migration and shared persistence.')

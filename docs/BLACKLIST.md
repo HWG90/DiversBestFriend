@@ -1,8 +1,10 @@
 # Stratagem blacklist
 
-Open MODS > Diver's Best Friend > Blacklist on the ship or in a mission. Each of the three saved entries has three static lists covering all 37 supported mission stratagem kinds, including SOS Beacon, SEAF Artillery and Eagle Rearm. Choose one stratagem across the lists per entry. Selecting another list replaces the previous choice; None clears that list. All choices remain visible regardless of your loadout or mission.
+Bingus Mod Options Menu exposes **Blacklist SOS Beacon** and **Blacklist Eagle Rearm** as on/off toggles. Both remain available on the ship. There are no blacklist dropdown lists in Bingus.
 
-Apply saves native IDs. Filtering checks the current mission data, so absent entries, unreadable ownership and player-equipped stratagems remain protected. Bingus limits dropdowns to 16 choices, so each list includes None and at most 15 stratagems. Nine blacklist dropdowns plus the seven retained settings fit its sixteen-option limit.
+For additional supported mission stratagems, use **Diver's Best Friend - Blacklist** in MCM. Its blacklist page supports the full catalog and requires confirmation. SOS and Eagle Rearm settings stay synchronized between both menus.
+
+Settings persist as native IDs in `DiversBestFriendBlacklist.log`. Existing saved blacklist entries migrate; additional entries remain saved but do not take effect while MCM is unavailable. Filtering checks current mission data, protecting absent entries, unreadable ownership and player-equipped stratagems.
 
 ## Stratagem ID reference
 

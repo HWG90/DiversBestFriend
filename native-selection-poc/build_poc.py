@@ -35,7 +35,7 @@ def build():
         'Install revision line must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three saved blacklist entries across static lists available on the ship, including Eagle Rearm. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
+    description = (f"Revision {REVISION}: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles available on the ship. Additional blacklist entries require optional MCM. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
     assert description.startswith(f'Revision {REVISION}:'), \
         'Manifest description must match release metadata'
     # Version is Arsenal's schema version, NOT the release revision. Keep the

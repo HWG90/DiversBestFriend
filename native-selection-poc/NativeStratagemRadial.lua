@@ -616,97 +616,85 @@ local mission_blacklist_names={
 }
 local function mission_blacklist_settings(menu,state,available)
     local prefix='native_stratagem_radial.'
-    if not state.kinds then
-        state.kinds={0,0,0}
-        local loader=rawget(_G,'CowboyBingusModLoader')
-        local dir=loader and loader.log_directory
-        local data=os.getenv('LOCALAPPDATA')
-        dir=dir or (data and data..'/CowboyBingus/Helldivers2/Logs')
+    local simple={{kind=145,id='hide_sos',label='Blacklist SOS Beacon'},{kind=49,id='hide_eagle_rearm',label='Blacklist Eagle Rearm'}}
+    if not state.enabled then
+        state.enabled={}
+        local loader=rawget(_G,'CowboyBingusModLoader');local data=os.getenv('LOCALAPPDATA')
+        local dir=loader and loader.log_directory or (data and data..'/CowboyBingus/Helldivers2/Logs')
         local function read_values(name)
-            local file=dir and io.open(dir..'/'..name,'rb')
-            local values={}
-            if file then
-                for id,value in file:read('*a'):gmatch('([^\t\r\n]+)\t([^\r\n]*)') do values[id]=value end
-                file:close()
-            end
+            local values={};local file=dir and io.open(dir..'/'..name,'rb')
+            if file then for id,value in file:read('*a'):gmatch('([^\t\r\n]+)\t([^\r\n]*)')do values[id]=value end;file:close()end
             return values
         end
-        local saved=read_values('DiversBestFriendBlacklist.log')
-        local legacy=read_values('ModOptionsMenu.values')
-        local used={};local next_slot=1
-        if saved.version=='1' then
-            for i=1,3 do
-                local kind=tonumber(saved[tostring(i)])
-                state.kinds[i]=mission_blacklist_names[kind] and kind or 0
-            end
+        local saved=read_values('DiversBestFriendBlacklist.log');local legacy=read_values('ModOptionsMenu.values')
+        if saved.version=='2' then
+            for key,value in pairs(saved)do local kind=tonumber(key);if mission_blacklist_names[kind] and value=='true'then state.enabled[kind]=true end end
+        elseif saved.version=='1' then
+            for index=1,3 do local kind=tonumber(saved[tostring(index)]);if mission_blacklist_names[kind]then state.enabled[kind]=true end end
         else
-            for i=1,8 do
-                local kind=tonumber(legacy[prefix..'blacklist_kind_'..i])
-                if mission_blacklist_names[kind] and not used[kind] and next_slot<=3 then
-                    state.kinds[next_slot]=kind;used[kind]=true;next_slot=next_slot+1
-                end
-            end
-            if legacy[prefix..'hide_sos']=='true' and not used[145] and next_slot<=3 then state.kinds[next_slot]=145 end
+            for index=1,8 do local kind=tonumber(legacy[prefix..'blacklist_kind_'..index]);if mission_blacklist_names[kind]then state.enabled[kind]=true end end
+            if legacy[prefix..'hide_sos']=='true'then state.enabled[145]=true end
+            if legacy[prefix..'hide_eagle_rearm']=='true'then state.enabled[49]=true end
         end
         state.save=function()
-            if not loader or type(loader.open_log)~='function' then return false end
-            local file=loader.open_log('DiversBestFriendBlacklist.log')
+            local current=rawget(_G,'CowboyBingusModLoader')
+            local file=current and type(current.open_log)=='function' and current.open_log('DiversBestFriendBlacklist.log')
             if not file then return false end
-            local ok=file:write('version\t1\n1\t'..state.kinds[1]..'\n2\t'..state.kinds[2]..'\n3\t'..state.kinds[3]..'\n')
-            file:close();return ok~=nil
-        end
-    end
-    -- Static buckets keep all supported entries available on the bridge.
-    -- Bingus accepts at most 16 choices per selector, including None.
-    if not state.groups then
-        local ids={};for kind in pairs(mission_blacklist_names)do ids[#ids+1]=kind end;table.sort(ids)
-        state.groups={};state.index={};state.choices={'None'};state.ids={0}
-        for offset=1,#ids,15 do
-            local group={choices={'None'},ids={0}};state.groups[#state.groups+1]=group
-            for index=offset,math.min(#ids,offset+14)do
-                local kind=ids[index];group.ids[#group.ids+1]=kind;group.choices[#group.choices+1]=mission_blacklist_names[kind]
-                state.index[kind]={group=#state.groups,index=#group.ids}
-                state.choices[#state.choices+1]=mission_blacklist_names[kind];state.ids[#state.ids+1]=kind
-            end
+            local ids={};for kind,value in pairs(state.enabled)do if value and mission_blacklist_names[kind]then ids[#ids+1]=kind end end;table.sort(ids)
+            local lines={'version\t2\n'};for _,kind in ipairs(ids)do lines[#lines+1]=kind..'\ttrue\n'end
+            local ok=file:write(table.concat(lines));file:close();return ok~=nil
         end
     end
     state.registered=state.registered or {}
-    if type(menu.set)=='function' and type(menu.on_change)=='function' then
-        for slot=1,3 do
-            for group_index,group in ipairs(state.groups)do
-                local id=prefix..'mission_blacklist_'..slot..'_group_'..group_index
-                if not state.registered[id] then
-                    local ok=menu.register_option(id,{mod="Diver's Best Friend",label='Blacklist / Entry '..slot..' / List '..group_index,
-                        type='choice',choices=group.choices,default=1,gap=group_index==1,
-                        description='Choose one stratagem across the three lists for this entry. Selecting another clears the previous list. Available on the ship; filtering only applies when present in your mission. None clears this list. Equipped stratagems are protected.'})
-                    if ok then
-                        local selected=state.index[state.kinds[slot]]
-                        menu.set(id,selected and selected.group==group_index and selected.index or 1)
-                        local target_slot,target_group=slot,group_index
-                        menu.on_change(id,function(value)
-                            if state.syncing then return end
-                            local kind=group.ids[value] or 0
-                            local previous=state.index[state.kinds[target_slot]]
-                            if kind==0 and previous and previous.group~=target_group then return end
-                            state.kinds[target_slot]=kind;state.syncing=true
-                            for other=1,#state.groups do if other~=target_group then menu.set(prefix..'mission_blacklist_'..target_slot..'_group_'..other,1)end end
-                            state.syncing=false;state.save_pending=not state.save()
-                        end)
-                        state.registered[id]=true
-                    end
+    local function changed(kind,value,from_native)
+        state.enabled[kind]=value==true;state.save_pending=not state.save()
+        if state.syncing then return end
+        state.syncing=true
+        for _,option in ipairs(simple)do if option.kind==kind and state.registered[kind]then menu.set(prefix..option.id,value==true)end end
+        if not from_native and state.native then state.native.set('kind_'..kind,value==true)end
+        state.syncing=false
+    end
+    if type(menu.set)=='function' and type(menu.on_change)=='function'then
+        for _,option in ipairs(simple)do
+            if not state.registered[option.kind]then
+                local kind=option.kind
+                local ok=menu.register_option(prefix..option.id,{mod="Diver's Best Friend",label=option.label,type='toggle',default=false,gap=kind==145,
+                    description='Available on the ship. Excludes this stratagem when present in your mission. Use MCM for additional blacklist entries.'})
+                if ok then
+                    menu.set(prefix..option.id,state.enabled[kind]==true)
+                    menu.on_change(prefix..option.id,function(value)if not state.syncing then changed(kind,value,false)end end)
+                    state.registered[kind]=true
                 end
             end
         end
-        state.save_pending=state.save_pending==nil and true or state.save_pending
-        if state.save_pending then state.save_pending=not state.save() end
     end
-    local allowed={}
-    for _,kind in ipairs(available or {}) do allowed[kind]=true end
+    local mcm=rawget(_G,'DBFMCM')
+    if state.provider~=mcm then
+        if state.native then pcall(state.native.unregister)end
+        state.native=nil;state.provider=mcm
+    end
+    if mcm and mcm.api==1 and type(mcm.register)=='function' and not state.native then
+        local ids={};for kind in pairs(mission_blacklist_names)do ids[#ids+1]=kind end;table.sort(ids)
+        local controls={}
+        for _,kind in ipairs(ids)do
+            local target=kind
+            controls[#controls+1]={id='kind_'..kind,type='toggle',label='Blacklist '..mission_blacklist_names[kind],default=state.enabled[kind]==true,
+                description='Excludes this mission-provided stratagem when present. Equipped stratagems and unreadable mission data remain protected.',
+                on_change=function(value)if not state.syncing then changed(target,value,true)end end}
+        end
+        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
+        if ok then
+            state.native=handle
+            -- The shared blacklist file is authoritative across both menus.
+            state.syncing=true;for _,kind in ipairs(ids)do handle.set('kind_'..kind,state.enabled[kind]==true)end;state.syncing=false
+        end
+    end
+    if state.save_pending==nil then state.save_pending=true end
+    if state.save_pending then state.save_pending=not state.save()end
     local excluded={}
-    for i=1,3 do
-        local kind=state.kinds[i]
-        -- Unknown/unreadable mission ownership always leaves automation usable.
-        if state.index[kind] and state.registered[prefix..'mission_blacklist_'..i..'_group_'..state.index[kind].group] and allowed[kind] and mission_blacklist_names[kind] then excluded[kind]=true end
+    for _,kind in ipairs(available or {})do
+        if mission_blacklist_names[kind] and state.enabled[kind] and
+            ((kind==145 or kind==49) and state.registered[kind] or state.native~=nil)then excluded[kind]=true end
     end
     return excluded
 end

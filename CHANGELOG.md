@@ -1,9 +1,9 @@
 ## R41 - Streamlined Options
 
-- Reduced Bingus menu controls so the three mission blacklist entries have room.
+- Reduced Bingus menu controls and replaced blacklist lists with SOS Beacon and Eagle Rearm on/off toggles.
 - Retained Experimental layout, Preset, Select on Release and Input interval alongside core selection controls.
 - Suppressed other appearance controls while retaining saved values; disabled vertical offset at zero.
-- MCM support remains upcoming. I forgot that not everyone has MCM yet.
+- Additional blacklist entries use an optional native MCM page with confirmation and shared settings. I forgot that not everyone has MCM yet.
 
 # R40 - Mission Blacklist
 
