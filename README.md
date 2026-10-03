@@ -87,4 +87,4 @@ The project code is [MIT licensed](LICENSE). The game and separately installed d
 
 [Compact logo](assets/dbf-logo-4x3.png) | [Wide banner](assets/banner-dbf.png) | [Branding guide](assets/BRANDING.md)
 
-R41 also includes Eagle Rearm in the blacklist choices when present in the local mission payload. It uses native kind 49 and the same persistent-ID, None and availability guards.
+R41 includes static blacklist lists available on the ship, including Eagle Rearm. Each saved entry has three lists covering all supported mission kinds; filtering applies only to entries present in your mission.

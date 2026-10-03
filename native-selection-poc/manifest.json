@@ -2,11 +2,11 @@
   "Version": 1,
   "Guid": "e42c1e5b-0828-4c54-a05e-4c9866b3ca72",
   "Name": "Diver's Best Friend - Automated Stratagem System (ASS)",
-  "Description": "Revision 41: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three mission blacklist entries including Eagle Rearm when present. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.",
+  "Description": "Revision 41: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three saved blacklist entries across static lists available on the ship, including Eagle Rearm. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.",
   "Options": [
     {
       "Name": "Stratagem menu selection modes",
-      "Description": "Revision 41: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three mission blacklist entries including Eagle Rearm when present. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.",
+      "Description": "Revision 41: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus three saved blacklist entries across static lists available on the ship, including Eagle Rearm. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.",
       "Include": [
         "Addon"
       ]

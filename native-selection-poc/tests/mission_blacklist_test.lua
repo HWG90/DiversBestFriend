@@ -10,19 +10,19 @@ local excluded=configure(menu,state,{3,28,145})
 assert(excluded[145] and excluded[28] and not excluded[3])
 local n=0
 for id,s in pairs(specs) do
-    n=n+1;assert(s.type=='choice' and #s.choices==3 and s.choices[1]=='None')
-    assert(s.choices[2]=='SEAF Artillery' and s.choices[3]=='SOS Beacon')
+    n=n+1;assert(s.type=='choice' and #s.choices<=16 and s.choices[1]=='None')
+    assert(#s.choices>1)
     assert(not id:find('hide_sos',1,true))
 end
-assert(n==3 and state.kinds[3]==0 and values['native_stratagem_radial.mission_blacklist_3']==1)
-callbacks['native_stratagem_radial.mission_blacklist_1'](1)
+assert(n==9 and values['native_stratagem_radial.mission_blacklist_3_group_1']==1)
+callbacks['native_stratagem_radial.mission_blacklist_1_group_'..state.index[145].group](1)
 excluded=configure(menu,state,{28,145})
 assert(not excluded[145] and excluded[28] and saved>=2,'None clears SOS; applies persist stable IDs')
 excluded=configure(menu,state,{3})
 assert(next(excluded)==nil,'mission changes cannot exclude equipment or absent entries')
 excluded=configure(menu,state,nil)
 assert(next(excluded)==nil,'unreadable ownership fails safe')
-assert(#state.choices==3,'indices cannot be remapped during a game session')
+assert(#state.choices==38,'indices cannot be remapped during a game session')
 local prefix='native_stratagem_radial.'
 local old_open=io.open
 io.open=function(path)
@@ -50,10 +50,17 @@ print('Mission blacklist: three named choices, None/SOS, equipment protection, o
 
 local eagle={kinds={49,0,0},save=function()return true end}
 local eagle_excluded=configure(menu,eagle,{3,49,145})
-assert(eagle.choices[2]=='Eagle Rearm' and eagle.ids[2]==49 and eagle_excluded[49] and not eagle_excluded[3])
-callbacks['native_stratagem_radial.mission_blacklist_1'](1)
+assert(eagle.index[49]~=nil and eagle_excluded[49] and not eagle_excluded[3])
+callbacks['native_stratagem_radial.mission_blacklist_1_group_'..eagle.index[49].group](1)
 assert(not configure(menu,eagle,{49,145})[49],'None clears Eagle Rearm')
-callbacks['native_stratagem_radial.mission_blacklist_1'](2)
+callbacks['native_stratagem_radial.mission_blacklist_1_group_'..eagle.index[49].group](eagle.index[49].index)
 assert(configure(menu,eagle,{49,145})[49],'Eagle Rearm persists by native ID')
 assert(not configure(menu,eagle,{145})[49],'Absent Eagle Rearm cannot be filtered')
 print('Eagle Rearm: named choice, stable kind 49, selection, None, absence guard and equipment protection passed.')
+
+local bridge={kinds={49,0,0},save=function()return true end}
+assert(next(configure(menu,bridge,nil))==nil)
+assert(bridge.index[49] and bridge.index[145] and #bridge.groups==3,'all static choices register without a mission')
+local sos=bridge.index[145];callbacks['native_stratagem_radial.mission_blacklist_1_group_'..sos.group](sos.index)
+assert(bridge.kinds[1]==145 and not configure(menu,bridge,{49})[49] and configure(menu,bridge,{145})[145],'switching lists keeps one persisted choice per slot')
+print('Static bridge choices: all 37 kinds, 9 bounded selectors, Eagle/SOS without mission, cross-list selection and live ownership guards passed.')

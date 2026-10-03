@@ -79,36 +79,44 @@ local function mission_blacklist_settings(menu,state,available)
             file:close();return ok~=nil
         end
     end
-    -- Bingus does not support replacing an option schema. Freeze kind/index
-    -- mapping for this process; IDs, not choice indices, persist across restarts.
-    if not state.choices and available and #available>0 then
-        state.choices={'None'};state.ids={0};state.index={[0]=1}
-        for _,kind in ipairs(available) do
-            if mission_blacklist_names[kind] and not state.index[kind] then
-                if #state.choices>=16 then state.overflow=true;break end
-                state.choices[#state.choices+1]=mission_blacklist_names[kind]
-                state.ids[#state.ids+1]=kind;state.index[kind]=#state.ids
+    -- Static buckets keep all supported entries available on the bridge.
+    -- Bingus accepts at most 16 choices per selector, including None.
+    if not state.groups then
+        local ids={};for kind in pairs(mission_blacklist_names)do ids[#ids+1]=kind end;table.sort(ids)
+        state.groups={};state.index={};state.choices={'None'};state.ids={0}
+        for offset=1,#ids,15 do
+            local group={choices={'None'},ids={0}};state.groups[#state.groups+1]=group
+            for index=offset,math.min(#ids,offset+14)do
+                local kind=ids[index];group.ids[#group.ids+1]=kind;group.choices[#group.choices+1]=mission_blacklist_names[kind]
+                state.index[kind]={group=#state.groups,index=#group.ids}
+                state.choices[#state.choices+1]=mission_blacklist_names[kind];state.ids[#state.ids+1]=kind
             end
         end
-        if #state.choices<2 then state.choices=nil end
     end
     state.registered=state.registered or {}
-    if state.choices and type(menu.set)=='function' and type(menu.on_change)=='function' then
-        for i=1,3 do
-            local id=prefix..'mission_blacklist_'..i
-            if not state.registered[i] then
-                local ok=menu.register_option(id,{mod="Diver's Best Friend",label='Blacklist / Entry '..i,
-                    type='choice',choices=state.choices,default=1,gap=i==1,
-                    description='Mission-provided stratagems only. None clears this entry. Apply saves the native ID. Choices come from the first mission this session; restart to refresh for another mission. Equipped stratagems cannot be excluded.'})
-                if ok then
-                    if not state.index[state.kinds[i]] then state.kinds[i]=0 end
-                    menu.set(id,state.index[state.kinds[i]] or 1)
-                    local slot=i
-                    menu.on_change(id,function(value)
-                        state.kinds[slot]=state.ids[value] or 0
-                        state.save_pending=not state.save()
-                    end)
-                    state.registered[i]=true
+    if type(menu.set)=='function' and type(menu.on_change)=='function' then
+        for slot=1,3 do
+            for group_index,group in ipairs(state.groups)do
+                local id=prefix..'mission_blacklist_'..slot..'_group_'..group_index
+                if not state.registered[id] then
+                    local ok=menu.register_option(id,{mod="Diver's Best Friend",label='Blacklist / Entry '..slot..' / List '..group_index,
+                        type='choice',choices=group.choices,default=1,gap=group_index==1,
+                        description='Choose one stratagem across the three lists for this entry. Selecting another clears the previous list. Available on the ship; filtering only applies when present in your mission. None clears this list. Equipped stratagems are protected.'})
+                    if ok then
+                        local selected=state.index[state.kinds[slot]]
+                        menu.set(id,selected and selected.group==group_index and selected.index or 1)
+                        local target_slot,target_group=slot,group_index
+                        menu.on_change(id,function(value)
+                            if state.syncing then return end
+                            local kind=group.ids[value] or 0
+                            local previous=state.index[state.kinds[target_slot]]
+                            if kind==0 and previous and previous.group~=target_group then return end
+                            state.kinds[target_slot]=kind;state.syncing=true
+                            for other=1,#state.groups do if other~=target_group then menu.set(prefix..'mission_blacklist_'..target_slot..'_group_'..other,1)end end
+                            state.syncing=false;state.save_pending=not state.save()
+                        end)
+                        state.registered[id]=true
+                    end
                 end
             end
         end
@@ -121,7 +129,7 @@ local function mission_blacklist_settings(menu,state,available)
     for i=1,3 do
         local kind=state.kinds[i]
         -- Unknown/unreadable mission ownership always leaves automation usable.
-        if state.registered[i] and allowed[kind] and mission_blacklist_names[kind] then excluded[kind]=true end
+        if state.index[kind] and state.registered[prefix..'mission_blacklist_'..i..'_group_'..state.index[kind].group] and allowed[kind] and mission_blacklist_names[kind] then excluded[kind]=true end
     end
     return excluded
 end

@@ -1,14 +1,8 @@
-# Mission stratagem blacklist (R40)
+# Stratagem blacklist
 
-Open the native stratagem menu once in a mission, then **MODS > Diver's Best Friend > Blacklist**. Three named dropdowns list mission-provided entries and **None**. SOS Beacon, SEAF Artillery and Eagle Rearm appear when present in the local mission payload. There is no separate SOS toggle. Player-equipped stratagem kinds are excluded from the supported-build mission catalog and cannot be blacklisted, including through old saved settings.
+Open MODS > Diver's Best Friend > Blacklist on the ship or in a mission. Each of the three saved entries has three static lists covering all 37 supported mission stratagem kinds, including SOS Beacon, SEAF Artillery and Eagle Rearm. Choose one stratagem across the lists per entry. Selecting another list replaces the previous choice; None clears that list. All choices remain visible regardless of your loadout or mission.
 
-Apply changes to save stable native IDs to `DiversBestFriendBlacklist.log` in the loader log directory. None clears a slot. Duplicates are harmless. Initial migration retains up to three distinct mission-only exclusions from the older eight slots and SOS toggle, where present in the first mission. Old equipment exclusions are discarded; additional entries beyond three are not kept as hidden filters. The original Bingus values file is left intact.
-
-Bingus API 1 cannot replace registered choice lists. Choices therefore come from the first successfully read mission payload this game session; restart the game to refresh for another mission. Filtering always checks the current mission payload, so absent entries and unreadable ownership are never excluded. The verified payload reader supplies IDs; names come from the repository's retained supported-build catalog, with SEAF Gun displayed as SEAF Artillery. Unknown equipment and unknown kinds are protected. Bingus supports up to 16 choices; at most 15 mission entries plus None are shown, in native-ID order.
-
-Exclusions apply before paging, geometry and navigation in all four DBF layouts. List mode compacts the remaining rows and restores guarded native geometry on close/disable/switch. Applying an edit cancels pending Confirm and Select on Release jobs; reopen the stratagem menu to rearm release. Empty lists cannot start automation. Vanilla availability and manual input remain unchanged.
-
-Package and isolated LuaJIT verification do not establish live-game menu rendering or gameplay validation. This promotion still needs a fresh-session game smoke test.
+Apply saves native IDs. Filtering checks the current mission data, so absent entries, unreadable ownership and player-equipped stratagems remain protected. Bingus limits dropdowns to 16 choices, so each list includes None and at most 15 stratagems. Nine blacklist dropdowns plus the seven retained settings fit its sixteen-option limit.
 
 ## Stratagem ID reference
 
