@@ -6,7 +6,7 @@
 
 *Automated Stratagem System*
 
-Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through Bingus Shared Loader, using the game's UI and live stratagem data. No external application needs to run while you play.
+Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
 [Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
@@ -50,6 +50,12 @@ This project would not exist without **[CowboyBingus](https://github.com/CowboyB
 | Arsenal or a compatible mod manager | Installation only | Deploys the addon and dependencies |
 
 Install dependencies separately; they are not bundled. The original external Stratagem Wheel app, Equipped Stratagems exporter, and CowboyBingus' gameplay megapack are not required. See [Credits](CREDITS.md) for the contributions and earlier work behind the project.
+
+## Live Lua Loader (LLL)
+
+[Live Lua Loader](https://github.com/HWG90/LLL) is an alternative startup loader that discovers compatible archived Bingus addons. See its [downloads](https://github.com/HWG90/LLL/releases) and [R18 migration guide](https://github.com/HWG90/LLL/blob/main/docs/MOD-MIGRATION.md), plus [ASS installation details](docs/INSTALLATION.md#using-live-lua-loader-lll).
+
+Keep the ASS archive and its binding/options dependencies installed. Use one startup loader with winning mod-manager priority; do not install competing Bingus Shared Loader and LLL startup resources. The published R41 ASS entry is an archived module, not a loose live lifecycle: LLL discovery does not make it hot-reloadable. Native assets still require deployment and a restart. LLL's documented compatibility path is not a clean-install validation of the exact R41/R18 combination.
 
 ## Quick start
 
