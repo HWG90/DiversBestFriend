@@ -682,7 +682,7 @@ local function mission_blacklist_settings(menu,state,available)
                 description='Excludes this mission-provided stratagem when present. Equipped stratagems and unreadable mission data remain protected.',
                 on_change=function(value)if not state.syncing then changed(target,value,true)end end}
         end
-        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
+        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
         if ok then
             state.native=handle
             -- The shared blacklist file is authoritative across both menus.
