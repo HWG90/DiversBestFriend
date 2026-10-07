@@ -682,7 +682,7 @@ local function mission_blacklist_settings(menu,state,available)
                 description='Excludes this mission-provided stratagem when present. Equipped stratagems and unreadable mission data remain protected.',
                 on_change=function(value)if not state.syncing then changed(target,value,true)end end}
         end
-        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
+        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
         if ok then
             state.native=handle
             -- The shared blacklist file is authoritative across both menus.
@@ -2074,12 +2074,14 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=41,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=42,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,last_status
+local initialized,recovering=false,false
+local recovery_attempts=0
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
 local wheel,expanded,release_selection
@@ -2099,7 +2101,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R41 - MissionBlacklist\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R42 - UIRecovery\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -2122,7 +2124,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R41 - MissionBlacklist\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R42 - UIRecovery\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -2130,6 +2132,7 @@ local function report(status,force)
             file:write('mode='..mode_names[api.mode]..'; experimental_layout='..api.experimental_layout..'\n')
             file:write('before_latest_apply='..tostring(api.observation or 'not sampled')..'\n')
             file:write('selection='..tostring(api.selection_status)..'\nlast_result='..tostring(api.last_selection)..'\n')
+            file:write('last_runtime_error='..tostring(api.last_runtime_error)..'; recovery_attempts='..recovery_attempts..'\n')
             file:write('last_confirmation='..tostring(api.last_confirmation)..'\n')
             file:write('select_on_release='..tostring(select_on_release)..'; release_status='..tostring(release_selection and release_selection.status)..'\n')
             file:write('input_interval_ms='..tostring(input_interval_ms)..'\n')
@@ -2198,6 +2201,41 @@ local function bindings()
     end
     return buttons
 end
+-- Only known transient HUD failures may retry. Memory guards, native ABI
+-- failures and unknown errors remain fatal. Keep native allocations alive.
+local transient_ui_errors={
+    'Wheel HUD changed','Expanded HUD changed','HUD changed during radial construction',
+    'Original list geometry unavailable','List row scale unavailable',
+    'Widget became unreadable','Native transform unreadable','Degenerate list transform',
+    'UI context manager unavailable','Original widget resource context unavailable',
+    'HUD resource renderer unavailable','UI context stack is full','Animation owner changed',
+}
+local function transient_ui_error(message)
+    for _,reason in ipairs(transient_ui_errors) do
+        if message==reason or message:sub(-#reason-2)==': '..reason then return true end
+    end
+    return false
+end
+local function cleanup_ui()
+    local errors={}
+    local function clean(object,method,...)
+        if not object then return end
+        local ok,why=pcall(object[method],...)
+        if not ok then errors[#errors+1]=method..': '..tostring(why) end
+    end
+    clean(release_selection,'reset')
+    clean(selection,'step',nil,nil,0)
+    clean(pointing,'reset')
+    clean(camera,'release')
+    clean(controller,'restore')
+    clean(list_controller,'restore')
+    clean(duplicates,'hide')
+    clean(wheel,'hide')
+    clean(expanded,'hide')
+    clean(hidden_rows,'restore')
+    radial.selected=nil;api.count=0
+    return #errors==0,table.concat(errors,'; ')
+end
 local function step()
     if failed then return end
     local ok,why=pcall(function()
@@ -2218,8 +2256,20 @@ local function step()
             pointing=native_pointing(backend)
             wheel=emote_wheel(backend,duplicates,input)
             expanded=expanded_wheel(backend,duplicates,input)
+            initialized=true
         end
         local now=backend.milliseconds()
+        if recovering then
+            -- A missing/failed snapshot does not prove that the menu closed.
+            -- Poll only; do not construct UI or replay the cancelled input.
+            local sampled,current=pcall(backend.snapshot)
+            if sampled and current and current.open==false then
+                recovering=false;active_mode=nil;last_tick=nil
+                blacklist_release_blocked=true
+                report('UI recovered; reopen the stratagem menu',true)
+            end
+            return
+        end
         if now>=next_blacklist_sample then
             next_blacklist_sample=now+1000
             local sampled,available=pcall(input.mission_blacklist_kinds)
@@ -2350,22 +2400,22 @@ local function step()
         if was_open then native_checkpoint('layout returned') end
         api.count=display.count
         api.observation=display.observation
+        if snapshot and snapshot.open then recovery_attempts=0 end
         frames=frames+1
         report(display.status,(api.count>0 and frames%120==0) or api.last_selection~=api.reported_selection)
         api.reported_selection=api.last_selection
     end)
     if not ok then
-        failed=true
-        if release_selection then pcall(release_selection.reset) end
-        if controller then pcall(controller.restore) end
-        if list_controller then pcall(list_controller.restore) end
-        if camera then pcall(camera.release) end
-        if duplicates then pcall(duplicates.hide) end
-        if wheel then pcall(wheel.hide) end
-        if expanded then pcall(expanded.hide) end
-        if hidden_rows then pcall(hidden_rows.restore) end
-        api.count=0
-        report('disabled after error: '..tostring(why))
+        api.last_runtime_error=tostring(why)
+        local cleaned,cleanup_error=cleanup_ui()
+        if initialized and cleaned and transient_ui_error(tostring(why)) and recovery_attempts<3 then
+            recovery_attempts=recovery_attempts+1;recovering=true
+            blacklist_release_blocked=true
+            report('UI paused after transient error; close the stratagem menu to recover: '..tostring(why),true)
+        else
+            failed=true
+            report('disabled after error: '..tostring(why)..(cleaned and '' or '; cleanup failed: '..cleanup_error),true)
+        end
     end
 end
 local previous=rawget(_G,'update')

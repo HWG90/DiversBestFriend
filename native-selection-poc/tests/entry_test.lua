@@ -16,6 +16,7 @@ local wedge_darkness,wedge_opacity=70,75
 local wedge_registrations=0
 local copies,cursor_only,last_target=0,false,nil
 local expanded_prepares,caption=0,nil
+local snapshot_error,draw_error
 local timer_row
 local prepares,samples,captured=0,0,false
 local vector={0,0}
@@ -56,7 +57,7 @@ end,get=function(id)
     return 575
 end}
 env.native_backend=function()
-    return {snapshot=function() return snapshot end,focused=function() return focus end,milliseconds=function() return now end}
+    return {snapshot=function() if snapshot_error then error(snapshot_error) end;return snapshot end,focused=function() return focus end,milliseconds=function() return now end}
 end
 env.input_backend=function()
     return {view_context=function() return {} end,decorate=function() end,begin=function(kind) starts=starts+1;return {kind=kind} end,
@@ -74,7 +75,7 @@ end,hide=function() end} end
 env.emote_wheel=function()
     return {prepare=function(s)
         prepares=prepares+1;return {identity=s.identity,open=s.open,rows=s.rows,pointer_only=true},false
-    end,caption=function(kind) caption=kind end,timer=function(row) timer_row=row end,address=12345,draw=function(_,_,_,only) cursor_only=only==true end,hide=function() end,step=function() draws=draws+1 end,count=2,status='drawing'}
+    end,caption=function(kind) caption=kind end,timer=function(row) timer_row=row end,address=12345,draw=function(_,_,_,only) if draw_error then error(draw_error) end;cursor_only=only==true end,hide=function() end,step=function() draws=draws+1 end,count=2,status='drawing'}
 end
 env.expanded_wheel=function()
     return {prepare=function(s)
@@ -250,3 +251,23 @@ snapshot.open=true;release_down=true;tick()
 release_down=false;snapshot.open=false;tick()
 assert(release_calls==old_release_calls+1,'a fresh menu opening may arm the remaining allowed stratagem')
 print('Blacklist release safety passed: applied exclusions disarm pending release selection.')
+
+-- A transient HUD failure must not permanently disable updates or replay input.
+blacklist_values={};mode=1;release_enabled=false;buttons.confirm=false
+snapshot.open=true;tick();assert(captured)
+draw_error='Wheel HUD changed';local starts_before=starts;tick()
+assert(not captured and not env.radial.selected)
+assert(env.DiversBestFriend.status:find('UI paused',1,true))
+draw_error=nil;buttons.confirm=true;tick();assert(starts==starts_before)
+local saved_snapshot=snapshot;snapshot=nil;tick();snapshot=saved_snapshot
+assert(env.DiversBestFriend.status:find('UI paused',1,true),'missing snapshot is not a closed menu')
+snapshot_error='temporary read failure';tick();snapshot_error=nil
+snapshot.open=false;tick();assert(env.DiversBestFriend.status:find('UI recovered',1,true))
+snapshot.open=true;tick();assert(captured and starts==starts_before,'held Confirm cannot replay after recovery')
+assert(env.DiversBestFriend.last_runtime_error:find('Wheel HUD changed',1,true),'diagnostic survives recovery')
+-- Safety violations must never be retried as transient HUD failures.
+draw_error='Wheel prefix overwritten';tick();draw_error=nil
+assert(env.DiversBestFriend.status:find('disabled after error',1,true))
+local old_draws=draws;snapshot.open=false;tick();snapshot.open=true;tick()
+assert(draws==old_draws and not captured,'memory guard failure remains fatal')
+print('Runtime recovery passed: transient pause, verified close, fresh reopen, no held-input replay, persistent diagnostics and fatal memory guards.')

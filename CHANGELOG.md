@@ -15,6 +15,12 @@
 
 # Changelog
 
+## R42 - UI Recovery (test build)
+
+- Recover from recognized temporary HUD failures after menu close/reopen instead of permanently disabling UI updates.
+- Cancel pending input, restore UI and camera control, and preserve the last error in diagnostics.
+- Retain fatal native safety checks and bound consecutive retries. The reported jammer trigger remains unconfirmed pending user logs and live testing.
+
 All documented changes to **Diver's Best Friend / DiversBestFriend** through **Canary R39**.
 
 R32, R33 and R34 are canary revisions, published under `canary-r32`, `canary-r33` and `canary-r34`. R22 is the first public release. Earlier entries are reconstructed from the repository's retained research notes; no individual release history is available for R1–R8. Dates below are GitHub publication dates in UTC. Validation statements describe what was recorded for that revision, not a new verification of the game or mod.

@@ -8,10 +8,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 41
+REVISION = 42
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'MissionBlacklist'
+RECENT_FEATURE = 'UIRecovery'
 OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
 
 
@@ -35,7 +35,7 @@ def build():
         'Install revision line must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles available on the ship. Additional blacklist entries require optional MCM. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
+    description = (f"Revision {REVISION}: recover from recognized transient HUD errors after closing and reopening the menu, cancel pending selection, release camera control and retain the last runtime error in diagnostics. Native safety checks remain fatal. Streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles available on the ship. Additional blacklist entries require optional MCM. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
     assert description.startswith(f'Revision {REVISION}:'), \
         'Manifest description must match release metadata'
     # Version is Arsenal's schema version, NOT the release revision. Keep the
