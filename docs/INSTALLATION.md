@@ -18,15 +18,9 @@ LLL gameplay was reported working on the compatibility predecessor. MDL startup 
 
 ## Using Live Lua Loader (LLL)
 
-[Live Lua Loader](https://github.com/HWG90/LLL) provides the archived-addon compatibility path described in its [R18 migration guide](https://github.com/HWG90/LLL/blob/main/docs/MOD-MIGRATION.md). Download LLL from its [Releases page](https://github.com/HWG90/LLL/releases) and follow its installation instructions.
+The dedicated R45 LLL ZIP contains modular Lua source; you no longer need to keep an ASS archive deployed for this route. Keep the binding/options dependency archives and use LLL as the single winning startup loader. Do not install a competing BSL startup resource or run a second ASS provider. Optional MCM has its own [LLL installation guide](https://github.com/HWG90/DBF-MCM/blob/main/docs/INSTALL-STANDALONE.md).
 
-- Retain the published ASS archive and required Mod Bindings Menu / Mod Options Menu dependencies. LLL does not install these dependencies or their resources automatically. MCM is optional and can be loaded separately using its [LLL installation guide](https://github.com/HWG90/DBF-MCM/blob/main/docs/INSTALL-STANDALONE.md).
-- Use LLL as the single winning startup/shared loader instead of installing a competing Bingus Shared Loader startup resource. Deploy through your mod manager and restart normally with the game closed during installation.
-- Keep only one ASS revision enabled. Do not add a loose wrapper that requires the same archived entry; that can duplicate initialization or preserve stale cached state.
-- R41's published archived entry has no managed loose live lifecycle. LLL discovering it does not grant safe Lua reload; changes to that archived entry still require deployment/restart unless a separately validated live port is supplied.
-- Lua reload does not deploy shaders, textures, compiled archives, native signatures or DLL updates. Preserve required native assets and use the normal deployment/restart workflow.
-
-This describes the documented loading route and R41 source shape. A clean exact R41/LLL R18 installation is not established by these documentation checks. Check the loader/mod logs after startup and verify selection, bindings, cursor restoration and settings in-game.
+R45 remains restart-only. Lua reload does not replace native assets or release ASS's startup/UI owners. Close the game before updates and check `DiversBestFriend.log` and loader logs after restarting.
 
 ## Choose a layout
 

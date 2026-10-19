@@ -53,9 +53,7 @@ Install dependencies separately; they are not bundled. The original external Str
 
 ## Live Lua Loader (LLL)
 
-[Live Lua Loader](https://github.com/HWG90/LLL) is an alternative startup loader that discovers compatible archived Bingus addons. See its [downloads](https://github.com/HWG90/LLL/releases) and [R18 migration guide](https://github.com/HWG90/LLL/blob/main/docs/MOD-MIGRATION.md), plus [ASS installation details](docs/INSTALLATION.md#using-live-lua-loader-lll).
-
-Keep the ASS archive and its binding/options dependencies installed. Use one startup loader with winning mod-manager priority; do not install competing Bingus Shared Loader and LLL startup resources. The published R41 ASS entry is an archived module, not a loose live lifecycle: LLL discovery does not make it hot-reloadable. Native assets still require deployment and a restart. LLL's documented compatibility path is not a clean-install validation of the exact R41/R18 combination.
+[LLL R30+](https://github.com/HWG90/LLL/releases) can load the dedicated R45 loose package. Extract `DiversBestFriend-R45-LLL.zip` into LLL's Mods directory and remove the previous ASS archive provider. Keep Mod Bindings Menu and Mod Options Menu available through LLL's shared-addon route. Use one winning startup loader. ASS remains restart-only; installing a loose package does not make its native UI owners safe to hot-reload. See [installation](docs/INSTALLATION.md).
 
 ## Quick start
 
