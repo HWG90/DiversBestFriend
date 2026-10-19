@@ -53,6 +53,11 @@ local function release_controller(input,report)
         if not state.clean then blocked=true;armed=nil end
         if explicit then blocked=true;armed=nil end
         local previous=armed
+        if previous and snapshot.rows then
+            for _,row in ipairs(snapshot.rows) do
+                if row.address==previous.address and row.unavailable then previous=nil;break end
+            end
+        end
         armed=nil
         if not state.down then
             local skip=blocked;blocked=nil
@@ -76,7 +81,7 @@ local function release_controller(input,report)
         end
         if blocked or not snapshot.open or not state.menu_active then return end
         for _,row in ipairs(snapshot.rows) do
-            if row.address==selected and selectable_kind(row.kind) then
+            if row.address==selected and selectable_kind(row.kind) and not row.unavailable then
                 armed={kind=row.kind,address=row.address,time=now,snapshot_identity=snapshot.identity,
                     identity=state.identity,component=state.component,hud=state.hud}
                 self.status='Armed kind '..row.kind

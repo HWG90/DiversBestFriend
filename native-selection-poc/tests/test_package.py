@@ -26,11 +26,16 @@ class PackageTest(unittest.TestCase):
             body = payload[8:]
             self.assertEqual(body, (ROOT / 'NativeStratagemRadial.lua').read_bytes())
             self.assertTrue(body.startswith(('-- HD2-Addon: ' + builder.RESOURCE + '\n').encode()))
-            for filename in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'blacklist.lua', 'entry.lua'):
+            for filename in ('layout.lua', 'guards.lua', 'native.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'blacklist.lua', 'hud_plus.lua', 'foliage_compat.lua', 'entry.lua'):
                 self.assertIn((ROOT / filename).read_text().encode(), body)
             self.assertEqual(manifest['Guid'], builder.GUID)
             self.assertEqual(manifest['Name'], builder.DISPLAY_NAME)
             self.assertEqual(manifest['Version'], 1)
+            self.assertIn(('revision='+str(builder.REVISION)+',').encode(), body)
+            self.assertIn('HUD Plus 0.2.8', manifest['Description'])
+            self.assertIn('Custom Stratagem Compendium 0.4.1', manifest['Description'])
+            self.assertEqual(package.read('CUSTOM-STRATAGEM-COMPATIBILITY.md'), (ROOT / 'CUSTOM-STRATAGEM-COMPATIBILITY.md').read_bytes())
+            self.assertEqual(package.read('HUD-PLUS-COMPATIBILITY.md'), (ROOT / 'HUD-PLUS-COMPATIBILITY.md').read_bytes())
             self.assertEqual(package.read('INSTALL.txt'), (ROOT / 'INSTALL.txt').read_bytes())
             self.assertEqual(package.read('docs/BLACKLIST.md'), (ROOT.parent / 'docs/BLACKLIST.md').read_bytes())
 

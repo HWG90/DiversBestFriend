@@ -125,11 +125,14 @@ end
 cached(cards.rows[1],136,4,60);input.decorate(cards)
 assert(cards.rows[1].timer_seconds==nil,'stale native kind rejected')
 cached(cards.rows[1],3,5,60);input.decorate(cards)
-assert(cards.rows[1].timer_seconds==nil,'other unavailability is not mislabeled cooldown')
+assert(cards.rows[1].timer_seconds==nil and cards.rows[1].unavailable,'exhausted state is unavailable without a fabricated cooldown')
+cached(cards.rows[1],136,5,0);input.decorate(cards)
+assert(cards.rows[1].unavailable==nil,'stale kind cannot retain unavailable state')
 cards.rows[1].entry=5;cached(cards.rows[1],124,4,22.1);input.decorate(cards)
 assert(cards.rows[1].kind==124 and cards.rows[1].timer_seconds==23,'shared Reinforce native countdown preserved')
 cards.rows[1].entry=0;cached(cards.rows[1],3,1,0);input.decorate(cards)
 assert(cards.rows[1].timer_seconds==nil and cards.rows[1].timer_kind==nil,'ready state clears previous cooldown')
+assert(not cards.rows[1].unavailable,'ready transition clears exhausted state')
 local function reset() num(component,0);num(component+0x14,0);num(component+0x2c,0) end
 for _,c in ipairs(cases) do
     reset(); expected=c
@@ -287,3 +290,86 @@ s.step(snap,neutral,4001);s.step(snap,{next=false,previous=false,confirm=true},4
 snap.rows[1].kind=4;s.step(snap,neutral,4003);assert(not s.job and advances==1)
 assert(loadfile('native-selection-poc/NativeStratagemRadial.lua'),'assembled syntax')
 print('Selection fixtures passed: five original codes, nine-direction Maelstrom with a 4-byte-aligned definition, plus a dynamic descriptor, local slot 1 ownership, membership/menu/scramble guards, manual-input cancellation, native rejection, pulse restoration, held-confirm gating, menu cancellation, timeout and card changes.')
+
+-- Optional shipped-artifact fixture. Never include Compendium or Runtime code
+-- in an ASS release; the fixture path is provided by the offline verifier.
+local custom_fixture=os.getenv('ASS_CUSTOM_CODES_FIXTURE')
+if custom_fixture then
+    local data=assert(loadfile(custom_fixture))()
+    local f=assert(io.open(data.owner_source,'rb'))
+    local owner_chunk=assert(loadstring(f:read('*a')));f:close()
+    setfenv(owner_chunk,setmetatable({require=function(name)
+        if name=='hd2runtime/domains/stratagem_calldown' then
+            return {maxLength=9,row={sequence=64,count=72}}
+        elseif name=='hd2runtime/runtime/metrics' then return {count=function() end} end
+        return {}
+    end},{__index=_G}))
+    local owner=owner_chunk()
+    local owner_key='hd2runtime/runtime/calldown_codes'
+    local previous_owner=package.loaded[owner_key]
+    local external_next=0x3d000000
+    local adapter={owned_block=function(size)
+        assert(size==40);external_next=external_next+64;return external_next
+    end,owned_write=put,read=read}
+    local info=settings+5*400
+    local original_pointer=b.pointer(info+0x40)
+    local original_count=u32(read(info+0x48,4),0)
+    local function ready()
+        reset();num(component+0x28,42);num(avatar+0xfd8,512)
+        put(hud+0x395100+0x38769,'\1')
+        for a=0,4 do put(actions+a*32,'\0') end
+    end
+    local function denied(operation,label)
+        local before=writes
+        assert(not pcall(operation),label)
+        assert(writes==before,label..' must fail before input')
+    end
+    local first=data.cases[1].values
+    local address=owner.array(adapter,first)
+    ptr(info+0x40,address);num(info+0x48,#first);ready()
+    package.loaded[owner_key]=nil
+    denied(function() input.begin(33) end,'no runtime owner')
+    package.loaded[owner_key]={MAX=9,CAPACITY=10,owned=function() return first end}
+    denied(function() input.begin(33) end,'unrecognised ownership method')
+    package.loaded[owner_key]=owner
+    for _,case in ipairs(data.cases) do
+        local address=owner.array(adapter,case.values)
+        ptr(info+0x40,address);num(info+0x48,#case.values);ready()
+        expected={33,case.values};local job=input.begin(33)
+        for i=1,#job.code do assert(input.advance(job)==(i==#job.code)) end
+        -- Release uses the exact same code reader and normal completion path.
+        local armed=release_fixture();expected={33,case.values}
+        local released=input.begin_release(33,armed)
+        for i=1,#released.code do input.advance_release(released) end
+        num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+        assert(input.release_complete(released));input.end_release(released,false)
+    end
+    ptr(info+0x40,address);num(info+0x48,#first);ready();expected={33,first}
+    local job=input.begin(33);input.advance(job)
+    local old=u32(read(address,4),0);num(address,old%4+1)
+    denied(function() input.advance(job) end,'owner/live-byte disagreement')
+    num(address,old)
+    ptr(info+0x40,address+4);ready()
+    denied(function() input.begin(33) end,'interior allocation pointer')
+    ptr(info+0x40,address);num(info+0x48,#first+1)
+    denied(function() input.begin(33) end,'owner count disagreement')
+    num(info+0x48,13)
+    denied(function() input.begin(33) end,'oversized code')
+    num(info+0x48,#first);ready();job=input.begin(33)
+    package.loaded[owner_key]=nil
+    denied(function() input.advance(job) end,'owner retired during sequence')
+    package.loaded[owner_key]=owner;ready();job=input.begin(33)
+    local other=owner.array(adapter,{4,4,4})
+    ptr(info+0x40,other);num(info+0x48,3)
+    denied(function() input.advance(job) end,'code changed during sequence')
+    ptr(info+0x40,address);num(info+0x48,#first);ready()
+    scramble_effect=0;num(avatar+0x11b8,118)
+    expected={33,cases[1][2]};job=input.begin(33)
+    for i=1,#job.code do assert(input.advance(job)==(i==#job.code)) end
+    scramble_effect=4294967295;num(avatar+0x11b8,0)
+    ptr(info+0x40,original_pointer);num(info+0x48,original_count)
+    package.loaded[owner_key]=previous_owner
+    print('Compendium '..#data.cases..' shipped codes: Confirm, Select on Release, scramble, ownership and mutation refusal passed')
+else
+    print('Compendium owner fixture skipped: set ASS_CUSTOM_CODES_FIXTURE')
+end

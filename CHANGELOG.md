@@ -1,3 +1,13 @@
+# R45 - Plays Nicely With Others - 2026-10-19
+
+- Add HUD Plus 0.2.8 stratagem-list/picker handoff while preserving its other HUD features.
+- Support Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0-owned input arrays with live ownership/content checks.
+- Dim exhausted single-use stratagems and block unavailable Confirm/Select on Release actions, including arming transitions.
+- Recognize Foliage Pass-Through 1.0's exact owned projectile-template variant without bypassing Runtime donor checks.
+- Retain R42 transient UI recovery, existing settings, bindings and blacklist behavior.
+- Publish separate BSL, MDL API 2 and LLL packages. Compatibility targets are optional; install one loader variant and restart.
+- LLL predecessor reported working in-game. BSL packaging and MDL adapter coverage are offline; see [full notes](docs/RELEASE-r45.md).
+
 ## R41 - Streamlined Options
 
 - Reduced Bingus menu controls and replaced blacklist lists with SOS Beacon and Eagle Rearm on/off toggles.

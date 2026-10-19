@@ -22,6 +22,10 @@ local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
+local hud_active
+local make_hud_compat=assert(loadstring(source('hud_plus.lua')..'\nreturn hud_plus_compat'))()
+env.hud_plus_compat=function(active) hud_active=active;return make_hud_compat(active) end
+
 local blacklist_chunk=assert(loadstring(source('blacklist.lua')..'\nreturn stratagem_blacklist,blacklist_signature,blacklist_snapshot'))
 env.stratagem_blacklist,env.blacklist_signature,env.blacklist_snapshot=blacklist_chunk()
 env.mission_blacklist_settings=function() return env.stratagem_blacklist(blacklist_values) end
@@ -100,7 +104,9 @@ local chunk=assert(loadstring(source('entry.lua')));setfenv(chunk,env);chunk()
 local function tick()
     now=now+100;local a,b,c=env.update('a','b');assert(a==1 and b==nil and c==3)
 end
+assert(not hud_active(),"HUD+ retains ownership before ASS initialization")
 tick();assert(env.radial.selected==10 and draws==1 and starts==0)
+assert(hud_active(),"ASS acquires HUD+ boundary after initialization")
 buttons.next=true;tick();assert(env.radial.selected==20)
 buttons.next=false;tick();buttons.confirm=true;tick();assert(starts==1)
 buttons.confirm=false;tick();assert(advances==1)
@@ -123,7 +129,7 @@ focus=false;tick();assert(not captured,'focus loss releases camera')
 focus=true;tick();assert(captured)
 snapshot.open=false;tick();assert(not captured,'menu close releases camera')
 snapshot.open=true;tick();assert(captured)
-enabled=false;tick();assert(not captured and not env.radial.selected,'disable releases camera and clears selection')
+enabled=false;tick();assert(not hud_active(),"disabled ASS yields to HUD+");assert(not captured and not env.radial.selected,'disable releases camera and clears selection')
 print('Entry integration passed: both modes, switching cancels/gates confirm, list avoids radial/input capture, pointer-only mouse selection, close/disable/focus cleanup and callback returns.')
 
 -- Third mode restores copied-row drawing, preserves native input integration,
@@ -258,16 +264,19 @@ snapshot.open=true;tick();assert(captured)
 draw_error='Wheel HUD changed';local starts_before=starts;tick()
 assert(not captured and not env.radial.selected)
 assert(env.DiversBestFriend.status:find('UI paused',1,true))
+assert(not hud_active(),'transient recovery yields to HUD+')
 draw_error=nil;buttons.confirm=true;tick();assert(starts==starts_before)
 local saved_snapshot=snapshot;snapshot=nil;tick();snapshot=saved_snapshot
 assert(env.DiversBestFriend.status:find('UI paused',1,true),'missing snapshot is not a closed menu')
 snapshot_error='temporary read failure';tick();snapshot_error=nil
 snapshot.open=false;tick();assert(env.DiversBestFriend.status:find('UI recovered',1,true))
 snapshot.open=true;tick();assert(captured and starts==starts_before,'held Confirm cannot replay after recovery')
+assert(hud_active(),'recovered ASS reacquires HUD+ boundary')
 assert(env.DiversBestFriend.last_runtime_error:find('Wheel HUD changed',1,true),'diagnostic survives recovery')
 -- Safety violations must never be retried as transient HUD failures.
 draw_error='Wheel prefix overwritten';tick();draw_error=nil
 assert(env.DiversBestFriend.status:find('disabled after error',1,true))
+assert(not hud_active(),'fatal guard failure yields to HUD+')
 local old_draws=draws;snapshot.open=false;tick();snapshot.open=true;tick()
 assert(draws==old_draws and not captured,'memory guard failure remains fatal')
 print('Runtime recovery passed: transient pause, verified close, fresh reopen, no held-input replay, persistent diagnostics and fatal memory guards.')

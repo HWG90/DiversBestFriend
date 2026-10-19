@@ -13,3 +13,6 @@ __pycache__/
 .tools/
 research/
 captures/
+
+# Generated packages and local validation/deployment evidence
+dist/

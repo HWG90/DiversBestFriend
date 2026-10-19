@@ -133,6 +133,10 @@ assert(props[last_wedge+0x160].opacity==0.55 and props[last_wedge+0x160].color[2
 prepared.rows[16].timer_seconds,prepared.rows[16].timer_kind=nil,nil
 w.prepare(snap);w.draw(original_selection,prepared.rows)
 assert(props[last_wedge+0x160].opacity==1,'expired expanded cooldown restores visibility')
+prepared.rows[16].unavailable=true
+w.prepare(snap);w.draw(original_selection,prepared.rows)
+assert(props[last_wedge+0x160].opacity==0.55,'exhausted expanded icon remains dim')
+prepared.rows[16].unavailable=nil
 local started
 local selection=make_selection({begin=function(k) started=k;return {kind=k} end},function() end)
 local idle={next=false,previous=false,confirm=false}
@@ -141,6 +145,10 @@ local _,_,pos=geometry(16,16)
 local vector={pos[1]/185,pos[2]/185}
 selection.step(prepared,idle,0,vector);selection.step(prepared,confirm,1,vector)
 assert(started==1,'Confirm reaches the sixteenth slot')
+started=nil;prepared.rows[16].unavailable=true
+selection.step(prepared,idle,2,vector);selection.step(prepared,confirm,3,vector)
+assert(started==nil and selection.status=='Unavailable','exhausted selection cannot confirm')
+prepared.rows[16].unavailable=nil
 for i=16,10,-1 do table.remove(rows,i) end
 prepared,changed=w.prepare(snap);assert(changed and w.count==9)
 assert(shown[root+0x110+9*0x4e0]==0,'removed sectors hidden')

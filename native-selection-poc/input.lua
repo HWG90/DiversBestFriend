@@ -14,13 +14,14 @@ local function input_backend(b)
     local ffi=require('ffi')
     local timer_float=ffi.new('float[1]')
     local function decorate_timer(row)
-        row.timer_seconds,row.timer_kind=nil,nil
+        row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
         -- Read the same cached seconds/state the original HUD renders. This
         -- includes native special cases (shared Reinforce and Eagle timers).
         -- An unreadable or not-yet-updated card means unknown, never "ready".
         local bytes=b.read(row.address+0x3718,0x44)
         if not bytes or #bytes~=0x44 or b.u32(bytes,0x34)~=row.kind then return end
         local state=b.u32(bytes,0x40)
+        row.unavailable=state==5
         if state~=3 and state~=4 then return end
         local offset=state==3 and 0 or 8
         ffi.copy(timer_float,bytes:sub(offset+1,offset+4),4)
@@ -33,6 +34,32 @@ local function input_backend(b)
         local s=b.read(p,n); assert(s and #s==n,'Selection memory unavailable'); return s
     end
     local function num(p) return b.u32(read(p,4),0) end
+    local custom_module,custom_owned,custom_supported
+    local function owned_code(address,count)
+        -- Inspect only an already-loaded owner. Never start HD2Runtime or scan
+        -- its registry. The shipped 0.40.0 calldown owner retains these arrays
+        -- for this Lua state's lifetime and recognises exact pointer/count pairs.
+        local loaded=package and package.loaded
+        local module=type(loaded)=='table' and rawget(loaded,'hd2runtime/runtime/calldown_codes')
+        local fn=type(module)=='table' and rawget(module,'owned')
+        if module~=custom_module or fn~=custom_owned then
+            custom_module,custom_owned,custom_supported=module,fn,false
+            if type(fn)=='function' and rawget(module,'MAX')==9 and rawget(module,'CAPACITY')==10 then
+                local ok,bytes=pcall(string.dump,fn,true)
+                if ok then
+                    local a,c=1,0
+                    for i=1,#bytes do a=(a+bytes:byte(i))%65521;c=(c+a)%65521 end
+                    custom_supported=string.format('%08x',c*65536+a)=='6b49047c'
+                end
+            end
+        end
+        assert(custom_supported,'Invalid code array: recognised HD2Runtime owner unavailable')
+        assert(count<=9,'Invalid HD2Runtime code length')
+        local values=fn(address,count)
+        assert(type(values)=='table' and #values==count,'Invalid code array: HD2Runtime does not own pointer/count')
+        return values
+    end
+
     local function ptr(p,alignment)
         local s=read(p,8)
         local value=b.u32(s,0)+b.u32(s,4)*4294967296
@@ -132,10 +159,16 @@ local function input_backend(b)
         local info=ptr(base+0x37cb600+kind*8,4)
         assert(info>=settings and info+400<=settings+80280 and num(info)==kind,'Invalid definition')
         local n=num(info+0x48); local data=ptr(info+0x40,4)
-        assert(n>=1 and n<=12 and data>=settings and data+n*4<=settings+80280,'Invalid code array')
+        assert(n>=1 and n<=12,'Invalid code array')
+        local external
+        if data<settings or data+n*4>settings+80280 then external=owned_code(data,n) end
         local result={}
         for i=0,n-1 do
-            local d=num(data+i*4); assert(d>=1 and d<=4,'Invalid direction'); result[#result+1]=d
+            local d=num(data+i*4); assert(d>=1 and d<=4,'Invalid direction')
+            -- The owner proves allocation; readback proves the current bytes.
+            -- advance() repeats this before each input, including scramble remaps.
+            assert(not external or external[i+1]==d,'HD2Runtime code array changed')
+            result[#result+1]=d
         end
         return result
     end
@@ -190,7 +223,7 @@ local function input_backend(b)
             -- cached arrow progress, not a stratagem kind (1837B14/183856B).
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
-            row.timer_seconds,row.timer_kind=nil,nil
+            row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
             if selectable_kind(row.kind) then decorate_timer(row) end
         end
     end

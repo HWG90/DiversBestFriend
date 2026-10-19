@@ -8,11 +8,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 RESOURCE = 'mods/EquippedStratagems/NativeStratagemRadial'
 ARCHIVE = '9ba626afa44a3aa3.patch_0'
-REVISION = 42
+REVISION = 45
 DISPLAY_NAME = "Diver's Best Friend - Automated Stratagem System (ASS)"
 GUID = 'e42c1e5b-0828-4c54-a05e-4c9866b3ca72'
-RECENT_FEATURE = 'UIRecovery'
-OUTPUT = ROOT / f'DiversBestFriend-R{REVISION}-{RECENT_FEATURE}.zip'
+RECENT_FEATURE = 'Compatibility'
+OUTPUT = ROOT.parent / 'dist' / 'releases' / 'r45' / 'DiversBestFriend-R45-BSL.zip'
 
 
 def build():
@@ -22,7 +22,7 @@ def build():
     source = ('-- HD2-Addon: ' + RESOURCE + '\n'
               "if rawget(_G,'NativeStratagemRadial') then return end\n")
     source += '\n'.join((ROOT / name).read_text(encoding='utf-8')
-                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'menu_latch.lua', 'mission_blacklist.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'release.lua', 'blacklist.lua', 'settings.lua', 'feedback.lua', 'entry.lua'))
+                        for name in ('layout.lua', 'guards.lua', 'native.lua', 'menu_latch.lua', 'mission_blacklist.lua', 'input.lua', 'pointing.lua', 'camera.lua', 'icon_colors.lua', 'duplicate.lua', 'emote.lua', 'expanded.lua', 'selection.lua', 'release.lua', 'blacklist.lua', 'settings.lua', 'feedback.lua', 'hud_plus.lua', 'foliage_compat.lua', 'entry.lua'))
     body = source.encode('utf-8')
     assert f'revision={REVISION},' in source, 'Runtime revision must match release metadata'
     # The runtime log headers are the first thing a CTD report shows; they must
@@ -35,7 +35,7 @@ def build():
         'Install revision line must match release metadata'
     (ROOT / 'NativeStratagemRadial.lua').write_bytes(body)
     archive = packager.make_archive({packager.resource_hash(RESOURCE): struct.pack('<II', len(body), 2) + body})
-    description = (f"Revision {REVISION}: recover from recognized transient HUD errors after closing and reopening the menu, cancel pending selection, release camera control and retain the last runtime error in diagnostics. Native safety checks remain fatal. Streamlined options leave Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles available on the ship. Additional blacklist entries require optional MCM. Suppresses appearance size, icon, label, opacity and color controls without changing saved values. Vertical offset is disabled at zero. Retains R40 native selection fixes, stable-ID blacklist persistence and equipped-stratagem protection. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and Shared Loader API 1.")
+    description = (f"Revision {REVISION}: HUD Plus 0.2.8 list/picker compatibility; Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0 code ownership support; exhausted stratagem state and Foliage Pass-Through 1.0 donor compatibility. All compatibility mods are optional. Retains bounded UI recovery, native guards, streamlined options, blacklist settings and existing bindings. Requires Mod Options Menu, Mod Bindings Menu v2 or newer (API 1) and a compatible shared loader. Install one ASS loader variant and restart after updates.")
     assert description.startswith(f'Revision {REVISION}:'), \
         'Manifest description must match release metadata'
     # Version is Arsenal's schema version, NOT the release revision. Keep the
@@ -46,9 +46,14 @@ def build():
     (ROOT / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     files = {'manifest.json': (json.dumps(manifest, indent=2) + '\n').encode(),
              'INSTALL.txt': (ROOT / 'INSTALL.txt').read_bytes(),
+             'HUD-PLUS-COMPATIBILITY.md': (ROOT / 'HUD-PLUS-COMPATIBILITY.md').read_bytes(),
+             'CUSTOM-STRATAGEM-COMPATIBILITY.md': (ROOT / 'CUSTOM-STRATAGEM-COMPATIBILITY.md').read_bytes(),
+             'RELEASE-r45.md': (ROOT.parent / 'docs/RELEASE-r45.md').read_bytes(),
+             'LICENSE': (ROOT.parent / 'LICENSE').read_bytes(),
              'docs/BLACKLIST.md': (ROOT.parent / 'docs/BLACKLIST.md').read_bytes(),
              'Addon/' + ARCHIVE: archive, 'Addon/' + ARCHIVE + '.stream': b'',
              'Addon/' + ARCHIVE + '.gpu_resources': b''}
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(OUTPUT, 'w', compression=zipfile.ZIP_DEFLATED) as package:
         for name, data in sorted(files.items()):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))

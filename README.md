@@ -6,17 +6,17 @@
 
 *Automated Stratagem System*
 
-Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through Bingus Shared Loader, using the game's UI and live stratagem data. No external application needs to run while you play.
+Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
-[Canary release notes](https://github.com/HWG90/DiversBestFriend/releases/tag/canary-r39) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+[R45 release notes](docs/RELEASE-r45.md) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current main build: R41 - Streamlined Options
+## Current release: R45 - Plays Nicely With Others
 
-I forgot that not everyone has MCM yet. The Bingus Mod Options Menu had too many appearance controls, leaving too little room for the blacklist. R41 trims the menu to Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Controller Select on Release and Input interval, plus Blacklist SOS Beacon and Blacklist Eagle Rearm toggles.
+R45 adds compatibility with HUD Plus 0.2.8 and Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0, fixes exhausted single-use entries such as Shredder, and resolves the Foliage Pass-Through donor conflict that blocked some custom barrages and launchers. These compatibility mods are optional; ASS works without them and with foliage on or off.
 
-Wheel, icon and center-label sizing, opacity and color controls are suppressed. Their saved values remain intact; presets still work. Vertical offset is disabled at zero. MCM is optional; its blacklist page provides additional entries.
+Download the **BSL**, **MDL**, or **LLL** package from [R45 releases](https://github.com/HWG90/DiversBestFriend/releases/tag/r45). Install one ASS variant, retain the required menu/binding dependencies, and restart. The LLL compatibility predecessor was reported working in-game; MDL has isolated adapter coverage. See [detailed R45 changes and validation](docs/RELEASE-r45.md).
 
-Build with `python scripts/build.py` to produce `DiversBestFriend-R41-MissionBlacklist.zip`. Install one revision; stable and canary share addon identity, settings and bindings. See [R41 notes](docs/RELEASE-r41.md) and [blacklist details](docs/BLACKLIST.md).
+Build all three packages with `py -3 scripts/build_release.py`. Outputs are written to `dist/releases/r45`, with SHA-256 checksums. Settings and binding IDs are retained. R42's bounded transient HUD recovery is included.
 
 ## Selection modes
 
@@ -87,4 +87,4 @@ The project code is [MIT licensed](LICENSE). The game and separately installed d
 
 [Compact logo](assets/dbf-logo-4x3.png) | [Wide banner](assets/banner-dbf.png) | [Branding guide](assets/BRANDING.md)
 
-R41 exposes two Bingus blacklist toggles: SOS Beacon and Eagle Rearm. Additional entries require the optional MCM blacklist page. Settings persist and filtering applies only to entries present in your mission.
+The Bingus menu exposes two blacklist toggles: SOS Beacon and Eagle Rearm. Additional entries require the optional MCM blacklist page. Settings persist and filtering applies only to entries present in your mission.

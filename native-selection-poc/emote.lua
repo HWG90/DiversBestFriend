@@ -96,11 +96,11 @@ local function emote_wheel(b,scope,input)
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
                 local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('wheel stratagem texture enter')
-                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil or row.unavailable)
                     checkpoint('wheel stratagem texture returned')
                     content[i]=content_key
                 end
@@ -137,7 +137,7 @@ local function emote_wheel(b,scope,input)
                 checkpoint('wheel label returned')
             end
             for i=0,7 do
-                local timed=rows and rows[i+1] and rows[i+1].timer_seconds
+                local timed=rows and rows[i+1] and (rows[i+1].timer_seconds or rows[i+1].unavailable)
                 opacity(address+0x1208+i*0x158,cursor_only and 0 or
                     (timed and (i==index and 0.55 or 0.3) or (i==index and 1 or 0.65)))
             end

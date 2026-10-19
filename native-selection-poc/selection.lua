@@ -83,6 +83,7 @@ local function selection_controller(input,report)
         local row=eligible[chosen]
         selected_kind=row.kind
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
+        if row.unavailable then self.status='Unavailable';return end
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then

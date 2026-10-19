@@ -1,118 +1,35 @@
 Diver's Best Friend - Automated Stratagem System (ASS)
+Revision 45 - Compatibility
 
-Fixes R38 animation-card validation when blacklist compaction moves original list cards.
-Blacklisted list entries leave no internal gaps; remaining rows shift together.
-Caches native input, sound and icon function pointers to prevent LuaJIT table overflow.
-Close the game, import this ZIP into Arsenal, deploy and restart.
-Restores wheel input compatibility with the updated megapack by accepting
-Mod Bindings Menu interface versions 2 or newer with API 1. Includes R34
-page-change sounds and R33 sound, size and appearance controls.
-The stable addon GUID and bindings are retained. Enable only one revision.
-Revision 42 - UIRecovery. Select on Release remains optional and off by default.
-Requires Bingus Shared Loader API 1, Mod Bindings Menu v2 or newer (API 1) and Mod Options Menu.
+BSL edition: import DiversBestFriend-R45-BSL.zip into Arsenal, enable and deploy.
+Close the game before replacing files, then restart and enter a fresh mission.
+Install one ASS revision and one loader variant only; remove an old archive
+provider before enabling the loose MDL or LLL edition. Existing binding IDs,
+addon identity and saved options are retained.
 
-Mod Options > Diver's Best Friend > Blacklist:
-Three named mission-only dropdowns default to None. SOS is in the list;
-there is no separate SOS toggle. Apply saves native IDs. Equipped stratagems
-cannot be excluded. Open the native stratagem menu once in a mission to
-initialize choices. Restart the game to refresh choices for another mission.
-Use the native ID reference in docs/BLACKLIST.md for other exclusions.
-Apply edits; they cancel queued/armed DBF input. Close and reopen the
-stratagem menu before using Select on Release again. Exclusions persist through
-Mod Options Menu and affect every DBF layout, not vanilla availability.
+Requires a compatible shared loader, Mod Bindings Menu v2+ / API 1 and Mod
+Options Menu. MCM is optional for additional blacklist entries. Dependencies
+and third-party mods are not bundled. Target: Windows/Steam build 25480438.
 
-Mod Options > Diver's Best Friend > Selection / Mode:
+HUD Plus 0.2.8, Custom Stratagem Compendium 0.4.1, HD2Runtime 0.40.0 and
+Foliage Pass-Through 1.0 are optional compatibility targets. ASS works without
+them. Foliage compatibility only registers an exact, owned raycast-template
+variant; unrelated native changes still fail the normal Runtime guards.
 
-Selection / Sound feedback defaults on; wheel page changes also cue.
-Appearance / Preset offers Custom, Compact, Standard and Large. Custom uses
-the wheel/icon/center-label sliders.
-Native wheel opacity and expanded wedge opacity are separate controls.
-Apply settings before returning to gameplay. See docs/INSTALLATION.md on GitHub.
+Modes: Native wheel (8 sectors/paging), Keybindings list, Experimental Cards,
+and Experimental Expanded wedges (up to 16 entries). Configure Next,
+Previous and Confirm under MODS in the native bindings menu. Keep the normal
+stratagem menu open until code entry finishes, then throw the beacon yourself.
+Optional Select on Release needs a Hold menu binding. Return to center before
+release to cancel. Input interval: 0-250 ms, default 70 ms.
 
-Optional: enable Select on Release in the same options page and Apply.
-Use a Hold binding for the game's stratagem menu. Hold, point, then release
-to select without a separate Confirm button. Return to the center before
-releasing to cancel. Applies to all radial layouts, not the keybindings list.
-Throw the beacon normally. Native release timing needs an in-game test.
+Unavailable single-use entries dim on both wheels and cannot Confirm or arm
+Select on Release. Native cooldown and delivery timers remain in place.
+Bingus options retain SOS Beacon and Eagle Rearm blacklist toggles; optional
+MCM adds other entries with confirmation. Equipped stratagems stay protected.
 
-Input interval (ms): 0-250 in 5 ms steps, default 70. Applies to Confirm and
-Select on Release; 0 means one direction per frame. A running code keeps the
-interval it started with. Select on Release temporarily uses native Press behavior for Display
-Stratagem List while the code runs. It restores the original trigger after
-native menu completion or cancellation; key/button assignments are unchanged.
-It waits up to two seconds after the last direction for native completion.
-Reopening reissues the native beacon-slot request to clear the pending switch
-back to the primary weapon. This release needs in-game verification.
-Scrambled codes now use the native per-stratagem effect query. If the required
-code changes during entry, close and reopen the menu before selecting again.
-Native availability restrictions still apply; this does not bypass jamming.
+Recognized transient HUD failures cancel pending input, restore UI/camera,
+and recover after menu close/reopen. Native safety failures remain fatal.
 
-1. Native wheel
-   Existing eight-slot native wheel with mouse/stick pointing and Confirm.
-   Next/Previous switch pages when more than eight entries are available.
-
-2. Keybindings - list
-   Original native list: Next moves down, Previous moves up, both wrap.
-   Confirm enters the highlighted code; camera remains available.
-
-3. Experimental
-   Experimental layout chooses between:
-   - Cards - copied list rows: original radial with up to sixteen full row
-     cards, including names/status/arrows. Point and press Confirm.
-   - Expanded wedges: all entries on one wheel, up to sixteen sectors.
-     Point and press Confirm. No paging in either experimental layout.
-
-The separate fourth mode and redundant experimental native-wheel layout
-have been removed. Saved mode 4 migrates to Experimental / Expanded wedges.
-An existing Experimental layout value 2 now means Expanded wedges.
-Native wheel and list retain their saved mode numbers 1 and 2.
-
-Full-color stratagem icons remains enabled by default for wedge displays;
-turn it off to restore raw texture rendering. Copied cards retain native
-colors. The wedge rotation correction remains.
-
-Cooldown indicators (Native wheel and Expanded wedges):
-- Icons become grayscale and dim while the original HUD reports cooldown
-  or an incoming/delivery countdown, even with full-color icons switched off.
-- Point at the stratagem to show its remaining time below the center name.
-- Colors restore automatically when its native timer expires.
-- List and copied Cards keep their original native countdown display.
-This is a timer indicator, not a complete readiness test for charges/jamming.
-Confirm still uses the normal game checks. New timer rendering needs an
-in-game visual check; isolated tests cover timer expiry and selection.
-
-Expanded wedges now have two independent settings (Apply after changing):
-- Expanded wedge darkness (%): 0 original gray to 100 black; default 70.
-- Expanded wedge opacity (%): 0 transparent to 100 opaque; default 75.
-These affect unselected wedge backgrounds only. Selection stays yellow and
-at least 95% opaque, icons stay readable, and empty sectors remain fainter.
-For the previous look, use darkness 0 and opacity 30. Other layouts retain
-their appearance. Row-card blur is not included: that native material has no
-wedge-mask texture binding and cannot simply replace the sector material.
-
-The retained r22 fix provides automatic vertical centering using the native GUI X/Z transform.
-All radial layouts now center on both viewport axes, accounting for inherited
-HUD scale and translation. Set Radial vertical offset (down) to 0 for centered
-placement. Its default is now 0; existing saved preferences are retained.
-Remove any older 575-unit workaround if it is still saved.
-
-Apply changes. Changing active mode/layout cancels pending code input and
-gates held Confirm. Close/reopen after a partial sequence. Keep the menu open
-while the code enters, then throw normally. There is no auto-throw.
-Radial layouts retain the original top-left list and native cursor tracking;
-camera control returns when the menu closes. List mode does not capture it.
-
-Verification: isolated adapter checks cover X/Z matrix extraction, both screen
-axes, viewport heights, HUD scales, translated/rotated transforms and singular
-transforms. Native rendering and placement still require an in-game check.
-Earlier release ZIPs remain available; r21 was confirmed working before this
-centering correction.
-
-Logs: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\DiversBestFriend.log
-Native checkpoints: same directory, DiversBestFriend-native.log
-
-R42 test build: recognized temporary HUD errors pause the mod until the
-stratagem menu is closed. Reopen to retry; cancelled inputs are not replayed.
-Unsupported builds, memory guards, unknown errors and failed cleanup remain
-fatal. Share DiversBestFriend.log from the affected session before restarting.
-This addresses a possible cause of post-jammer UI loss; live testing is needed.
+Download all variants and detailed notes:
+https://github.com/HWG90/DiversBestFriend/releases/tag/r45

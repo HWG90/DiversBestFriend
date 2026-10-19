@@ -1,15 +1,20 @@
 # Installation and controls
 
-![Three-step setup diagram](../assets/setup-guide.svg)
+## R45: choose one loader
 
-## Install
+1. Close the game. Download one package from [R45](https://github.com/HWG90/DiversBestFriend/releases/tag/r45).
+2. **BSL:** import `DiversBestFriend-R45-BSL.zip` into Arsenal, enable and deploy. Follow Bingus Shared Loader's priority instructions.
+3. **MDL API 2:** extract the complete `divers_best_friend` folder from `DiversBestFriend-R45-MDL.zip` into `%LOCALAPPDATA%/MDL/Helldivers2/Mods` and enable it.
+4. **LLL R30+:** extract the complete folder from `DiversBestFriend-R45-LLL.zip` into `%LOCALAPPDATA%/LLL/Helldivers2/Mods` and enable it. [LLL releases](https://github.com/HWG90/LLL/releases).
+5. Install Mod Bindings Menu v2+ / API 1 and Mod Options Menu through your loader's shared-addon compatibility route. Neither is bundled; MCM is optional.
+6. Install only one ASS provider. Disable/remove an old archive edition before enabling loose MDL/LLL files. Restart after updates; ASS is restart-only.
+7. Open **MODS > Diver's Best Friend**, choose a mode and Apply. Set Next stratagem, Previous stratagem and Confirm stratagem under the native bindings menu's MODS tab.
 
-1. Close HELLDIVERS 2. Install [Bingus Shared Loader v18 / API 1](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest), [Mod Bindings Menu v2](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0), and [Mod Options Menu v1.0.1](https://github.com/CowboyBingus/ModOptionsMenu) separately.
-2. Import [DiversBestFriendCanary-R33-Polish.zip](https://github.com/goosethulhu/DiversBestFriend/releases/tag/canary-r33) into Arsenal. Enable **one** Diver's Best Friend revision. Canary uses the stable addon identity and replaces it; settings are retained.
-3. Deploy and restart. Shared Loader must win the startup-resource conflict; follow its current ordering and Purge/Deploy instructions.
-4. Open **MODS > Diver's Best Friend**. Set **Selection / Mode**, then **APPLY** before leaving the menu. Configure Next, Previous and Confirm under **Mod Bindings Menu > Diver's Best Friend**.
+Supported target: Windows/Steam build **25480438**, game.dll timestamp **1790161983**. Native signatures reject unsupported builds.
 
-Target: Windows/Steam build **25480438**, game.dll PE timestamp **1790161983**. Native signatures reject unsupported builds. No external input or OCR app is required. The Equipped Stratagems exporter is not required.
+HUD Plus 0.2.8, Custom Stratagem Compendium 0.4.1, HD2Runtime 0.40.0 and Foliage Pass-Through 1.0 are optional compatibility targets. Start a fresh mission after installing their compatibility update. Without them, ASS uses its regular selection path. Foliage can be on or off; restart when changing it.
+
+LLL gameplay was reported working on the compatibility predecessor. MDL startup and packaging have isolated coverage; MDL gameplay remains unverified. [Full R45 changes and validation](RELEASE-r45.md).
 
 ## Choose a layout
 

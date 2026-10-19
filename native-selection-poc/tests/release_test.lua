@@ -25,6 +25,9 @@ arm();state.unobstructed=false;release();assert(calls==1,'overlay cancels');stat
 arm();state.hold=false;release();assert(calls==1,'toggle binding does not release-select');state.hold=true
 arm();state.clean=false;r.step(true,open,10,8,false);state.clean=true;release();assert(calls==1,'manual input cancels session')
 arm();release(open);assert(calls==2,'release also works before HUD closes')
+open.rows[1].unavailable=true;arm();release(open);assert(calls==2,'exhausted card cannot arm release')
+open.rows[1].unavailable=nil;arm();open.rows[1].unavailable=true;release(open)
+assert(calls==2,'exhaustion after arming cancels release');open.rows[1].unavailable=nil
 arm();input.begin_release=function() error('native rejection') end;release();release()
 assert(logs[#logs]:find('Release cancelled:',1,true),'failure is reported')
 print('release controller checks passed')

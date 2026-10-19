@@ -1,10 +1,13 @@
-local api={api=1,revision=42,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=45,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,last_status
 local initialized,recovering=false,false
+local hud_compat=hud_plus_compat and hud_plus_compat(function()
+    return api.enabled and initialized and not failed and not recovering
+end)
 local recovery_attempts=0
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
@@ -25,7 +28,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R42 - UIRecovery\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R45 - Compatibility\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -48,7 +51,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R42 - UIRecovery\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R45 - Compatibility\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -294,7 +297,7 @@ local function step()
         if was_open then
             local rows={}
             for _,row in ipairs(snapshot and snapshot.rows or {}) do
-                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.timer_seconds or '-')
+                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.unavailable)..':'..tostring(row.timer_seconds or '-')
             end
             api.last_open=api.selection_status..'; cards='..table.concat(rows,',')..
                 '; selected='..tostring(selection.selected)..'; buttons='..
@@ -342,9 +345,27 @@ local function step()
         end
     end
 end
+local foliage_compat
 local previous=rawget(_G,'update')
 local function after(...) step(); return ... end
 update=function(...)
+    if not foliage_compat and foliage_compatibility and backend then
+        foliage_compat=foliage_compatibility(backend.read,function(at)
+            local s=backend.read(at,8)
+            if not s then return end
+            local p=backend.u32(s,0)+backend.u32(s,4)*4294967296
+            if p>=65536 and p<2^47 and p%4==0 then return p end
+        end,backend.base,function(p) return tonumber(require('ffi').cast('uintptr_t',p)) end)
+    end
+    if foliage_compat and not foliage_compat.done then
+        local ok,why=pcall(foliage_compat.refresh)
+        api.foliage_compat=ok and foliage_compat.status or tostring(why)
+    end
+    -- Bind before the upstream HUD+ update; no unchanged-owner rescanning.
+    if hud_compat then
+        local ok,why=pcall(hud_compat.refresh,rawget(_G,'update'))
+        api.hud_plus_compat=ok and hud_compat.status or tostring(why)
+    end
     if type(previous)=='function' then return after(previous(...)) end
     return after()
 end

@@ -86,6 +86,10 @@ assert(timer_values[0x51d1e697]==0 and timer_values[0x4583b0d3]==59,'countdown c
 page.rows[4].timer_seconds,page.rows[4].timer_kind=nil,nil
 w.prepare(snap,idle,false);w.draw(page.rows[4].address,v,page.rows);w.timer(page.rows[4])
 assert(shown[wheel_address+0xf50]==0 and opacities[wheel_address+0x1208+3*0x158]==1,'expiry restores icon and hides timer')
+page.rows[4].unavailable=true
+w.prepare(snap,idle,false);w.draw(page.rows[4].address,v,page.rows)
+assert(opacities[wheel_address+0x1208+3*0x158]==0.55,'exhausted icon is dim without timer')
+page.rows[4].unavailable=nil
 page,changed,paged=w.prepare(snap,next_button,false)
 assert(changed and w.page==2 and page.rows[1].kind==8 and page.rows[8].kind==1)
 assert(paged,'a real page flip reports itself')

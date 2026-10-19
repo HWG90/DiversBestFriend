@@ -715,13 +715,14 @@ local function input_backend(b)
     local ffi=require('ffi')
     local timer_float=ffi.new('float[1]')
     local function decorate_timer(row)
-        row.timer_seconds,row.timer_kind=nil,nil
+        row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
         -- Read the same cached seconds/state the original HUD renders. This
         -- includes native special cases (shared Reinforce and Eagle timers).
         -- An unreadable or not-yet-updated card means unknown, never "ready".
         local bytes=b.read(row.address+0x3718,0x44)
         if not bytes or #bytes~=0x44 or b.u32(bytes,0x34)~=row.kind then return end
         local state=b.u32(bytes,0x40)
+        row.unavailable=state==5
         if state~=3 and state~=4 then return end
         local offset=state==3 and 0 or 8
         ffi.copy(timer_float,bytes:sub(offset+1,offset+4),4)
@@ -734,6 +735,32 @@ local function input_backend(b)
         local s=b.read(p,n); assert(s and #s==n,'Selection memory unavailable'); return s
     end
     local function num(p) return b.u32(read(p,4),0) end
+    local custom_module,custom_owned,custom_supported
+    local function owned_code(address,count)
+        -- Inspect only an already-loaded owner. Never start HD2Runtime or scan
+        -- its registry. The shipped 0.40.0 calldown owner retains these arrays
+        -- for this Lua state's lifetime and recognises exact pointer/count pairs.
+        local loaded=package and package.loaded
+        local module=type(loaded)=='table' and rawget(loaded,'hd2runtime/runtime/calldown_codes')
+        local fn=type(module)=='table' and rawget(module,'owned')
+        if module~=custom_module or fn~=custom_owned then
+            custom_module,custom_owned,custom_supported=module,fn,false
+            if type(fn)=='function' and rawget(module,'MAX')==9 and rawget(module,'CAPACITY')==10 then
+                local ok,bytes=pcall(string.dump,fn,true)
+                if ok then
+                    local a,c=1,0
+                    for i=1,#bytes do a=(a+bytes:byte(i))%65521;c=(c+a)%65521 end
+                    custom_supported=string.format('%08x',c*65536+a)=='6b49047c'
+                end
+            end
+        end
+        assert(custom_supported,'Invalid code array: recognised HD2Runtime owner unavailable')
+        assert(count<=9,'Invalid HD2Runtime code length')
+        local values=fn(address,count)
+        assert(type(values)=='table' and #values==count,'Invalid code array: HD2Runtime does not own pointer/count')
+        return values
+    end
+
     local function ptr(p,alignment)
         local s=read(p,8)
         local value=b.u32(s,0)+b.u32(s,4)*4294967296
@@ -833,10 +860,16 @@ local function input_backend(b)
         local info=ptr(base+0x37cb600+kind*8,4)
         assert(info>=settings and info+400<=settings+80280 and num(info)==kind,'Invalid definition')
         local n=num(info+0x48); local data=ptr(info+0x40,4)
-        assert(n>=1 and n<=12 and data>=settings and data+n*4<=settings+80280,'Invalid code array')
+        assert(n>=1 and n<=12,'Invalid code array')
+        local external
+        if data<settings or data+n*4>settings+80280 then external=owned_code(data,n) end
         local result={}
         for i=0,n-1 do
-            local d=num(data+i*4); assert(d>=1 and d<=4,'Invalid direction'); result[#result+1]=d
+            local d=num(data+i*4); assert(d>=1 and d<=4,'Invalid direction')
+            -- The owner proves allocation; readback proves the current bytes.
+            -- advance() repeats this before each input, including scramble remaps.
+            assert(not external or external[i+1]==d,'HD2Runtime code array changed')
+            result[#result+1]=d
         end
         return result
     end
@@ -891,7 +924,7 @@ local function input_backend(b)
             -- cached arrow progress, not a stratagem kind (1837B14/183856B).
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
-            row.timer_seconds,row.timer_kind=nil,nil
+            row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
             if selectable_kind(row.kind) then decorate_timer(row) end
         end
     end
@@ -1434,11 +1467,11 @@ local function emote_wheel(b,scope,input)
                 ffi.cast('uint8_t *',address+0x1cc8)[i]=row and 1 or 0
                 visible(icon,row and 1 or 0)
                 local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('wheel stratagem texture enter')
-                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil or row.unavailable)
                     checkpoint('wheel stratagem texture returned')
                     content[i]=content_key
                 end
@@ -1475,7 +1508,7 @@ local function emote_wheel(b,scope,input)
                 checkpoint('wheel label returned')
             end
             for i=0,7 do
-                local timed=rows and rows[i+1] and rows[i+1].timer_seconds
+                local timed=rows and rows[i+1] and (rows[i+1].timer_seconds or rows[i+1].unavailable)
                 opacity(address+0x1208+i*0x158,cursor_only and 0 or
                     (timed and (i==index and 0.55 or 0.3) or (i==index and 1 or 0.65)))
             end
@@ -1654,11 +1687,11 @@ local function expanded_wheel(b,scope,input)
                 end
                 local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
                 local row=rows[i]
-                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind))
+                local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable))
                 if row and content[i]~=content_key then
                     local info=input.presentation(row.kind)
                     checkpoint('expanded icon texture enter')
-                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil)
+                    configure_stratagem_icon(b,icon,info,row.timer_seconds~=nil or row.unavailable)
                     checkpoint('expanded icon texture returned')
                     content[i]=content_key
                 end
@@ -1686,7 +1719,7 @@ local function expanded_wheel(b,scope,input)
                 local chosen=row and row.address==selected
                 color(wedge,chosen and yellow or gray)
                 opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
-                local timed=row and row.timer_seconds
+                local timed=row and (row.timer_seconds or row.unavailable)
                 color(icon,(chosen and radial.full_color==false and not timed) and yellow or white)
                 opacity(icon,timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8))
                 if chosen then kind=row.kind end
@@ -1786,6 +1819,7 @@ local function selection_controller(input,report)
         local row=eligible[chosen]
         selected_kind=row.kind
         self.status='Highlighted kind '..row.kind..'; press Confirm while keeping the menu open'
+        if row.unavailable then self.status='Unavailable';return end
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then
@@ -1854,6 +1888,11 @@ local function release_controller(input,report)
         if not state.clean then blocked=true;armed=nil end
         if explicit then blocked=true;armed=nil end
         local previous=armed
+        if previous and snapshot.rows then
+            for _,row in ipairs(snapshot.rows) do
+                if row.address==previous.address and row.unavailable then previous=nil;break end
+            end
+        end
         armed=nil
         if not state.down then
             local skip=blocked;blocked=nil
@@ -1877,7 +1916,7 @@ local function release_controller(input,report)
         end
         if blocked or not snapshot.open or not state.menu_active then return end
         for _,row in ipairs(snapshot.rows) do
-            if row.address==selected and selectable_kind(row.kind) then
+            if row.address==selected and selectable_kind(row.kind) and not row.unavailable then
                 armed={kind=row.kind,address=row.address,time=now,snapshot_identity=snapshot.identity,
                     identity=state.identity,component=state.component,hud=state.hud}
                 self.status='Armed kind '..row.kind
@@ -2074,13 +2113,172 @@ local function selection_feedback(b,report)
     return self
 end
 
-local api={api=1,revision=42,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+-- HUD+ 0.2.8 owns a second list and hides the vanilla group used by ASS.
+-- Interpose at its feature boundary; never edit its settings or native memory.
+local function hud_plus_compat(active)
+    local self={status='HUD+ not detected',scans=0}
+    local top,runtimes,seen_programs=nil,{},{}
+    local pins={prepare='0f6d0b5c',observe='6eec2b6b',put='6be59f1a',
+        vanilla='c5fd46ff',drop='057f16e2'}
+    local function member(t,k)
+        if type(t)~='table' then return nil end
+        local v=rawget(t,k)
+        if v~=nil then return v end
+        local mt=getmetatable(t)
+        local index=type(mt)=='table' and rawget(mt,'__index')
+        return type(index)=='table' and rawget(index,k) or nil
+    end
+    local function fingerprint(fn)
+        if type(fn)~='function' then return nil end
+        local ok,bytes=pcall(string.dump,fn,true) -- Strip chunk path/debug data.
+        if not ok then return nil end
+        local a,b=1,0
+        for i=1,#bytes do a=(a+bytes:byte(i))%65521;b=(b+a)%65521 end
+        return string.format('%08x',b*65536+a)
+    end
+    local function bind(program)
+        local feature=member(member(program,'world_hud'),'stratagem')
+        if not feature then return end
+        for name,pin in pairs(pins) do
+            if fingerprint(member(feature,name))~=pin then
+                self.status='HUD+ stratagem adapter unsupported';return
+            end
+        end
+        if type(member(feature,'inputs'))~='table' or type(member(feature,'list'))~='table' then return end
+        local prepare,observe,put=feature.prepare,feature.observe,feature.put
+        -- Instance methods only: no shared class mutation, per-frame discovery,
+        -- option saves, or repeated opacity writes. HUD+ restores opacity and
+        -- destroys its owned duplicate through its normal disabled path.
+        feature.prepare=function(owner,enabled,...)
+            if active() then enabled=false end
+            return prepare(owner,enabled,...)
+        end
+        feature.observe=function(owner,enabled,...)
+            if active() then enabled=false end
+            return observe(owner,enabled,...)
+        end
+        feature.put=function(owner,...)
+            if not active() then return put(owner,...) end
+        end
+        self.status='HUD+ 0.2.8 list/picker yield to ASS while enabled'
+    end
+    function self.refresh(update)
+        if update~=top and self.scans<8 and debug and debug.getupvalue then
+            top=update;self.scans=self.scans+1
+            local queue,seen,known={{fn=update,depth=0}},{},{}
+            for _,runtime in ipairs(runtimes) do known[runtime]=true end
+            local at=1
+            while at<=#queue and at<=128 do
+                local node=queue[at];at=at+1
+                if type(node.fn)=='function' and not seen[node.fn] then
+                    seen[node.fn]=true
+                    for i=1,64 do
+                        local name,value=debug.getupvalue(node.fn,i)
+                        if not name then break end
+                        if name=='runtime' and type(value)=='table' and rawget(value,'installed')==true
+                            and type(rawget(value,'program'))=='table' and not known[value] and #runtimes<16 then
+                            known[value]=true;runtimes[#runtimes+1]=value
+                        elseif type(value)=='function' and node.depth<24 and #queue<128 then
+                            queue[#queue+1]={fn=value,depth=node.depth+1}
+                        end
+                    end
+                end
+            end
+        end
+        for _,runtime in ipairs(runtimes) do
+            local program=rawget(runtime,'program')
+            if program and seen_programs[runtime]~=program then
+                seen_programs[runtime]=program
+                bind(program)
+            end
+        end
+    end
+    return self
+end
+
+-- Recognise Foliage Pass-Through's sole reviewed ProjectileInfo variant.
+-- No native writes, guard wrappers, masked fields or relaxed comparisons.
+-- Update Runtime's Lua review snapshots only when the ENTIRE native row is
+-- byte-identical to that snapshot except the owner's exact 0 -> 2 template.
+local function foliage_compatibility(read,pointer,base,address,env)
+    env=env or _G
+    local done,frames=false,0
+    local keys={'hd2runtime/domains/bombardment_payload','hd2runtime/domains/weapon_clone','hd2runtime/domains/custom_payloads'}
+    local self={status='waiting for Foliage/HD2Runtime owners',changed=0}
+    function self.refresh()
+        if done then return end
+        frames=frames+1
+        local loaded=env.package and env.package.loaded or {}
+        local runtime=rawget(env,'HD2RuntimeLibraryApi1')
+        local owner=rawget(env,'FoliagePassThrough')
+        if type(runtime)~='table' or type(owner)~='table' or not owner.applied or not rawget(loaded,keys[1]) or not rawget(loaded,keys[2]) or not rawget(loaded,keys[3]) then
+            if frames>=3600 then done=true;self.done=true;self.status='owners not present; unchanged' end
+            return
+        end
+        done=true;self.done=true
+        local modules={loaded[keys[1]],loaded[keys[2]],loaded[keys[3]]}
+        if runtime.version~='0.40.0' or owner.version~='1.0' or owner.patched~=true or type(owner.rows)~='table' or type(owner.rows.list)~='table'
+            or #owner.rows.list>128 then self.status='unknown foliage owner; unchanged';return end
+        for _,m in ipairs(modules) do
+            if type(m)~='table' or type(m.source)~='table' or m.source.build~='F5FEE03DCFDB' then
+                self.status='unknown Runtime schema; unchanged';return
+            end
+        end
+        local owned={}
+        for _,r in ipairs(owner.rows.list) do
+            local t=r.target
+            if type(t)=='table' and type(t[1])=='number' and r.template==2 then
+                local at=pointer(base+0x37c7670+t[1]*8)
+                if at and at==address(r.pointer) and read(at+0xf4,4)=='\2\0\0\0'
+                    and address(owner.rows.base)+r.offset==at+0xf4 then owned[t[1]]=at end
+            end
+        end
+        local function hex(bytes)
+            return (bytes:gsub('.',function(c)return string.format('%02x',c:byte())end))
+        end
+        local seen,nodes={},0
+        local changes={}
+        local function visit(t,depth)
+            if type(t)~='table' or seen[t] then return end
+            assert(depth<=12,'Foliage schema depth exceeded')
+            seen[t]=true;nodes=nodes+1;assert(nodes<=12000,'Foliage schema budget exceeded')
+            for k,v in pairs(t) do
+                if type(v)=='table' then visit(v,depth+1)
+                elseif type(v)=='string' and #v==0x110*2 and not v:find('[^0-9a-f]') then
+                    local a,b,c,d=tonumber(v:sub(1,2),16),tonumber(v:sub(3,4),16),tonumber(v:sub(5,6),16),tonumber(v:sub(7,8),16)
+                    local id=a+b*256+c*65536+d*16777216
+                    local at=owned[id]
+                    if at and v:sub(0xf4*2+1,0xf4*2+8)=='00000000' then
+                        local variant=v:sub(1,0xf4*2)..'02000000'..v:sub(0xf4*2+9)
+                        local actual=read(at,0x110)
+                        if actual and #actual==0x110 and hex(actual)==variant then
+                            changes[#changes+1]={t,k,v,variant}
+                        end
+                    end
+                end
+            end
+        end
+        -- These schema roots contain the donor snapshots used by every family.
+        local ok,why=pcall(function()visit(modules[1].shellRows,0);visit(modules[1].gasChainRows,0);visit(modules[2].rounds,0);visit(modules[3].explosionDonors,0) end)
+        if not ok then self.status=tostring(why);return end
+        for _,c in ipairs(changes) do assert(c[1][c[2]]==c[3],'Runtime schema changed during compatibility check') end
+        for _,c in ipairs(changes) do c[1][c[2]]=c[4] end
+        self.changed=#changes
+        self.status='Foliage 1.0 / Runtime 0.40.0: '..#changes..' exact row variants registered; native memory unchanged'
+    end
+    return self
+end
+
+local api={api=1,revision=45,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
 rawset(_G,'NativeStratagemRadial',api)
 local controller,failed,last_status
 local initialized,recovering=false,false
+local hud_compat=hud_plus_compat and hud_plus_compat(function()
+    return api.enabled and initialized and not failed and not recovering
+end)
 local recovery_attempts=0
 local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
@@ -2101,7 +2299,7 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R42 - UIRecovery\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R45 - Compatibility\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
@@ -2124,7 +2322,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R42 - UIRecovery\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R45 - Compatibility\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -2370,7 +2568,7 @@ local function step()
         if was_open then
             local rows={}
             for _,row in ipairs(snapshot and snapshot.rows or {}) do
-                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.timer_seconds or '-')
+                rows[#rows+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.timer_kind or 'no-timer')..':'..tostring(row.unavailable)..':'..tostring(row.timer_seconds or '-')
             end
             api.last_open=api.selection_status..'; cards='..table.concat(rows,',')..
                 '; selected='..tostring(selection.selected)..'; buttons='..
@@ -2418,9 +2616,27 @@ local function step()
         end
     end
 end
+local foliage_compat
 local previous=rawget(_G,'update')
 local function after(...) step(); return ... end
 update=function(...)
+    if not foliage_compat and foliage_compatibility and backend then
+        foliage_compat=foliage_compatibility(backend.read,function(at)
+            local s=backend.read(at,8)
+            if not s then return end
+            local p=backend.u32(s,0)+backend.u32(s,4)*4294967296
+            if p>=65536 and p<2^47 and p%4==0 then return p end
+        end,backend.base,function(p) return tonumber(require('ffi').cast('uintptr_t',p)) end)
+    end
+    if foliage_compat and not foliage_compat.done then
+        local ok,why=pcall(foliage_compat.refresh)
+        api.foliage_compat=ok and foliage_compat.status or tostring(why)
+    end
+    -- Bind before the upstream HUD+ update; no unchanged-owner rescanning.
+    if hud_compat then
+        local ok,why=pcall(hud_compat.refresh,rawget(_G,'update'))
+        api.hud_plus_compat=ok and hud_compat.status or tostring(why)
+    end
     if type(previous)=='function' then return after(previous(...)) end
     return after()
 end
