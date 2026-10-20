@@ -1,4 +1,4 @@
-local api={api=1,revision=45,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+local api={api=1,revision=46,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -9,15 +9,19 @@ local hud_compat=hud_plus_compat and hud_plus_compat(function()
     return api.enabled and initialized and not failed and not recovering
 end)
 local recovery_attempts=0
-local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
+local auxiliary={}
 local wheel,expanded,release_selection
 local excluded,exclusion_signature,hidden_rows={},'',nil
 local blacklist_release_blocked=false
 local mission_blacklist_state={}
 local next_blacklist_sample=0
+local blacklist_menu_open,blacklist_hud,previous_excluded
+local empty_excluded={}
 local select_on_release=false
+local controller_release_auto,controller_input=false,false
 local input_interval_ms=70
+local randomize_input_delay=false
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -28,11 +32,12 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R45 - Compatibility\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R46 - Homecoming Update\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
 local binding_ids={next="native_stratagem_radial.next",previous="native_stratagem_radial.previous",confirm="native_stratagem_radial.confirm"}
+for slot=1,4 do binding_ids['slot'..slot]='native_stratagem_radial.slot'..slot end
 local function selection_report(message)
     -- Button telemetry must not overwrite the last actual confirmation result.
     if not message:find('; buttons=',1,true) then api.last_confirmation=message end
@@ -41,7 +46,7 @@ local function selection_report(message)
     api.last_selection=message
 end
 local migration_checked,migrate_expanded
-local mode_names={'Native wheel','Keybindings - list','Experimental'}
+local mode_names={'Native wheel','List Select','Wedge Wheel'}
 local function report(status,force)
     api.status=status
     if status==last_status and not force then return end
@@ -51,7 +56,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R45 - Compatibility\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R46 - Homecoming Update\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -71,7 +76,7 @@ local function report(status,force)
 end
 local settings_owner,settings_state
 local sound_feedback,sounds_enabled
-local function options()
+local function options(now)
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
     if migration_checked~=menu then
@@ -97,15 +102,35 @@ local function options()
         end
     end
     if settings_owner~=menu then settings_owner=menu;settings_state={registered={}} end
-    local values=canary_settings(menu,settings_state,radial)
+    local values=canary_settings(menu,settings_state,radial,now)
     api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
+    api.cooldown_icons=values.cooldown_icons
+    api.hide_blacklisted_list=values.hide_blacklisted_list
+    api.hide_cooldown_list=values.hide_cooldown_list
+    api.hide_closed_status=values.hide_closed_status
+    radial.dock_gap=values.dock_gap
+    radial.cooldown_display=values.cooldown_display
+    radial.short_status_placement=values.short_status_placement
+    radial.balance_separated_dock=values.balance_separated_dock
+    radial.track_unavailable=values.track_unavailable
+    radial.cooldown_timer=values.cooldown_timers and values.cooldown_timer or 1
+    radial.short_timer_style=values.short_timer_style
+    radial.dim_unselected=values.dim_unselected
+    radial.brief_timer_limit=values.brief_timer_limit
     select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
+    controller_release_auto=values.controller_release_auto
+    randomize_input_delay=values.randomize_input_delay
 
     if migrate_expanded then
         api.mode,api.experimental_layout=3,2
         if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
-            and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
+            and menu.set('native_stratagem_radial.selection_mode',3) and menu.set('native_stratagem_radial.selection_mode_ordered',1) then migrate_expanded=false end
     end
+end
+
+-- Programmatic owners that use a silent menu.set can invalidate explicitly.
+function api.invalidate_settings()
+    if settings_state then settings_state.dirty=true end
 end
 
 local function bindings()
@@ -114,16 +139,28 @@ local function bindings()
         or not (menu.version>=2) then
         api.selection_status='Requires Mod Bindings Menu v2 or newer'; return nil
     end
-    local labels={next='Next stratagem',previous='Previous stratagem',confirm='Confirm stratagem'}
+    local labels={next='Next stratagem',previous='Previous stratagem',confirm='Confirm stratagem',slot1='Equip stratagem slot 1',slot2='Equip stratagem slot 2',slot3='Equip stratagem slot 3',slot4='Equip stratagem slot 4'}
     local buttons={}
-    for _,key in ipairs({'next','previous','confirm'}) do
+    auxiliary.binding_retry=auxiliary.binding_retry or {}
+    local now=backend and backend.milliseconds() or 0
+    api.hotkey_error=nil
+    for _,key in ipairs({'next','previous','confirm','slot1','slot2','slot3','slot4'}) do
         local id=binding_ids[key]
+        local optional=key:match('^slot')~=nil
         if binding_owner[id]~=menu then
-            local ok,why=menu.register_binding(id,labels[key],nil,{category=MOD_NAME})
-            if not ok then api.selection_status='Binding unavailable: '..tostring(why); return nil end
-            binding_owner[id]=menu
+            local retry=auxiliary.binding_retry[id]
+            local ok,why
+            if retry and retry.owner==menu and now<retry.at then why=retry.reason
+            else
+                ok,why=menu.register_binding(id,labels[key],nil,dbf_binding_options and dbf_binding_options(menu,key) or {category=MOD_NAME})
+                if not ok then auxiliary.binding_retry[id]={owner=menu,at=now+1000,reason=why}end
+            end
+            if ok then binding_owner[id]=menu;auxiliary.binding_retry[id]=nil
+            elseif not optional then api.selection_status='Binding unavailable: '..tostring(why);return nil
+            else api.hotkey_error='Hotkey unavailable: '..tostring(why)end
         end
-        buttons[key]=menu.is_down(id)
+        if binding_owner[id]==menu then buttons[key]=menu.is_down(id) else buttons[key]=false end
+        if key:match('^slot')then buttons[key]=buttons[key]==true end
         if type(buttons[key])~='boolean' then api.selection_status='Waiting for native bindings'; return nil end
     end
     return buttons
@@ -159,33 +196,42 @@ local function cleanup_ui()
     clean(duplicates,'hide')
     clean(wheel,'hide')
     clean(expanded,'hide')
+    clean(auxiliary.dock,'hide')
+    clean(auxiliary.closed_notices,'restore')
     clean(hidden_rows,'restore')
+    clean(auxiliary.binding_warning,'hide')
     radial.selected=nil;api.count=0
     return #errors==0,table.concat(errors,'; ')
 end
+-- Keep the assembled Lua 5.1 callback below its 60-upvalue limit.
+local factories={native_backend=native_backend,blacklist_list_visibility=blacklist_list_visibility,camera_capture=camera_capture,input_backend=input_backend,selection_controller=selection_controller,selection_feedback=selection_feedback,release_controller=release_controller,duplicate_cards=duplicate_cards,native_pointing=native_pointing,emote_wheel=emote_wheel,expanded_wheel=expanded_wheel,cooldown_dock=cooldown_dock,cooldown_closed_notices=cooldown_closed_notices,dbf_binding_warning=dbf_binding_warning}
 local function step()
     if failed then return end
     local ok,why=pcall(function()
-        options()
+        local now=backend and backend.milliseconds() or 0
+        options(now)
         if not controller then
-            backend=native_backend()
+            backend=factories.native_backend()
             backend.checkpoint=native_checkpoint
-            hidden_rows=blacklist_list_visibility(backend)
+            hidden_rows=factories.blacklist_list_visibility(backend)
             native_checkpoint('native adapter ready; menu not entered')
             controller=radial.controller(backend)
             list_controller=radial.list_controller(backend)
-            camera=camera_capture(backend)
-            input=input_backend(backend)
-            selection=selection_controller(input,selection_report)
-            sound_feedback=selection_feedback(backend,selection_report)
-            release_selection=release_controller(input,selection_report)
-            duplicates=duplicate_cards(backend)
-            pointing=native_pointing(backend)
-            wheel=emote_wheel(backend,duplicates,input)
-            expanded=expanded_wheel(backend,duplicates,input)
+            camera=factories.camera_capture(backend)
+            input=factories.input_backend(backend)
+            selection=factories.selection_controller(input,selection_report)
+            sound_feedback=factories.selection_feedback(backend,selection_report)
+            release_selection=factories.release_controller(input,selection_report)
+            duplicates=factories.duplicate_cards(backend)
+            pointing=factories.native_pointing(backend)
+            wheel=factories.emote_wheel(backend,duplicates,input)
+            expanded=factories.expanded_wheel(backend,duplicates,input)
+            if factories.cooldown_dock then auxiliary.dock=factories.cooldown_dock(backend,duplicates,input) end
+            if factories.cooldown_closed_notices then auxiliary.closed_notices=factories.cooldown_closed_notices(backend)end
+            if factories.dbf_binding_warning then auxiliary.binding_warning=factories.dbf_binding_warning() end
             initialized=true
         end
-        local now=backend.milliseconds()
+        if now==0 then now=backend.milliseconds() end
         if recovering then
             -- A missing/failed snapshot does not prove that the menu closed.
             -- Poll only; do not construct UI or replay the cancelled input.
@@ -196,26 +242,6 @@ local function step()
                 report('UI recovered; reopen the stratagem menu',true)
             end
             return
-        end
-        if now>=next_blacklist_sample then
-            next_blacklist_sample=now+1000
-            local sampled,available=pcall(input.mission_blacklist_kinds)
-            local menu=rawget(_G,'ModOptionsMenu')
-            if menu and menu.api==1 then
-                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
-                mission_blacklist_state.available=sampled and available or nil
-            end
-        end
-        local menu=rawget(_G,'ModOptionsMenu')
-        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or {}
-        local signature=blacklist_signature(excluded)
-        if signature~=exclusion_signature then
-            -- An applied edit cancels queued/armed input before any more pulses.
-            selection.step(nil,nil,now);release_selection.reset()
-            controller.restore();list_controller.restore();hidden_rows.restore()
-            duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
-            exclusion_signature=signature
-            blacklist_release_blocked=true
         end
         local dt=last_tick and math.max(0.001,math.min((now-last_tick)/1000,0.05)) or 1/60
         last_tick=now
@@ -234,10 +260,73 @@ local function step()
         if snapshot and snapshot.open and snapshot.center then
             api.centering=tostring(snapshot.geometry)..string.format(' local_center=%.2f,%.2f',snapshot.center[1],snapshot.center[2])
         end
+        if snapshot and snapshot.open and (not blacklist_menu_open or blacklist_hud~=snapshot.identity) then
+            api.invalidate_settings();options(now)
+            local refreshed_key=api.mode..':'..(api.mode==3 and api.experimental_layout or 0)
+            if refreshed_key~=active_mode then
+                controller.restore();list_controller.restore();duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
+                selection.step(nil,nil,now);release_selection.reset()
+                active_mode=refreshed_key
+                legacy=api.mode==3 and api.experimental_layout==1
+                expanded_layout=api.mode==3 and api.experimental_layout==2
+                snapshot=api.enabled and backend.snapshot() or nil
+            end
+        end
+        if not api.enabled then snapshot=nil end
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        snapshot=blacklist_snapshot(snapshot,excluded)
+        -- Release open-list geometry before the closed-menu dock takes row ownership.
+        if snapshot and not snapshot.open then
+            controller.restore();list_controller.restore();hidden_rows.restore()
+        end
+        if auxiliary.closed_notices then auxiliary.closed_notices.step(api.enabled and api.hide_closed_status and snapshot or nil)end
+        if auxiliary.dock then
+            if not api.enabled or not api.cooldown_icons or not snapshot then auxiliary.dock.hide();auxiliary.dock_snapshot=nil
+            else
+                -- Native cached timer changes expose no subscription here. Bound discovery
+                -- to 4 Hz / 16 cards; animation runs only while positions are changing.
+                if snapshot.open then auxiliary.dock_snapshot=snapshot;auxiliary.next_dock_sample=now+250
+                elseif not auxiliary.next_dock_sample or now>=auxiliary.next_dock_sample or(auxiliary.dock_snapshot and auxiliary.dock_snapshot.open)then
+                    auxiliary.next_dock_sample=now+250
+                    local good,value=pcall(function()
+                        local value=backend.snapshot(true)
+                        input.decorate(value)
+                        return value
+                    end)
+                    auxiliary.dock_snapshot=good and value or nil
+                end
+                if auxiliary.dock_snapshot then auxiliary.dock.sample(auxiliary.dock_snapshot,now);auxiliary.dock.draw(now,snapshot.hud_visible) else auxiliary.dock.hide() end
+            end
+        end
+        if snapshot and snapshot.open and (not blacklist_menu_open or blacklist_hud~=snapshot.identity or now>=next_blacklist_sample) then
+            next_blacklist_sample=now+1000
+            local sampled,available=pcall(input.mission_blacklist_kinds)
+            local menu=rawget(_G,'ModOptionsMenu')
+            if menu and menu.api==1 then
+                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
+                mission_blacklist_state.available=sampled and available or nil
+            end
+        end
+        blacklist_menu_open=snapshot and snapshot.open or false
+        blacklist_hud=snapshot and snapshot.identity
+        local menu=rawget(_G,'ModOptionsMenu')
+        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or empty_excluded
+        local signature=exclusion_signature
+        local filter_key=tostring(api.hide_blacklisted_list)..':'..tostring(api.hide_cooldown_list)
+        if excluded~=previous_excluded or auxiliary.list_filter_key~=filter_key then
+            signature=blacklist_signature(excluded)..':'..filter_key
+            previous_excluded=excluded;auxiliary.list_filter_key=filter_key
+        end
+        if signature~=exclusion_signature then
+            -- An applied edit cancels queued/armed input before any more pulses.
+            selection.step(nil,nil,now);release_selection.reset()
+            controller.restore();list_controller.restore();hidden_rows.restore()
+            duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
+            exclusion_signature=signature
+            blacklist_release_blocked=true
+        end
+        snapshot=blacklist_snapshot(snapshot,excluded,api.mode==2 and not api.hide_blacklisted_list,api.mode==2 and api.hide_cooldown_list)
         local vector,paged
         local empty=snapshot and snapshot.open and #snapshot.rows==0
         if empty then selection.step(nil,nil,now);release_selection.reset() end
@@ -266,11 +355,11 @@ local function step()
                 if buttons then
                     camera.capture()
                     -- Navigation edges were consumed as page changes by the wheel.
-                    buttons={next=false,previous=false,confirm=buttons.confirm}
+                    buttons.next,buttons.previous=false,false
                     local target
                     if not legacy and not expanded_layout then target=wheel.address end
                     local pointed,result=pcall(pointing.sample,context,dt,target)
-                    if pointed then vector=result;api.pointing_status=string.format('x=%.3f y=%.3f',vector[1],vector[2])
+                    if pointed then vector=result;controller_input=result.controller==true;api.controller_input=controller_input;api.pointing_status=string.format('x=%.3f y=%.3f',vector[1],vector[2])
                     else api.pointing_status=tostring(result);pointing.reset();camera.release();buttons=nil end
                 else pointing.reset();camera.release() end
             else
@@ -284,14 +373,39 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.interval_ms=input_interval_ms
+        selection.randomize_delay=randomize_input_delay
+        release_selection.randomize_delay=randomize_input_delay
+        release_selection.interval_ms=input_interval_ms
+        local previous=auxiliary.shortcut_buttons or {}
+        for slot=1,4 do
+            local key='slot'..slot;local down=buttons and buttons[key]==true
+            if down and previous[key]==false and api.enabled and snapshot and not selection.job and not release_selection.job then
+                local mcm=rawget(_G,'DBFMCM')
+                if not(mcm and type(mcm.is_open)=='function'and mcm.is_open())then release_selection.shortcut(slot,snapshot,now)end
+            end
+            if buttons then previous[key]=down else previous[key]=nil end
+        end
+        auxiliary.shortcut_buttons=previous
         if not release_selection.job then selection.step(snapshot,buttons,now,vector) end
         release_selection.interval_ms=input_interval_ms
-        release_selection.step(select_on_release and not blacklist_release_blocked and api.enabled and api.mode~=2 and buttons~=nil,
+        release_selection.step(((select_on_release or (controller_release_auto and controller_input)) and api.mode~=2 or release_selection.job and release_selection.job.shortcut) and not blacklist_release_blocked and api.enabled and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if not was_open then blacklist_release_blocked=false end
         if release_selection.job then selection.selected=release_selection.job.address end
         sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
             release_selection.job or selection.job,now,api.mode==2,paged)
+        if auxiliary.binding_warning then
+            local required={}
+            if api.mode==2 then required={'next','previous','confirm'}
+            else
+                if not (select_on_release or (controller_release_auto and controller_input)) then required={'confirm'} end
+                if api.mode==1 and wheel.pages and wheel.pages>1 then
+                    required[#required+1]='next';required[#required+1]='previous'
+                end
+            end
+            auxiliary.binding_warning.step(api.enabled and snapshot~=nil and snapshot.hud_visible~=false,rawget(_G,'ModBindingsMenu'),binding_ids,required,now)
+            api.binding_warning=auxiliary.binding_warning.status
+        end
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -328,8 +442,7 @@ local function step()
         api.count=display.count
         api.observation=display.observation
         if snapshot and snapshot.open then recovery_attempts=0 end
-        frames=frames+1
-        report(display.status,(api.count>0 and frames%120==0) or api.last_selection~=api.reported_selection)
+        report(display.status,api.last_selection~=api.reported_selection)
         api.reported_selection=api.last_selection
     end)
     if not ok then
@@ -347,8 +460,30 @@ local function step()
 end
 local foliage_compat
 local previous=rawget(_G,'update')
+function api.shutdown()
+    api.enabled=false
+    local clean,why=cleanup_ui()
+    if not clean then return false,why end
+    if hud_compat then local ok,problem=hud_compat.close();if not ok then return false,problem end end
+    for _,object in ipairs({wheel or false,expanded or false,auxiliary.dock or false,duplicates or false}) do
+        if object and object.close then
+            local ok,problem=object.close();if ok==false then return false,problem end
+        end
+    end
+    if mission_blacklist_state.native then mission_blacklist_state.native.unregister();mission_blacklist_state.native=nil end
+    local broker=rawget(_G,'DBFMenuSubscriptions') or {}
+    for _,rows in pairs(broker) do for _,record in pairs(rows) do
+        if record.owner==api then record.fn,record.owner=nil,nil end
+    end end
+    auxiliary.stopped=true
+    if rawget(_G,'update')==auxiliary.wrapper then rawset(_G,'update',previous) end
+    if rawget(_G,'DiversBestFriend')==api then rawset(_G,'DiversBestFriend',nil) end
+    if rawget(_G,'NativeStratagemRadial')==api then rawset(_G,'NativeStratagemRadial',nil) end
+    return true
+end
 local function after(...) step(); return ... end
 update=function(...)
+    if auxiliary.stopped then if type(previous)=='function' then return previous(...) end;return end
     if not foliage_compat and foliage_compatibility and backend then
         foliage_compat=foliage_compatibility(backend.read,function(at)
             local s=backend.read(at,8)
@@ -369,4 +504,5 @@ update=function(...)
     if type(previous)=='function' then return after(previous(...)) end
     return after()
 end
+auxiliary.wrapper=update
 report('loaded; awaiting native HUD')

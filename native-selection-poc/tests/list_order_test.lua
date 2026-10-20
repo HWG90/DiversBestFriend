@@ -27,3 +27,9 @@ snap.rows={};tick();assert(s.selected==nil,'empty membership clears selection')
 -- Without list mode, native slot order is retained for the radial layout.
 s.step(nil,nil,now+1);snap.rows=rows;snap.list_order=false;tick();assert(s.selected==10)
 print('List order passed: visual ordering, both wrap directions, native reorder, identity-preserving confirm, single/empty rows and unchanged radial order.')
+
+s.step(nil,nil,now+1);snap.list_order=true;snap.rows={{address=1,kind=49,entry=0,list_y=0,blacklisted=true},{address=2,kind=33,entry=1,list_y=-58}}
+tick();assert(s.selected==2,'blacklisted visible row must be skipped on open')
+press('next');assert(s.selected==2,'navigation cannot enter blacklisted row')
+press('confirm');assert(confirmed==33 and #snap.rows==2,'Confirm excludes Eagle Rearm without removing its drawing row')
+print('Visible blacklisted Eagle Rearm: skipped by initial selection, navigation and Confirm')

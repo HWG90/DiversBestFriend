@@ -12,7 +12,7 @@
 
 Supported target: Windows/Steam build **25480438**, game.dll timestamp **1790161983**. Native signatures reject unsupported builds.
 
-HUD Plus 0.2.8, Custom Stratagem Compendium 0.4.1, HD2Runtime 0.40.0 and Foliage Pass-Through 1.0 are optional compatibility targets. Start a fresh mission after installing their compatibility update. Without them, ASS uses its regular selection path. Foliage can be on or off; restart when changing it.
+HUD Plus 0.2.8 / 0.2.9, Custom Stratagem Compendium 0.4.1, HD2Runtime 0.40.0 and Foliage Pass-Through 1.0 are optional compatibility targets. Start a fresh mission after installing their compatibility update. Without them, ASS uses its regular selection path. Foliage can be on or off; restart when changing it.
 
 LLL gameplay was reported working on the compatibility predecessor. MDL startup and packaging have isolated coverage; MDL gameplay remains unverified. [Full R45 changes and validation](RELEASE-r45.md).
 
@@ -84,3 +84,5 @@ Status details are recorded in `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/Div
 | Crash when opening | Disable the addon and preserve both canary logs. Report revision, game build, layout, resolution, HUD scale and other UI mods. |
 
 R31 scrambling and post-effect recovery were reported working by the author. R33 sound character, volume and new sizing, plus the R34 page-flip cue, still need in-game validation. To roll back, close the game and deploy a known-working release with only one revision enabled.
+
+LLL review update: the current adapter supports live reload after core shutdown detaches its owned widgets and returns HUD+ ownership. The first upgrade from an older restart-only build still requires a full game restart. A linked/stale UI owner refuses cleanup; restart in that case. BSL/MDL lifecycle behavior is unchanged.

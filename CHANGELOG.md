@@ -1,3 +1,11 @@
+# R46 — The Homecoming Update — 2026-10-19
+
+- Add cooldown dock/overview, native timers, separated statuses and charge displays.
+- Add four unbound gameplay hotkeys and randomized per-use input delay.
+- Make Wedge Wheel the default; add list visibility, dimming and appearance controls.
+- Improve LLL reload ownership, timer resource lifetime and menu coexistence.
+- See [complete notes and validation limits](docs/RELEASE-r46.md).
+
 # R45 - Plays Nicely With Others - 2026-10-19
 
 - Add HUD Plus 0.2.8 stratagem-list/picker handoff while preserving its other HUD features.

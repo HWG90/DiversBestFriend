@@ -1,8 +1,8 @@
 -- MDL API 2 restart-only adapter. No game access or module loading at import.
 local G=rawget(_G,'_G') or _G
 local started=false
-local modules={'src/layout.lua','src/guards.lua','src/native.lua','src/menu_latch.lua','src/mission_blacklist.lua','src/input.lua','src/pointing.lua','src/camera.lua','src/icon_colors.lua','src/duplicate.lua','src/emote.lua','src/expanded.lua','src/selection.lua','src/release.lua','src/blacklist.lua','src/settings.lua','src/feedback.lua','src/hud_plus.lua','src/foliage_compat.lua','src/entry.lua'}
-return {name="Diver's Best Friend",version='R45',author='Goose',
+local modules={'src/layout.lua','src/guards.lua','src/native.lua','src/menu_latch.lua','src/mission_blacklist.lua','src/input.lua','src/pointing.lua','src/camera.lua','src/icon_colors.lua','src/duplicate.lua','src/emote.lua','src/expanded.lua','src/cooldown_dock.lua','src/binding_warning.lua','src/binding_defaults.lua','src/selection.lua','src/release.lua','src/blacklist.lua','src/settings.lua','src/feedback.lua','src/hud_plus.lua','src/foliage_compat.lua','src/entry.lua'}
+return {name="Diver's Best Friend",version='R46',author='Goose',
  on_enable=function(ctx)
   assert(ctx.api==2 and type(ctx.dir)=='string' and type(ctx.on_cleanup)=='function','MDL API 2 required')
   assert(not started and not rawget(G,'DiversBestFriend'),'Another ASS provider is active; restart required')

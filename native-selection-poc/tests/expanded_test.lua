@@ -4,6 +4,7 @@ local function source(n) local f=assert(io.open('native-selection-poc/'..n,'rb')
 local base,id,parent,resource=0x10000000,0x20000000,0x21000000,0x30000000
 local links,props,shown,angles={},{},{},{}
 local in_scope,constructors,sprites=false,0,0
+local uv_writes=0
 local native={}
 native[0x1446840]=function(p,t)
     assert(in_scope and p%16==0 and t==1);constructors=constructors+1;props[p]={};links[p+0xf8]=resource
@@ -21,6 +22,7 @@ native[0x1448ef0]=function(p,v) assert(in_scope and props[p]);angles[p]=v end
 native[0x14481a0]=function(p,v) assert(in_scope);props[p].rotation_pivot={v.x,v.y} end
 native[0x14491f0]=function(p,v) assert(in_scope);props[p].order=v end
 native[0x1448690]=function(p,v) assert(in_scope);props[p].color={v[0],v[1],v[2]} end
+native[0x143eef0]=function(p,a,z) uv_writes=uv_writes+1;assert(in_scope);props[p].uv={a.x,a.y,z.x,z.y} end
 native[0x144f800]=function(p,hash,flag) assert(in_scope and flag==0);props[p].asset=hash end
 native[0x1450230]=function(p,material,hash,flag) assert(in_scope and flag==0);props[p].texture=tonumber(hash) end
 native[0x144f6e0]=function() return 65536 end
@@ -37,7 +39,7 @@ local scope={context_scope=function(p,fn)
     assert(p==parent and not in_scope);in_scope=true
     local ok,value=pcall(fn,resource);in_scope=false;assert(ok,value);return value
 end}
-local input={presentation=function(k) return {label=k,category=0,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
+local input={display_codes=function(rows)local codes={};for i,row in ipairs(rows)do codes[i]={1,2,3,4,1}end;return codes end,presentation=function(k) return {label=k,category=0,texture=ffi.string(ffi.new('uint64_t[1]',k),8)} end}
 local env=setmetatable({require=function() return proxy end,radial={vertical_offset=575,full_color=false}},{__index=_G})
 local chunk=assert(loadstring(source('input.lua')..source('icon_colors.lua')..source('expanded.lua')..source('selection.lua')..'\nreturn expanded_wheel,expanded_index,expanded_geometry,selection_controller'))
 setfenv(chunk,env);local make,point,geometry,make_selection=chunk()
@@ -63,7 +65,7 @@ for i=1,16 do rows[i]={address=100+i,kind=i,entry=i-1,list_y=i*68} end
 local snap={identity=id,list=parent,open=true,center={1000,300},rows=rows}
 local w=make(b,scope,input)
 local prepared,changed=w.prepare(snap)
-assert(changed and constructors==33 and sprites==32 and #prepared.rows==16)
+assert(changed and constructors==33 and sprites==224 and #prepared.rows==16)
 assert(prepared.rows[1].kind==16 and prepared.rows[16].kind==1,'stable visual row order')
 local root
 for p in pairs(props) do if links[p+0xf0]==parent then root=p end end
@@ -94,7 +96,7 @@ for n=8,16 do
     end
 end
 for i=1,16 do
-    local group=root+0x110+(i-1)*0x4e0
+    local group=root+0x110+(i-1)*0x1560
     local wx,wy=native_ray(angles[group+0x220],angles[group],props[group+0x110].scale[2])
     local icon=props[group+0x380].position
     assert(wx*icon[1]+wy*icon[2]>184.99,'actual native calls must align wedge and icon')
@@ -103,8 +105,8 @@ local eight={};for i=1,8 do eight[i]={address=i,kind=i} end
 assert(point(eight,{-1,1})==8,'screenshot NW cursor selects NW Autocannon slot')
 
 assert(w.draw(prepared.rows[16].address,prepared.rows)==1,'last slot caption kind')
-local last_wedge=root+0x110+15*0x4e0+0x220
-assert(props[last_wedge].opacity==0.95 and props[turn+0x220].opacity==0.75,'darker defaults preserve selection')
+local last_wedge=root+0x110+15*0x1560+0x220
+assert(props[last_wedge].opacity==0.95 and props[turn+0x220].opacity==0.50,'darker defaults preserve selection')
 assert(math.abs(props[turn+0x220].color[1]-0.15)<1e-6,'default darkness reduces background RGB')
 local wedge=turn+0x220
 local original_selection=prepared.rows[16].address
@@ -121,7 +123,7 @@ end
 env.radial.wedge_darkness,env.radial.wedge_opacity=0,30
 w.draw(original_selection,prepared.rows)
 assert(props[wedge].color[1]==0.5 and props[wedge].opacity==0.3,'legacy appearance remains available')
-prepared,changed=w.prepare(snap);assert(not changed and sprites==32,'reuse owned widgets')
+prepared,changed=w.prepare(snap);assert(not changed and sprites==224,'reuse owned widgets')
 prepared.rows[16].timer_seconds,prepared.rows[16].timer_kind=35,'cooldown'
 -- This fixture's palette reader only represents pointers; use valid palette bytes.
 local old_read=b.read
@@ -151,13 +153,13 @@ assert(started==nil and selection.status=='Unavailable','exhausted selection can
 prepared.rows[16].unavailable=nil
 for i=16,10,-1 do table.remove(rows,i) end
 prepared,changed=w.prepare(snap);assert(changed and w.count==9)
-assert(shown[root+0x110+9*0x4e0]==0,'removed sectors hidden')
+assert(shown[root+0x110+9*0x1560]==0,'removed sectors hidden')
 for i=9,4,-1 do table.remove(rows,i) end
 prepared=w.prepare(snap)
-local empty=root+0x110+3*0x4e0+0x220
+local empty=root+0x110+3*0x1560+0x220
 w.draw(nil,prepared.rows)
 assert(math.abs(props[empty].opacity-0.08)<1e-6,'empty sectors preserve relative dimming')
-assert(shown[root+0x110+3*0x4e0]==1 and shown[root+0x110+3*0x4e0+0x380]==0,'empty sectors have no icon')
+assert(shown[root+0x110+3*0x1560]==1 and shown[root+0x110+3*0x1560+0x380]==0,'empty sectors have no icon')
 assert(point(prepared.rows,{-1,0})==nil,'empty sector cannot select')
 w.hide();assert(shown[root]==0)
 w.prepare(snap);assert(constructors==33,'reopen reuses storage')
@@ -184,5 +186,34 @@ for _,removed in ipairs({{1},{8},{16},{1,7,9,16},{1,2,3,4,5,6,7,8,9,10,11,12,13,
 end
 print('Expanded blacklist packing passed: first/middle/last/multiple/all removals, icon positions and Confirm/caption mapping.')
 w.prepare(snap)
+-- Code strips stay horizontal below each icon; all twelve directions fit.
+local code_sequence={1,2,3,4,1,2,3,4,1,2,3,4}
+input.display_codes=function(rows)local out={};for i in ipairs(rows)do out[i]=code_sequence end;return out end
+env.radial.icon_scale=1
+local code_rows={};for i=1,16 do code_rows[i]={address=100+i,kind=i,entry=i-1,list_y=i*68}end
+local code_snap={identity=id,list=parent,open=true,center={0,0},rows=code_rows}
+local code_wheel=w
+code_wheel.prepare(code_snap)
+local code_root=root
+for i=1,16 do
+ local slot=code_root+0x110+(i-1)*0x1560
+ local icon=props[slot+0x380].position
+ local first,last
+ for j=1,12 do
+  local p=slot+0x4e0+(j-1)*0x160
+  local v=props[p];assert(shown[p]==1)
+  assert(math.abs(v.uv[1]-code_sequence[j]/5)<1e-6 and v.uv[2]==0)
+  assert(v.position[2]<icon[2]-32,'code strip below icon')
+  first=first or v.position[1];last=v.position[1]
+ end
+ assert(math.abs((first+last)/2-icon[1])<1e-6,'code centered under icon')
+end
+local previous_uv=uv_writes
+code_wheel.prepare(code_snap);assert(uv_writes==previous_uv,'unchanged code never repaints UV')
+code_sequence={4,3,2,1}
+code_wheel.prepare(code_snap);assert(uv_writes>previous_uv,'live code changes repaint')
+assert(shown[code_root+0x110+0x4e0+4*0x160]==0,'shorter code hides stale arrows')
+print('Expanded codes: sixteen centered strips, twelve directions, native atlas UV, dynamic changes and idle UV writes passed.')
+
 id=id+8;w.hide();assert(shown[root]==1,'stale owner is never mutated')
 print('Expanded wedges passed: '..checks..' geometry/selection checks, 16-slot construction, scope/ownership, transformed width, slot-16 Confirm, membership resize, empty slots, reopen and stale HUD.')

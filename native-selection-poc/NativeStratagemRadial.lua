@@ -1,7 +1,9 @@
 -- HD2-Addon: mods/EquippedStratagems/NativeStratagemRadial
-if rawget(_G,'NativeStratagemRadial') then return end
--- Pure layout/controller. Native widgets retain their own content and input.
-local radial = {vertical_offset=0,full_color=true,wedge_darkness=70,wedge_opacity=75}
+-- Restart-only BSL bootstrap. Each embedded module compiles in its own chunk.
+if rawget(_G,'NativeStratagemRadial') or rawget(_G,'DiversBestFriend') then return end
+local sources={
+["src/layout.lua"]=[=[-- Pure layout/controller. Native widgets retain their own content and input.
+local radial = {vertical_offset=0,full_color=true,wedge_darkness=70,wedge_opacity=50}
 -- Matrix columns follow the native widget transform at +0x64. Resolve the
 -- viewport midpoint in list-local coordinates, then subtract the card anchor.
 function radial.center(viewport,list)
@@ -15,36 +17,98 @@ function radial.center(viewport,list)
             (dy*m[1]-dx*m[2])/determinant-list.height/2}
 end
 
--- List mode uses the original native list and only scales the selected row.
+-- List mode highlights the selected native row and dims the other rows.
 -- Its positions, arrows and parent hierarchy remain under native control.
 function radial.list_controller(backend)
     local self={count=0,status='native menu closed'}
     local saved
-    local function same(a,b) return a and b and a[1]==b[1] and a[2]==b[2] end
-    function self.restore()
-        if saved and backend.valid(saved.identity) then
-            if same(backend.get(saved.address,'scale'),saved.applied) then
-                backend.set(saved.address,'scale',saved.before)
-            end
+    local dimmed,dim_identity={},nil
+    local style_key
+    local function same(a,b)
+        if not a or not b or #a~=#b then return false end
+        for i=1,#a do if a[i]~=b[i]then return false end end
+        return true
+    end
+    local function get(address)
+        if backend.get_text_style then return backend.get_text_style(address)end
+        return {assert(backend.get_opacity(address))}
+    end
+    local function put(address,value)
+        if backend.set_text_style then backend.set_text_style(address,value)
+        else backend.set_opacity(address,value[1])end
+    end
+    local function blocked(row)return row.timer_kind~=nil or row.unavailable==true end
+    local function owned_style(current,applied)
+        if not current or not applied or #current~=#applied then return false end
+        if #current~=4 then return same(current,applied)end
+        for i=2,4 do if current[i]~=applied[i]then return false end end
+        return true
+    end
+    local function restore_style(address,item)
+        local current=get(address)
+        if owned_style(current,item.applied)then
+            local target={unpack(item.before)}
+            if #target==4 then target[1]=current[1]end
+            put(address,target)
         end
-        saved=nil;self.count=0
+    end
+    function self.restore()
+        if saved and backend.valid(saved.identity) and same(backend.get(saved.address,'scale'),saved.applied)then
+            backend.set(saved.address,'scale',saved.before)
+        end
+        if dim_identity and backend.valid(dim_identity)then
+            for address,item in pairs(dimmed)do restore_style(address,item)end
+        end
+        dimmed,dim_identity={},nil;saved=nil;style_key=nil;self.count=0
     end
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then
-            self.restore();self.status=enabled and 'native menu closed' or 'disabled';return
+            self.restore();self.status=enabled and 'native menu closed'or'disabled';return
         end
         local selected
-        for _,row in ipairs(snapshot.rows) do if row.address==radial.selected then selected=row.address end end
-        if saved and (saved.identity~=snapshot.identity or saved.address~=selected) then self.restore() end
+        for _,row in ipairs(snapshot.rows)do if row.address==radial.selected and not row.blacklisted and not blocked(row)then selected=row.address end end
+        if (saved and(saved.identity~=snapshot.identity or saved.address~=selected))or
+            (dim_identity and dim_identity~=snapshot.identity)then self.restore()end
+        dim_identity=snapshot.identity
+        local parts={tostring(selected),tostring(snapshot.identity),tostring(radial.dim_unselected)}
+        for _,row in ipairs(snapshot.native_rows or snapshot.rows)do parts[#parts+1]=row.address..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable)end
+        local next_key=table.concat(parts,'|')
+        if style_key==next_key then return end
+        style_key=next_key
+        local active={}
+        for _,row in ipairs(snapshot.rows)do
+            if radial.dim_unselected~=false and ((selected and row.address~=selected)or row.blacklisted)and not blocked(row)then
+                local targets=backend.opacity_targets and backend.opacity_targets(row.address)or{}
+                for index,address in ipairs(targets)do
+                    active[address]=true
+                    local current=get(address);local item=dimmed[address]
+                    if not item then item={before=current};dimmed[address]=item
+                    elseif not owned_style(current,item.applied)then item.before=current end
+                    if #current==4 then item.before[1]=current[1]end
+                    local target={unpack(item.before)}
+                    if #target==4 then
+                        -- Preserve native fade/visibility alpha, font, shadow and layout.
+                        -- Tint only the text containers, never the blur or card art.
+                        for channel=2,4 do target[channel]=item.before[channel]*0.35 end
+                    else target[1]=item.before[1]*0.35 end
+                    if not same(current,target)then put(address,target)end
+                    item.applied=get(address)
+                end
+            end
+        end
+        for address,item in pairs(dimmed)do if not active[address]then
+            restore_style(address,item)
+            dimmed[address]=nil
+        end end
         if selected then
             local current=assert(backend.get(selected,'scale'),'List row scale unavailable')
             if not saved then saved={identity=snapshot.identity,address=selected,before=current}
-            elseif not same(current,saved.applied) then saved.before=current end
-            backend.set(selected,'scale',{saved.before[1]*1.10,saved.before[2]*1.10})
+            elseif not same(current,saved.applied)then saved.before=current end
+            local target={saved.before[1]*1.10,saved.before[2]*1.10}
+            if not same(current,target)then backend.set(selected,'scale',target)end
             saved.applied=assert(backend.get(selected,'scale'))
         end
-        self.count=#snapshot.rows
-        self.status='native list selection ('..self.count..' cards)'
+        self.count=#snapshot.rows;self.status='native list selection ('..self.count..' cards)'
     end
     return self
 end
@@ -155,8 +219,12 @@ function radial.controller(backend)
     return self
 end
 
--- Guard bytes from the supported in-process capture; see RESEARCH.md.
+return {radial=radial}
+]=],
+["src/guards.lua"]=[=[-- Guard bytes from the supported in-process capture; see RESEARCH.md.
 local native_guards = {
+    {name='dock_charge_group_layout',rva=0x1839b15,bytes='\x4d\x8d\xbe\x20\x09\x00\x00'},
+    {name='dock_charge_text_layout',rva=0x1839c8e,bytes='\x49\x8d\xbe\xe0\x0c\x00\x00'},
     {name='position',rva=0x14476a0,bytes='\x48\x89\x5c\x24\x18\x48\x89\x6c\x24\x20\x48\x89\x54\x24\x10\x56\x57\x41\x57\x48\x83\xec\x20\xf3\x0f\x10\x41\x04\x48\x8b\xda\x0f'},
     {name='size',rva=0x1447160,bytes='\x48\x89\x5c\x24\x18\x48\x89\x6c\x24\x20\x48\x89\x54\x24\x10\x56\x57\x41\x57\x48\x83\xec\x20\xf3\x0f\x10\x41\x0c\x48\x8b\xda\x0f'},
     {name='scale',rva=0x1447ed0,bytes='\x48\x89\x5c\x24\x18\x48\x89\x6c\x24\x20\x48\x89\x54\x24\x10\x56\x57\x41\x57\x48\x83\xec\x20\xf3\x0f\x10\x41\x14\x48\x8b\xda\x0f'},
@@ -257,7 +325,24 @@ native_guards[#native_guards+1]={name='release_weapon_request_assignment',rva=0x
 native_guards[#native_guards+1]={name='release_opener_slot_guard',rva=0xa8f828,bytes='\x41\x8b\x56\x08\xe8\x6f\x8c\xf1\xff\x83\xf8\x05\x74\x69\x45\x33'}
 native_guards[#native_guards+1]={name='release_opener_slot_call',rva=0xa8f88f,bytes='\x49\x8d\x8d\xd0\xdc\x53\x00\x41\x8d\x52\x05\xe8\xf1\x45\x00\x00'}
 
--- Supported-build adapter. All drawing remains in the game's native HUD.
+-- Native stratagem row arrow atlas UV setter (1836DDA); verified live bytes.
+native_guards[#native_guards+1]={name='expanded_arrow_uv',rva=0x143eef0,bytes='\x4c\x89\x44\x24\x18\x48\x89\x54\x24\x10\x48\x83\xec\x28\xf3\x0f\x10\x81\x14\x01\x00\x00'}
+
+native_guards[#native_guards+1]={name='controller_active_binding',rva=0x12f95d2,bytes='\x44\x8b\x8d\x18\x7c\x0a\x00\x48\x8d\x15\x40\x40\x18\x02\x41\x83\xf9\xff\x74\x4c'}
+
+native_guards[#native_guards+1]={name='controller_stick_binding',rva=0x182b6ce,bytes='\x8b\x08\x83\xe1\x0f\x83\xf9\x09\x77\x35\x48\x8d\x15\x21\x49\x7d\xfe\x8b\x8c\x8a\xc4\xba\x82\x01\x48\x03\xca\xff\xe1\xbd\x03\x00\x00\x00\xeb\x20\xbd\x01\x00\x00\x00\xeb\x19\x48\x8d\xb7\xe8\x1c\x00\x00\xbd\x02\x00\x00\x00\x48\x89\x1e\xe9\x86\x01\x00\x00\xbd\x04\x00\x00\x00\x41\x80\xbe'}
+
+native_guards[#native_guards+1]={name='dock_card_constructor',rva=0x1839520,bytes=''}
+
+native_guards[#native_guards+1]={name='dock_card_tick',rva=0x1839fd0,bytes=''}
+-- Native cached charge count -> count label formatter, read-only witness.
+native_guards[#native_guards+1]={name='dock_charge_count',rva=0x183aef1,bytes='\x44\x8b\x86\xbc\x14\x00\x00\x48\x8d\x8e\xe0\x0c\x00\x00\xba\x35\x7b\x2a\xab'}
+
+native_guards[#native_guards+1]={name="list_text_colour",rva=0x1448690,bytes="\x48\x89\x5c\x24\x10\x48\x89\x6c\x24\x18\x56\x57\x41\x57\x48\x83\xec\x20\xf3\x0f\x10\x41\x48"}
+
+return {native_guards=native_guards}
+]=],
+["src/native.lua"]=[=[-- Supported-build adapter. All drawing remains in the game's native HUD.
 local function native_backend()
     local ffi = require('ffi')
     if not pcall(ffi.typeof,'NSR_vec2') then
@@ -349,6 +434,81 @@ local function native_backend()
         end
         return true
     end
+    -- Guarded widget_opacity stores its scalar at +0x44 (signature above).
+    local opacity_call=ffi.cast('void (*)(uintptr_t, float)',base+0x1448ad0)
+    local opacity_value=ffi.new('float[1]')
+    function backend.opacity_targets(card)
+        -- These native containers own only the name, status and arrow strip.
+        -- Native row ticks rewrite the children; inherited container tint survives.
+        local targets={card+0x1f18,card+0x24a8,card+0x2870}
+        for _,p in ipairs(targets)do
+            local at=p;local valid=false
+            for depth=1,8 do
+                local parent=pointer(at+0xf0)
+                if parent==card then valid=true;break end
+                if not parent or parent<card or parent>=card+0x3760 or parent==at then break end
+                at=parent
+            end
+            assert(valid,'List text container owner changed')
+        end
+        assert(pointer(card+0x2028+0xf0)==targets[1]and pointer(card+0x25b8+0xf0)==targets[2]
+            and pointer(card+0x2980+0xf0)==targets[3],'List text container layout changed')
+        return targets
+    end
+    function backend.get_opacity(address)
+        local bytes=read(address+0x44,4)
+        if not bytes then return nil end
+        ffi.copy(opacity_value,bytes,4)
+        local value=tonumber(opacity_value[0])
+        assert(value==value and value>=0 and value<=1,'Invalid widget opacity')
+        return value
+    end
+    function backend.set_opacity(address,value)
+        assert(value==value and value>=0 and value<=1,'Invalid widget opacity')
+        opacity_call(address,value)
+    end
+    local colour_value=ffi.new('float[3]')
+    local colour_call=ffi.cast('void (*)(uintptr_t, const float *)',base+0x1448690)
+    local style_value=ffi.new('float[4]')
+    function backend.get_text_style(address)
+        local bytes=assert(read(address+0x44,16),'List text style unavailable')
+        ffi.copy(style_value,bytes,16)
+        local result={}
+        for i=0,3 do local v=tonumber(style_value[i]);assert(v==v and v>=0 and v<=1,'Invalid list text style');result[i+1]=v end
+        return result
+    end
+    function backend.set_text_style(address,value)
+        local current=backend.get_text_style(address)
+        if current[1]~=value[1]then backend.set_opacity(address,value[1])end
+        if current[2]~=value[2]or current[3]~=value[3]or current[4]~=value[4]then
+            for i=1,3 do colour_value[i-1]=value[i+1]end
+            colour_call(address,colour_value)
+        end
+    end
+    function backend.dock_font(sr)
+        if not sr.IdString64 or not sr.Application.can_get then return nil end
+        local function id(at)
+            local bytes=read(at,8);if not bytes then return nil end
+            return string.format('%08x%08x',u32(bytes,4),u32(bytes,0))
+        end
+        -- This is a packed resource descriptor, not an aligned HUD widget.
+        local raw=read(base+0x37c5478,8)
+        local owner=raw and(u32(raw,0)+u32(raw,4)*4294967296)
+        if owner and(owner<65536 or owner>=2^47-32)then owner=nil end
+        local font,atlas,material=id(base+0x3772268),id(base+0x3772ee8),owner and id(owner+24)
+        if not font or not atlas or not material then return nil end
+        local I=sr.IdString64
+        -- IdString64 values are frame-local engine temporaries. Retain only HEX
+        -- strings; consumers must resolve each ID at the immediate API call.
+        if not sr.Application.can_get('font',I.from_hex(font))or not sr.Application.can_get('texture',I.from_hex(atlas))or not sr.Application.can_get('material',I.from_hex(material))then return nil end
+        return {font=font,atlas=atlas,material=material}
+    end
+    function backend.dock_text_position(s,x,y)
+        local size=assert(pair(read(s.dock_parent+0x24,8)))
+        local bytes=assert(read(s.dock_parent+0x64,64));local m=ffi.new('float[16]');ffi.copy(m,bytes,64)
+        x=x+size[1]/2
+        return tonumber(m[0])*x+tonumber(m[8])*y+tonumber(m[12]),tonumber(m[2])*x+tonumber(m[10])*y+tonumber(m[14])
+    end
     function backend.get(address,property)
         return pair(read(address+specs[property].offset,8))
     end
@@ -375,13 +535,20 @@ local function native_backend()
                 float_pair,8,received)~=0 and tonumber(received[0])==8,'Animation write failed')
         end
     end
-    function backend.snapshot()
+    function backend.snapshot(include_closed)
         local root=hud()
         if not root then return nil,'waiting for initialized gameplay HUD' end
+        -- Read the native visibility bits through the existing HUD snapshot.
+        -- Screen-GUI labels do not inherit these widget ancestors themselves.
+        local function shown(address)
+            local bytes=read(address,4)
+            return bytes and math.floor(u32(bytes,0)/16)%2==1 or false
+        end
+        local hud_visible=shown(root+0x258) and shown(root+0x820)
         local panel=root+0x24e340+0x146dc0
         local open=read(panel+0x38769,1)
-        if open=='\0' then return {identity=root,open=false},'native menu closed' end
-        if open~='\1' then return nil,'Invalid menu-open flag' end
+        if open=='\0' and not include_closed then return {identity=root,open=false,hud_visible=hud_visible},'native menu closed' end
+        if open~='\1' and open~='\0' then return nil,'Invalid menu-open flag' end
         local valid,reason=backend.valid(root)
         if not valid then return nil,'HUD hierarchy not recognized: '..reason end
         endpoint_owner=root
@@ -406,6 +573,27 @@ local function native_backend()
         end
         local viewport,container=geometry(root+0x258),geometry(list)
         if viewport.width<=0 or viewport.height<=0 then return nil,'Viewport dimensions not ready' end
+        local dock_y=math.max(100,viewport.height*0.10)+32
+        local dock_below_y=dock_y-62
+        local dock_anchor='viewport fallback'
+        local stamina=root+0x24e340+0x5778
+        local bar=stamina+0x110
+        if pointer(stamina+0xf0)==root+0x820 and pointer(bar+0xf0)==stamina then
+            local good,g=pcall(geometry,bar)
+            if good and g.width>0 and g.width<=1200 and g.height>0 and g.height<=100 then
+                local m,v=g.matrix,viewport.matrix
+                local x=m[1]*g.width/2+m[3]*g.height+m[5]-v[5]
+                local y=m[2]*g.width/2+m[4]*g.height+m[6]-v[6]
+                local det=v[1]*v[4]-v[2]*v[3]
+                if math.abs(det)>0.000001 then
+                    dock_y=(y*v[1]-x*v[2])/det+24+(radial.dock_gap or 6)
+                    local bx=m[1]*g.width/2+m[5]-v[5]
+                    local by=m[2]*g.width/2+m[6]-v[6]
+                    dock_below_y=(by*v[1]-bx*v[2])/det-16-(radial.dock_gap or 6)
+                    dock_anchor='native stamina bar'
+                end
+            end
+        end
         local centered,center=pcall(radial.center,viewport,container)
         if not centered then return nil,'waiting for invertible list transform' end
         local rows={}
@@ -420,10 +608,25 @@ local function native_backend()
                 end
                 local target=backend.get(address,'animation_b')
                 if not target then return nil,'Native row layout unavailable' end
-                rows[#rows+1]={address=address,width=size[1],height=size[2],entry=u32(read(address+0x3748,4),0),list_y=target[2]}
+                rows[#rows+1]={address=address,width=size[1],height=size[2],entry=u32(read(address+0x3748,4),0),list_y=target[2],dock_source=address+0x7c0}
             end
         end
-        return {identity=root,panel=panel,list=list,rows=rows,open=true,center=center,geometry=string.format('viewport=%.1fx%.1f matrix=%s list=%.1fx%.1f matrix=%s',viewport.width,viewport.height,table.concat(viewport.matrix,','),container.width,container.height,table.concat(container.matrix,','))}
+        return {identity=root,hud_visible=hud_visible,panel=panel,list=list,rows=rows,open=open=='\1',dock_rows=include_closed,dock_parent=root+0x258,dock_y=dock_y,dock_below_y=dock_below_y,dock_anchor=dock_anchor,center=center,geometry=string.format('viewport=%.1fx%.1f matrix=%s list=%.1fx%.1f matrix=%s',viewport.width,viewport.height,table.concat(viewport.matrix,','),container.width,container.height,table.concat(container.matrix,','))}
+    end
+    local release_ui
+    function backend.release_owned_ui(storage,address,identity,parent,retired)
+        for _,old in ipairs(retired or {}) do
+            local at=math.floor((tonumber(ffi.cast('uintptr_t',old))+31)/16)*16
+            if read(at+0xf0,8)~=string.rep('\0',8) then return false,'Old HUD generation remains linked; restart required' end
+        end
+        if address then
+            if backend.valid(identity) and pointer(address+0xf0)==parent then
+                release_ui=release_ui or ffi.cast('void (*)(uintptr_t)',base+0x144dd70)
+                release_ui(address)
+            end
+            if read(address+0xf0,8)~=string.rep('\0',8) then return false,'Native UI root did not detach; restart required' end
+        end
+        return true
     end
     backend.read=read; backend.pointer=pointer; backend.u32=u32; backend.base=base
     local input_handler=ffi.cast('void (*)(uintptr_t)',base+0xa900d0)
@@ -487,7 +690,9 @@ local function native_backend()
     return backend
 end
 
--- Temporarily give Display Stratagem List Press/toggle semantics. Unlike a
+return {native_backend=native_backend}
+]=],
+["src/menu_latch.lua"]=[=[-- Temporarily give Display Stratagem List Press/toggle semantics. Unlike a
 -- transient evaluated button byte, its live mapping survives input evaluation.
 -- Only the live map is edited; defaults and persisted bindings are untouched.
 local function native_menu_latch(b)
@@ -575,7 +780,9 @@ local function native_menu_latch(b)
     return self
 end
 
-local mission_blacklist_names={
+return {native_menu_latch=native_menu_latch}
+]=],
+["src/mission_blacklist.lua"]=[=[local mission_blacklist_names={
     [5]='ORBITAL ILLUMINATION FLARE',
     [7]='EXTRACTION BEACON',
     [11]='RAISE FLAG',
@@ -615,6 +822,15 @@ local mission_blacklist_names={
     [148]='EXTRACTION',
 }
 local function mission_blacklist_settings(menu,state,available)
+    local mcm=rawget(_G,'DBFMCM')
+    if state.excluded and not state.dirty and state.available_input==available
+        and state.owner==menu and state.provider==mcm and state.ready then return state.excluded end
+    state.dirty=false
+    if state.owner and state.owner~=menu then
+        if state.native then pcall(state.native.unregister) end
+        state.native=nil;state.provider=nil;state.registered={}
+    end
+    state.owner=menu
     local prefix='native_stratagem_radial.'
     local simple={{kind=145,id='hide_sos',label='Blacklist SOS Beacon'},{kind=49,id='hide_eagle_rearm',label='Blacklist Eagle Rearm'}}
     if not state.enabled then
@@ -647,7 +863,10 @@ local function mission_blacklist_settings(menu,state,available)
     end
     state.registered=state.registered or {}
     local function changed(kind,value,from_native)
-        state.enabled[kind]=value==true;state.save_pending=not state.save()
+        if state.owner~=menu then return end
+        local next_value=value==true
+        if (state.enabled[kind]==true)==next_value then return end
+        state.enabled[kind]=next_value;state.dirty=true;state.save_pending=not state.save()
         if state.syncing then return end
         state.syncing=true
         for _,option in ipairs(simple)do if option.kind==kind and state.registered[kind]then menu.set(prefix..option.id,value==true)end end
@@ -658,32 +877,67 @@ local function mission_blacklist_settings(menu,state,available)
         for _,option in ipairs(simple)do
             if not state.registered[option.kind]then
                 local kind=option.kind
-                local ok=menu.register_option(prefix..option.id,{mod="Diver's Best Friend",label=option.label,type='toggle',default=false,gap=kind==145,
-                    description='Available on the ship. Excludes this stratagem when present in your mission. Use MCM for additional blacklist entries.'})
+                local ok=menu.register_option(prefix..option.id,{mod="Diver's Best Friend",mod_id="hwg90.divers_best_friend",label=option.label,type='toggle',default=false,gap=kind==145,
+                    description='Available on the ship. Prevents selection in List Select and hides it on wheels when present in your mission. Use MCM for additional blacklist entries.'})
                 if ok then
                     menu.set(prefix..option.id,state.enabled[kind]==true)
-                    menu.on_change(prefix..option.id,function(value)if not state.syncing then changed(kind,value,false)end end)
+                    local subscribe=dbf_menu_subscribe or function(m,id,fn)return m.on_change(id,fn)end
+                    subscribe(menu,prefix..option.id,function(value)if not state.syncing then changed(kind,value,false)end end)
                     state.registered[kind]=true
                 end
             end
         end
     end
-    local mcm=rawget(_G,'DBFMCM')
     if state.provider~=mcm then
         if state.native then pcall(state.native.unregister)end
-        state.native=nil;state.provider=mcm
+        state.native=nil;state.provider=mcm;state.registration_attempted=nil
     end
-    if mcm and mcm.api==1 and type(mcm.register)=='function' and not state.native then
+    if mcm and mcm.api==1 and type(mcm.register)=='function' and not state.native and not state.registration_attempted then
+        state.registration_attempted=true
         local ids={};for kind in pairs(mission_blacklist_names)do ids[#ids+1]=kind end;table.sort(ids)
+        local groups={
+            {column=1,label='General',ids={49,145}},
+            {column=1,label='Testing: support and extraction',ids={5,7,28,33,42,98,103,108,111,123,124,132,148}},
+            {column=2,label='Testing: mission devices',ids={17,19,36,64,70,72,84,86,94,122,129}},
+            {column=2,label='Testing: cargo, data and objectives',ids={11,29,48,71,76,78,79,85,102,128,138}},
+        }
         local controls={}
-        for _,kind in ipairs(ids)do
+        for _,group in ipairs(groups)do
+          controls[#controls+1]={type='section',label=group.label,column=group.column}
+          for _,kind in ipairs(group.ids)do
             local target=kind
-            controls[#controls+1]={id='kind_'..kind,type='toggle',label='Blacklist '..mission_blacklist_names[kind],default=state.enabled[kind]==true,
-                description='Excludes this mission-provided stratagem when present. Equipped stratagems and unreadable mission data remain protected.',
+            controls[#controls+1]={id='kind_'..kind,type='toggle',label=mission_blacklist_names[kind],column=group.column,default=state.enabled[kind]==true,
+                description='Prevents selecting this mission-provided stratagem in List Select and hides it on wheels. Equipped stratagems and unreadable mission data remain protected.',
                 on_change=function(value)if not state.syncing then changed(target,value,true)end end}
+          end
         end
-        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
-        if ok then
+        local existing=type(mcm.mods)=='table' and mcm.mods.dbf_ass_blacklist
+        local handle,ok
+        if existing then
+            local owned=existing.id=='dbf_ass_blacklist' and existing.name=="Diver's Best Friend - Blacklist"
+                and existing.parent_name=="Diver's Best Friend" and type(existing.controls)=='table'
+                and type(existing.handle)=='table' and type(existing.handle.set)=='function'
+            local count=0
+            if owned then
+                for key,control in pairs(existing.controls) do
+                    local kind=tonumber(key:match('^kind_(%d+)$'))
+                    if not kind or not mission_blacklist_names[kind] or control.type~='toggle' then owned=false;break end
+                    count=count+1
+                end
+                owned=owned and count==#ids
+            end
+            if owned then
+                -- Reuse the exact DBF-owned schema after a provider/reload transition.
+                -- Refresh callbacks in place; do not re-register or steal a foreign ID.
+                for _,control in ipairs(controls) do if control.id then
+                    existing.controls[control.id].on_change=control.on_change
+                end end
+                ok,handle=true,existing.handle
+            else state.registration_error='MCM blacklist ID belongs to an unfamiliar owner' end
+        else
+            ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
+        end
+        if ok and type(handle)=='table' and type(handle.set)=='function' then
             state.native=handle
             -- The shared blacklist file is authoritative across both menus.
             state.syncing=true;for _,kind in ipairs(ids)do handle.set('kind_'..kind,state.enabled[kind]==true)end;state.syncing=false
@@ -696,10 +950,21 @@ local function mission_blacklist_settings(menu,state,available)
         if mission_blacklist_names[kind] and state.enabled[kind] and
             ((kind==145 or kind==49) and state.registered[kind] or state.native~=nil)then excluded[kind]=true end
     end
-    return excluded
+    -- Keep the same exclusion object when availability was re-sampled unchanged.
+    local prior=state.excluded
+    local same=prior~=nil
+    for kind in pairs(excluded) do if not prior or not prior[kind] then same=false;break end end
+    if same then for kind in pairs(prior) do if not excluded[kind] then same=false;break end end end
+    state.excluded=same and prior or excluded
+    state.available_input=available
+    state.ready=state.registered[145] and state.registered[49]
+        and (not mcm or state.native~=nil or state.registration_attempted==true)
+    return state.excluded
 end
 
--- Native input adapter. Only one evaluated direction byte is temporarily
+return {mission_blacklist_names=mission_blacklist_names,mission_blacklist_settings=mission_blacklist_settings}
+]=],
+["src/input.lua"]=[=[-- Native input adapter. Only one evaluated direction byte is temporarily
 -- changed, restored synchronously after the normal input handler returns.
 -- Descriptor bounds and mission membership are checked before activation.
 local function selectable_kind(kind)
@@ -709,6 +974,9 @@ end
 local function input_interval(ms,default)
     if type(ms)~='number' or ms~=ms or ms<0 or ms>250 then return default end
     return ms
+end
+local function usage_interval(owner)
+    return owner.randomize_delay and math.random(70,240)or input_interval(owner.interval_ms,70)
 end
 local function input_backend(b)
     local base=b.base
@@ -885,6 +1153,12 @@ local function input_backend(b)
         for a=1,4 do assert(read(c.actions+32*a,1)=='\0','Manual direction input detected') end
     end
     local out={presentation=presentation,view_context=function() return context(false) end}
+    function out.display_codes(rows)
+        local c=context(false,true)
+        local result={}
+        for i,row in ipairs(rows) do result[i]=code(row.kind,c) end
+        return result
+    end
     function out.mission_blacklist_kinds()
         local c=context(false,true)
         local count=num(c.payload+0x788)
@@ -903,7 +1177,7 @@ local function input_backend(b)
         return result
     end
     function out.decorate(snapshot)
-        if not snapshot or not snapshot.open then return end
+        if not snapshot or (not snapshot.open and not snapshot.dock_rows) then return end
         -- Highlighting only needs the same peer-owned list used by the HUD.
         -- Activation-specific guards belong in begin/advance, not navigation.
         local peer=read(ptr(base+0x347cef0)+0xb398,8)
@@ -925,7 +1199,7 @@ local function input_backend(b)
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
             row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
-            if selectable_kind(row.kind) then decorate_timer(row) end
+            if selectable_kind(row.kind) then decorate_timer(row);row.dock_payload=payload end
         end
     end
     function out.begin(kind)
@@ -986,11 +1260,11 @@ local function input_backend(b)
         c.unobstructed=num(ui+0x429c+20)==0
         return c
     end
-    function out.begin_release(kind,armed)
+    local function begin_latched(kind,armed,shortcut)
         local c=out.release_state()
         assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
             'Release owner changed')
-        assert(c.hold and not c.down and c.unobstructed,'Not an unobstructed Hold release')
+        assert((shortcut or c.hold)and not c.down and c.unobstructed,'Native menu input is held or obstructed')
         assert(num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0,
             'Manual input or completed selection cancels release')
         idle_actions(c)
@@ -1042,6 +1316,17 @@ local function input_backend(b)
         result.latch=lease
         return result
     end
+    function out.begin_release(kind,armed)return begin_latched(kind,armed,false)end
+    function out.begin_shortcut(slot)
+        assert(type(slot)=='number'and slot%1==0 and slot>=1 and slot<=4,'Invalid equipped slot')
+        local c=out.release_state()
+        local n=num(c.payload+0x788);assert(n>=8 and n<=32,'Equipped stratagem slots unavailable')
+        -- Native payload entries 0..3 are the shared mission slots; 4..7
+        -- retain the four equipped slots independently of display sorting.
+        local kind=num(c.payload+0x188+(slot+3)*0x30)
+        assert(selectable_kind(kind),'Equipped slot is empty')
+        return begin_latched(kind,c,true)
+    end
     function out.hold_release(job)
         local c=out.release_state()
         assert(c.identity==job.identity and c.component==job.component and c.hud==job.hud,
@@ -1075,6 +1360,15 @@ local function input_backend(b)
         return out.advance(job)
     end
     return out
+end
+
+return {selectable_kind=selectable_kind,input_interval=input_interval,usage_interval=usage_interval,input_backend=input_backend}
+]=],
+["src/pointing.lua"]=[=[-- Native wheel binding kinds 1/2 use direct stick vectors; mouse kinds
+-- integrate deltas. Require an active device so connected idle pads do not win.
+local function controller_pointing(binding_kind,active_device)
+    return active_device~=nil and active_device>=0 and active_device<32
+        and (binding_kind==1 or binding_kind==2)
 end
 
 -- Point toward the visible card centers, including the ellipse's aspect ratio.
@@ -1131,14 +1425,18 @@ local function native_pointing(b)
         if b.checkpoint then b.checkpoint('pointing binding query enter') end
         local bound=tonumber(binding(controls,0x700000003,1))
         if b.checkpoint then b.checkpoint('pointing binding query returned') end
-        assert(bound>=65536 and b.read(bound,4),'Native radial bindings unavailable')
+        local bound_bytes=bound>=65536 and b.read(bound,4)
+        assert(bound_bytes and #bound_bytes==4,'Native radial bindings unavailable')
         if b.checkpoint then b.checkpoint('pointing reader enter') end
         reader(target,context.input_owner,math.max(0.001,math.min(dt,0.05)))
         if b.checkpoint then b.checkpoint('pointing reader returned') end
         local v=ffi.cast('float *',target+0x1ce8)
         local x,y=tonumber(v[0]),tonumber(v[1])
         assert(x==x and y==y and math.abs(x)<=1.01 and math.abs(y)<=1.01,'Invalid radial direction')
-        local result={x,y}
+        local active=b.read(controls+0xa7c18,4)
+        local device=active and tonumber(ffi.cast('const int32_t *',active)[0])
+        local kind=bound_bytes:byte(1)%16
+        local result={x,y,controller=controller_pointing(kind,device)}
         if wheel then
             local index=tonumber(ffi.cast('uint32_t *',target+0x1cd8)[0])
             if index<8 and ffi.cast('uint8_t *',target+0x1cc8)[index]~=0 then result.slot=index+1 end
@@ -1149,7 +1447,9 @@ local function native_pointing(b)
     return self
 end
 
--- Use the same per-frame camera-input gate as the native radial reader.
+return {controller_pointing=controller_pointing,pointing_index=pointing_index,native_pointing=native_pointing}
+]=],
+["src/camera.lua"]=[=[-- Use the same per-frame camera-input gate as the native radial reader.
 -- Do not overwrite an existing capture owned by another native menu.
 local function camera_capture(b)
     local owned
@@ -1173,7 +1473,9 @@ local function camera_capture(b)
     return self
 end
 
--- Keep pointers per backend; parsing anonymous function types on each repaint leaks ctypes.
+return {camera_capture=camera_capture}
+]=],
+["src/icon_colors.lua"]=[=[-- Keep pointers per backend; parsing anonymous function types on each repaint leaks ctypes.
 local icon_native_calls=setmetatable({}, {__mode='k'})
 -- Called within the owner's HUD resource scope, only for separately owned icons.
 local function configure_stratagem_icon(b,icon,info,cooling)
@@ -1223,7 +1525,9 @@ local function configure_stratagem_icon(b,icon,info,cooling)
     parameter(icon,0x10c353af,background)
 end
 
--- Own new native widget storage. Never memcpy a live widget or its links.
+return {icon_native_calls=icon_native_calls,configure_stratagem_icon=configure_stratagem_icon}
+]=],
+["src/duplicate.lua"]=[=[-- Own new native widget storage. Never memcpy a live widget or its links.
 local function duplicate_cards(b)
     local ffi=require('ffi')
     local init=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x1446840)
@@ -1282,12 +1586,11 @@ local function duplicate_cards(b)
         if address and b.valid(identity) and b.pointer(address+0xf0)==parent then visible(address,0) end
     end
     function self.close()
-        if address and b.valid(identity) and b.pointer(address+0xf0)==parent then
-            -- Native release recursively releases children and unlinks this root.
-            release(address)
-            assert(zero_pointer(address+0xf0),'Radial root did not detach')
-            storage,address,identity,parent=nil,nil,nil,nil
-        else self.hide() end
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
     end
     local function prepare(snapshot,context,dt,resource_context)
         if not snapshot or not snapshot.open then self.hide();return snapshot end
@@ -1369,7 +1672,9 @@ local function duplicate_cards(b)
     return self
 end
 
--- Separate instance of the shared native eight-sector wheel. Never run its
+return {duplicate_cards=duplicate_cards}
+]=],
+["src/emote.lua"]=[=[-- Separate instance of the shared native eight-sector wheel. Never run its
 -- gameplay update/activation: those dispatch emotes rather than stratagems.
 local function emote_wheel(b,scope,input)
     local ffi=require('ffi')
@@ -1553,10 +1858,20 @@ local function emote_wheel(b,scope,input)
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then self.hide();self.status='native wheel closed' end
     end
+    function self.close()
+        self.hide()
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
+    end
     return self
 end
 
--- More than eight wedges without extending the native wheel's fixed arrays.
+return {emote_wheel=emote_wheel}
+]=],
+["src/expanded.lua"]=[=[-- More than eight wedges without extending the native wheel's fixed arrays.
 -- Each slot owns two transform containers, one native sector sprite and icon.
 local function expanded_geometry(count,index)
     local sectors=math.max(8,count)
@@ -1590,11 +1905,13 @@ local function expanded_wheel(b,scope,input)
     local order=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x14491f0)
     local color=ffi.cast('void (*)(uintptr_t, const float *)',b.base+0x1448690)
     local asset=ffi.cast('void (*)(uintptr_t, uint64_t, uint8_t)',b.base+0x144f800)
+    local uv=ffi.cast('void (*)(uintptr_t, NSR_vec2, NSR_vec2)',b.base+0x143eef0)
     local storage,address,identity,parent,signature
     local retired,content={},{}
-    local SIZE,STRIDE=0x4f10,0x4e0
+    local SIZE,STRIDE=0x15710,0x1560
     local white=ffi.new('float[3]',{1,1,1})
     local yellow=ffi.new('float[3]',{1,0.9,0.35})
+    local arrow_ink=ffi.new('float[3]',{0.08,0.07,0.03})
     local gray=ffi.new('float[3]',{0.5,0.55,0.6})
     local self={count=0,status='expanded wheel closed'}
     local function checkpoint(s) if b.checkpoint then b.checkpoint(s) end end
@@ -1614,6 +1931,7 @@ local function expanded_wheel(b,scope,input)
         local p=address+0x110+(i-1)*STRIDE
         return p,p+0x110,p+0x220,p+0x380
     end
+    local function arrow(i,j) return address+0x110+(i-1)*STRIDE+0x4e0+(j-1)*0x160 end
     function self.hide()
         if owned() then visible(address,0) end
         self.count=0;signature=nil
@@ -1629,6 +1947,7 @@ local function expanded_wheel(b,scope,input)
             return a.entry<c.entry
         end)
         for _,row in ipairs(rows) do parts[#parts+1]=row.address..':'..row.kind end
+        local codes=input.display_codes(rows)
         local current=table.concat(parts,',')
         local changed=signature~=current;signature=current
         scope.context_scope(snapshot.list,function(resource)
@@ -1665,6 +1984,13 @@ local function expanded_wheel(b,scope,input)
                         assert(b.pointer(p+0xf8)==resource,'Expanded child context mismatch')
                     end
                     link(stretch,wedge);link(turn,stretch);link(address,turn);link(address,icon)
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        sprite(p);centered(p,16,0.5);order(p,0x300)
+                        asset(p,0x84c0542299fb4884ULL,0)
+                        assert(b.pointer(p+0xf8)==resource,'Expanded arrow context mismatch')
+                        link(address,p);visible(p,0)
+                    end
                     bounds()
                     checkpoint('expanded slot '..i..' constructor returned')
                 end
@@ -1686,6 +2012,27 @@ local function expanded_wheel(b,scope,input)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
                 local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
+                local sequence=codes[i] or {}
+                assert(#sequence<=12,'Expanded code exceeds arrow capacity')
+                local _,_,pos=expanded_geometry(#rows,math.min(i,math.max(8,#rows)))
+                local spacing=math.min(16,104/math.max(1,#sequence))*size
+                local code_key=table.concat(sequence,',')..':'..size..':'..pos[1]..':'..pos[2]
+                local previous=content['code'..i]
+                if previous~=code_key then
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        assert(b.pointer(p+0xf0)==address,'Expanded arrow ownership changed')
+                        local direction=sequence[j]
+                        visible(p,direction and 1 or 0)
+                        if direction then
+                            assert(direction>=1 and direction<=4 and direction%1==0,'Invalid expanded arrow direction')
+                            uv(p,ffi.new('NSR_vec2',{direction/5,0}),ffi.new('NSR_vec2',{(direction+1)/5,1}))
+                            b.set(p,'size',{spacing,spacing})
+                            b.set(p,'position',{pos[1]+(j-(#sequence+1)/2)*spacing,pos[2]-42*size})
+                        end
+                    end
+                    content['code'..i]=code_key
+                end
                 local row=rows[i]
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable))
                 if row and content[i]~=content_key then
@@ -1709,7 +2056,7 @@ local function expanded_wheel(b,scope,input)
         -- Independent controls: darkness changes RGB, opacity changes coverage.
         -- Keep the selected sector conspicuous even with a transparent background.
         local brightness=1-(radial.wedge_darkness or 70)/100
-        local alpha=(radial.wedge_opacity or 75)/100
+        local alpha=(radial.wedge_opacity or 50)/100
         gray[0],gray[1],gray[2]=0.5*brightness,0.55*brightness,0.6*brightness
         scope.context_scope(parent,function()
             checkpoint('expanded highlight enter')
@@ -1721,7 +2068,16 @@ local function expanded_wheel(b,scope,input)
                 opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
                 local timed=row and (row.timer_seconds or row.unavailable)
                 color(icon,(chosen and radial.full_color==false and not timed) and yellow or white)
-                opacity(icon,timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8))
+                local alpha=timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8)
+                opacity(icon,alpha)
+                local arrow_state=tostring(chosen)..':'..tostring(not not timed)
+                if content['highlight'..i]~=arrow_state then
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        color(p,chosen and arrow_ink or white);opacity(p,chosen and 1 or alpha)
+                    end
+                    content['highlight'..i]=arrow_state
+                end
                 if chosen then kind=row.kind end
             end
             bounds();checkpoint('expanded highlight returned')
@@ -1731,10 +2087,530 @@ local function expanded_wheel(b,scope,input)
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then self.hide();self.status='expanded wheel closed' end
     end
+    function self.close()
+        self.hide()
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
+    end
     return self
 end
 
--- Pointing and discrete navigation share the proven explicit-confirm path.
+return {expanded_geometry=expanded_geometry,expanded_index=expanded_index,expanded_wheel=expanded_wheel}
+]=],
+["src/cooldown_dock.lua"]=[=[-- State and geometry are independent of native ownership and rendering.
+local function cooldown_dock_timed(row,track_unavailable)
+    return (track_unavailable and row.unavailable==true) or not row.unavailable and (row.timer_kind=='incoming' or row.timer_kind=='cooldown')
+        and type(row.timer_seconds)=='number' and row.timer_seconds>0
+end
+local function cooldown_dock_model()
+    local self={items={},order={},identity=nil}
+    function self.reset() self.items={};self.order={};self.identity=nil end
+    function self.sample(snapshot,now,track_unavailable)
+        if not snapshot then self.reset();return end
+        if self.identity~=snapshot.identity then self.reset();self.identity=snapshot.identity end
+        local wanted={}
+        for _,row in ipairs(snapshot.rows or {}) do
+            if cooldown_dock_timed(row,track_unavailable) then
+                local key=tostring(row.entry)..':'..tostring(row.kind)
+                wanted[key]=true
+                local item=self.items[key]
+                if not item then
+                    item={key=key,kind=row.kind,born=now}
+                    self.items[key]=item;self.order[#self.order+1]=key
+                end
+                -- Incoming -> cooldown updates the same docked icon, without a second flight.
+                local phase=row.unavailable and 'unavailable' or row.timer_kind
+                if item.phase~=phase then item.cooldown_span=nil end
+                item.phase=phase;item.row=row
+            end
+        end
+        for i=#self.order,1,-1 do
+            local key=self.order[i]
+            if not wanted[key] then self.items[key]=nil;table.remove(self.order,i) end
+        end
+    end
+    function self.layout(now,y,overview,placement,brief_limit,below_y,balanced)
+        local result={};local n=#self.order
+        local split=not overview and placement and placement>1
+        local short_n=0
+        if split then for _,key in ipairs(self.order)do
+            local item=self.items[key]
+            -- Remaining charges survive a full Eagle rearm. They do not prove
+            -- this is the brief between-run cooldown; classify by native time.
+            item.short_status=item.phase=='incoming'or item.phase~='unavailable' and math.max(item.cooldown_span or 0,item.row.timer_seconds or 0)<=(brief_limit or 10)
+            if item.short_status then short_n=short_n+1 end
+        end end
+        local main_n=n-short_n;local main_i,short_i=0,0
+        local balance=balanced~=false and split and placement~=4 and main_n>0 and short_n>0 and (short_n*30+12)*(placement==2 and 1 or -1)or 0
+        for i,key in ipairs(self.order) do
+            local item=self.items[key]
+            local x=overview and -70 or (i-(n+1)/2)*60
+            local target_y=overview and y+(n-i)*38 or y
+            item.below_stamina=false
+            if split then
+                if item.short_status then
+                    short_i=short_i+1
+                    if placement==4 then
+                        x=(short_i-(short_n+1)/2)*60;target_y=below_y or y-62;item.below_stamina=true
+                    elseif main_n==0 then x=(short_i-(short_n+1)/2)*60
+                    elseif placement==2 then x=-(main_n*30+54)-(short_n-short_i)*60
+                    else x=main_n*30+54+(short_i-1)*60 end
+                else main_i=main_i+1;x=(main_i-(main_n+1)/2)*60 end
+            end
+            x=x+balance
+            if item.target_x~=x or item.target_y~=target_y then
+                item.start_x,item.start_y=item.x or x,item.y or target_y
+                item.target_x,item.target_y=x,target_y;item.moved=now
+            end
+            local t=math.min(1,math.max(0,(now-item.moved)/350));local ease=1-(1-t)^3
+            item.x=item.start_x+(x-item.start_x)*ease;item.y=item.start_y+(target_y-item.start_y)*ease
+            item.alpha=math.min(1,math.max(0,(now-item.born)/140))
+            result[i]=item
+        end
+        local divider
+        if split and placement~=4 and main_n>0 and short_n>0 then
+            local alpha=1;for _,item in ipairs(result)do alpha=math.min(alpha,item.alpha)end
+            divider={x=(main_n*30+12)*(placement==2 and -1 or 1)+balance,y=y,alpha=alpha}
+        end
+        return result,divider
+    end
+    return self
+end
+-- Retained screen-GUI labels. No timer subscription exists; consume the dock's
+-- existing timer updates and change retained text only when its value changes.
+local function cooldown_dock_text(b)
+    local self={};local gui,world,sr,font,identity,attempted;local labels={}
+    local separator,separator_key
+    local function destroy_label(label)
+        if not label then return end
+        sr.Gui.destroy_text(gui,label.id)
+        sr.Gui.destroy_text(gui,label.shadow)
+        if label.backdrop then sr.Gui.destroy_rect(gui,label.backdrop)end
+    end
+    local function world_live()
+        if not world or not sr then return false end
+        for _,candidate in pairs(sr.Application.worlds()or{})do if candidate==world then return true end end
+        return false
+    end
+    function self.hide()
+        -- A world destroys its GUI resources itself. Never pass a retired world
+        -- or GUI to the engine; pcall cannot catch a native access violation.
+        if gui and world_live() then pcall(sr.World.destroy_gui,world,gui)end
+        gui,world,font,identity,attempted=nil,nil,nil,nil,nil;labels={};separator,separator_key=nil,nil
+    end
+    function self.draw(s,items,now,position,short_style,brief_limit,divider)
+        local timers=position and position~=1
+        local charges=false
+        for _,item in ipairs(items)do if item.phase=='cooldown' and item.charge_count then charges=true;break end end
+        if (not timers and not charges and not divider) or #items==0 then self.hide();return end
+        local current=rawget(_G,'stingray');if not current or not b.dock_font then return end
+        if sr~=current or identity~=s.identity then self.hide();sr=current;identity=s.identity end
+        if gui and not world_live() then self.hide();identity=s.identity end
+        if not gui then
+            if attempted then return end;attempted=true
+            font=b.dock_font(sr);if not font then return end
+            local A,G=sr.Application,sr.Gui;world=A.main_world()
+            for _,candidate in pairs(A.worlds()or{})do if candidate~=world then world=candidate;break end end
+            if not world then return end
+            gui=sr.World.create_screen_gui(world,'scale',1,1);if not gui then return end
+            local ok,material=pcall(G.material,gui,sr.IdString64.from_hex(font.material))
+            if not ok or not material then material=G.create_material(gui,sr.IdString64.from_hex(font.material))end
+            if not material or sr.Material.set_texture(material,sr.IdString64.from_hex('88BAC99B00000000'),sr.IdString64.from_hex(font.atlas))==false then self.hide();attempted=true;return end
+        end
+        local G=sr.Gui;local width=G.resolution();local scale=(width or 1920)/1920
+        for i=1,16 do
+            local item,old=items[i],labels[i]
+            if item and timers and item.phase~='unavailable' then
+                local seconds=math.max(0,math.ceil(item.row.timer_seconds))
+                local overview=position==5
+                local incoming=item.phase=='incoming' or item.row.timer_kind=='incoming'
+                local large=not overview and short_style==2 and (incoming or seconds<=(brief_limit or 10))
+                local inside=large or position==4
+                local size=math.max(14,(large and 36 or inside and 22 or 18)*scale)
+                local text=large and tostring(seconds) or string.format('%d:%02d',math.floor(seconds/60),seconds%60)
+                local above=position==2 and not item.below_stamina
+                local x,y=b.dock_text_position(s,item.x,item.y+(inside and 0 or above and 30 or -42))
+                if overview then
+                    text=(incoming and 'INBOUND 'or 'COOLDOWN ')..text
+                    x,y=b.dock_text_position(s,item.x+78,item.y-5)
+                end
+                if inside then y=y-size*.35 end
+                local key=text..':'..x..':'..y..':'..item.alpha..':'..size..':'..tostring(overview)
+                if not old or old.key~=key then
+                    destroy_label(old)
+                    local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
+                    local extent=sr.Vector3.x(max)-sr.Vector3.x(min)
+                    local backdrop
+                    if overview then
+                        local left,bottom=b.dock_text_position(s,item.x+22,item.y-12)
+                        local right,top=b.dock_text_position(s,item.x+134,item.y+12)
+                        backdrop=G.rect(gui,sr.Vector3(left,bottom,949),sr.Vector2(right-left,top-bottom),sr.Color(math.floor(item.alpha*150),0,0,0))
+                    elseif inside then
+                        local half=item.below_stamina and 16 or 24
+                        local left,bottom=b.dock_text_position(s,item.x-half,item.y-half)
+                        local right,top=b.dock_text_position(s,item.x+half,item.y+half)
+                        backdrop=G.rect(gui,sr.Vector3(math.min(left,right),math.min(bottom,top),949),sr.Vector2(math.abs(right-left),math.abs(top-bottom)),sr.Color(math.floor(item.alpha*150),0,0,0))
+                    end
+                    local shadow_id=G.text(gui,text,sr.IdString64.from_hex(font.font),size,sr.IdString64.from_hex(font.material),sr.Vector3(x-extent/2+2*scale,y-2*scale,950),sr.Color(math.floor(item.alpha*210),0,0,0))
+                    labels[i]={key=key,backdrop=backdrop,shadow=shadow_id,id=G.text(gui,text,sr.IdString64.from_hex(font.font),size,sr.IdString64.from_hex(font.material),sr.Vector3(x-extent/2,y,951),sr.Color(math.floor(item.alpha*255),255,255,255))}
+                end
+            elseif old then destroy_label(old);labels[i]=nil end
+            local old_charge=labels[i+16]
+            if item and item.phase=='cooldown' and item.charge_count then
+                local text=tostring(item.charge_count);local size=18*scale
+                local side=item.charge_side
+                local x,y=b.dock_text_position(s,item.x+(side=='left'and -36 or 0),item.y+(side=='above'and 37 or side=='left'and 0 or -37))
+                y=y-size*.35
+                local key=text..':'..x..':'..y..':'..item.alpha..':'..size
+                if not old_charge or old_charge.key~=key then
+                    destroy_label(old_charge)
+                    local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
+                    local extent=sr.Vector3.x(max)-sr.Vector3.x(min)
+                    local shadow=G.text(gui,text,sr.IdString64.from_hex(font.font),size,sr.IdString64.from_hex(font.material),sr.Vector3(x-extent/2+2*scale,y-2*scale,950),sr.Color(math.floor(item.alpha*210),0,0,0))
+                    labels[i+16]={key=key,shadow=shadow,id=G.text(gui,text,sr.IdString64.from_hex(font.font),size,sr.IdString64.from_hex(font.material),sr.Vector3(x-extent/2,y,951),sr.Color(math.floor(item.alpha*255),255,255,255))}
+                end
+            elseif old_charge then destroy_label(old_charge);labels[i+16]=nil end
+        end
+        if divider then
+            local left,bottom=b.dock_text_position(s,divider.x-1,divider.y-24)
+            local right,top=b.dock_text_position(s,divider.x+1,divider.y+24)
+            local key=left..':'..bottom..':'..right..':'..top..':'..divider.alpha
+            if key~=separator_key then
+                if separator then G.destroy_rect(gui,separator)end
+                separator=G.rect(gui,sr.Vector3(left,bottom,952),sr.Vector2(right-left,top-bottom),sr.Color(math.floor(divider.alpha*210),255,255,255))
+                separator_key=key
+            end
+        elseif separator then G.destroy_rect(gui,separator);separator,separator_key=nil,nil end
+    end
+    return self
+end
+-- Consume the dock's existing native snapshots; never start another reader.
+local function cooldown_closed_notices(b)
+    local self={};local saved
+    function self.restore(open)
+        if saved and b.valid(saved.identity)and b.get_opacity(saved.address)==saved.applied then
+            -- Closed native lists can already have alpha zero. Replaying that
+            -- value after the open transition makes the entire menu invisible.
+            b.set_opacity(saved.address,open and saved.before==0 and 1 or saved.before)
+        end
+        saved=nil
+    end
+    function self.step(s)
+        if not s or s.open~=false then self.restore(s and s.open==true);return end
+        local address=s.identity+0x24e340+0x146dc0+0x1040
+        if saved and saved.identity==s.identity then return end
+        self.restore();assert(b.valid(s.identity),'Closed status HUD changed')
+        local before=assert(b.get_opacity(address),'Closed status opacity unavailable')
+        b.set_opacity(address,0)
+        saved={identity=s.identity,address=address,before=before,applied=assert(b.get_opacity(address))}
+    end
+    return self
+end
+local function cooldown_dock(b,scope,input)
+    local ffi=require('ffi')
+    local init=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x1446840)
+    local create=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint64_t, int32_t, uint32_t)',b.base+0x1839520)
+    local tick=ffi.cast('void (*)(uintptr_t, float, uint32_t, uintptr_t)',b.base+0x1839fd0)
+    local attach=ffi.cast('void (*)(uintptr_t, uintptr_t)',b.base+0x144c5c0)
+    local finish=ffi.cast('void (*)(uintptr_t)',b.base+0x144c2c0)
+    local visible=ffi.cast('void (*)(uintptr_t, uint8_t)',b.base+0x144cfb0)
+    local order=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x14491f0)
+    local opacity=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ad0)
+    local model=cooldown_dock_model()
+    local timer_text=cooldown_dock_text(b)
+    local storage,address,identity,parent,snapshot
+    local retired,drawn={},{}
+    local self={}
+    local sampled_signature,timer_text_key
+    local function owned() return address and b.valid(identity) and b.pointer(address+0xf0)==parent end
+    function self.hide()
+        timer_text.hide()
+        if not snapshot and not self.shown and #model.order==0 then return end
+        if self.shown and owned() then
+            for i=1,16 do if drawn[i] then visible(address+0x110+(i-1)*0x1500,0) end end
+            visible(address,0)
+        end
+        model.reset();snapshot=nil;drawn={};self.shown=false;sampled_signature=nil
+    end
+    function self.sample(s,now)
+        snapshot=s
+        local parts={tostring(s and s.identity),tostring(s and s.dock_y),tostring(radial.full_color),tostring(radial.cooldown_timer),tostring(radial.cooldown_display)}
+        for _,row in ipairs(s and s.rows or {}) do
+            if cooldown_dock_timed(row,radial.track_unavailable) then
+                parts[#parts+1]=tostring(row.entry)..':'..tostring(row.kind)..':'..tostring(row.unavailable and 'unavailable' or row.timer_kind)
+            end
+        end
+        local signature=table.concat(parts,'|')
+        if signature~=sampled_signature or not self.next_sample or now>=self.next_sample then
+            model.sample(s,now,radial.track_unavailable);self.next_sample=now+250
+        end
+        if signature~=sampled_signature then
+            sampled_signature=signature;self.animate_until=now+350;self.settled=false
+        end
+    end
+    function self.draw(now,hud_visible)
+        if hud_visible==false then
+            timer_text.hide()
+            if self.shown and owned() then visible(address,0)end
+            self.shown=false;self.settled=false
+            return
+        end
+        local timer_due=not self.next_tick or now>=self.next_tick
+        if self.animate_until and now>self.animate_until and self.shown and self.settled and not timer_due then return end
+        local s=snapshot
+        if not s or not s.dock_parent then self.hide();return end
+        if #model.order==0 then self.hide();return end
+        if address and (identity~=s.identity or parent~=s.dock_parent or not owned()) then
+            if b.read(address+0xf0,8)~=string.rep('\0',8) then
+                assert(#retired<8,'Too many cooldown dock HUD generations; restart game')
+                retired[#retired+1]=storage
+            end
+            address,storage=nil,nil;drawn={};self.shown=false
+        end
+        local overview=radial.cooldown_display==2
+        local items,divider=model.layout(now,s.dock_y,overview,radial.short_status_placement,radial.brief_timer_limit,s.dock_below_y,radial.balance_separated_dock)
+        local label_key=tostring(s.identity)..':'..tostring(radial.cooldown_timer)..':'..tostring(overview)
+        if timer_text_key~=label_key then timer_text_key=label_key;self.timer_error=nil end
+        local function draw_labels()
+        if not self.timer_error then
+            local ok,why=pcall(timer_text.draw,s,items,now,overview and 5 or radial.cooldown_timer,radial.short_timer_style,radial.brief_timer_limit,divider)
+            if not ok then timer_text.hide();self.timer_error=tostring(why)end
+        end
+        end
+        local changed=not self.shown or timer_due
+        for i=1,16 do
+            local item,old=items[i],drawn[i]
+            if item then
+                local signature=item.key..':'..item.phase..':'..tostring(overview)..':'..tostring(item.below_stamina)
+                if not old or old.signature~=signature or old.x~=item.x or old.y~=item.y or old.alpha~=item.alpha then changed=true end
+            elseif old then changed=true end
+        end
+        self.settled=true
+        for _,item in ipairs(items) do
+            if item.x~=item.target_x or item.y~=item.target_y or item.alpha<1 then self.settled=false end
+        end
+        if not changed then draw_labels();return end
+        scope.context_scope(s.dock_parent,function(resource)
+            if not address then
+                storage=ffi.new('uint8_t[?]',0x15150)
+                address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
+                identity,parent=s.identity,s.dock_parent
+                init(address,1);b.set(address,'size',{0,0});b.set(address,'anchor',{0.5,0})
+                b.set(address,'pivot',{0.5,0});b.set(address,'position',{0,0})
+                assert(b.pointer(address+0xf8)==resource,'Dock resource context mismatch')
+                for i=1,16 do
+                    local icon=address+0x110+(i-1)*0x1500
+                    create(icon,0ULL,0ULL,0ULL,0x22b,0)
+                    local size=assert(b.get(icon,'size'),'Native tile size unavailable')
+                    assert(size[1]>0 and size[2]>0,'Invalid native tile dimensions')
+                    local pixels=overview and 32 or 48
+                    b.set(icon,'scale',{pixels/size[1],pixels/size[2]});b.set(icon,'pivot',{0.5,0.5})
+                    b.set(icon,'anchor',{0,0});order(icon,0x22b)
+                    attach(address,icon);finish(address)
+                end
+                attach(parent,address);finish(parent)
+            end
+            assert(owned(),'Cooldown dock ownership mismatch')
+            for i=1,16 do
+                local icon=address+0x110+(i-1)*0x1500
+                assert(b.pointer(icon+0xf0)==address,'Cooldown dock child ownership changed')
+                local item=items[i];local old=drawn[i]
+                if item then
+                    local signature=item.key..':'..item.phase..':'..tostring(overview)..':'..tostring(item.below_stamina)
+                    local denominator=old and old.denominator
+                    local large=radial.short_timer_style==2 and(item.phase=='incoming'or (item.row.timer_seconds or math.huge)<=(radial.brief_timer_limit or 10))
+                    local charge_side=(overview or item.below_stamina)and 'left'or(not large and radial.cooldown_timer==3 and 'above'or 'below')
+                    local charge_key=signature..':'..charge_side
+                    if (not old and item.below_stamina)or(old and old.signature~=signature)then
+                        local size=assert(b.get(icon,'size'));local pixels=(overview or item.below_stamina)and 32 or 48
+                        b.set(icon,'scale',{pixels/size[1],pixels/size[2]})
+                    end
+                    if timer_due or not old or old.signature~=signature then
+                        local row=item.row
+                        assert(row and row.dock_payload and row.entry,'Native dock record unavailable')
+                        ffi.cast('uint32_t *',icon+0x14b8)[0]=row.entry
+                        tick(icon,0.25,item.phase=='incoming' and 3 or item.phase=='unavailable' and 5 or 4,row.dock_payload)
+                        -- Native initialization can reset the span. Restore the game's
+                        -- original denominator afterwards, then refresh without elapsed time.
+                        if item.phase~='unavailable' then
+                        denominator=assert(b.read(row.dock_source+0x14c4,4),'Native tile timer span unavailable')
+                        if not old or old.signature~=signature or old.denominator~=denominator then
+                            ffi.copy(ffi.cast('void *',icon+0x14c4),denominator,4)
+                            tick(icon,0,item.phase=='incoming' and 3 or item.phase=='unavailable' and 5 or 4,row.dock_payload)
+                        end
+                        local span=tonumber(ffi.cast('float *',icon+0x14c4)[0])
+                        span=span==span and span>0 and span<=86400 and span or 0
+                        item.cooldown_span=math.max(span,item.row.timer_seconds,item.cooldown_span or 0)
+                        end
+                    end
+                    if timer_due or not old or old.charge_key~=charge_key then
+                        -- Native tile constructor owns the count group at +920,
+                        -- its two backing sprites and the count text at +CE0.
+                        local badge=icon+0x920
+                        assert(b.pointer(badge+0xf0)==icon,'Dock charge group ownership changed')
+                        local count=tonumber(ffi.cast('uint32_t *',icon+0x14bc)[0])
+                        if not old or old.charge_key~=charge_key or old.charge_count~=count then
+                            b.set(badge,'anchor',{0.5,0.5});b.set(badge,'pivot',{0.5,0.5})
+                            b.set(badge,'position',charge_side=='left'and{-36,0}or{0,charge_side=='above'and 37 or -37})
+                        end
+                        -- Native tick recolors/reveals these children. Suppress
+                        -- AFTER it runs, at its existing bounded 4 Hz cadence.
+                        opacity(icon+0xa30,0);opacity(icon+0xb88,0);opacity(icon+0xce0,0)
+                        -- Native count cache, witnessed by 183AEF1's count-label
+                        -- formatter. Read only our constructed/owned tile.
+                        item.charge_count=item.phase=='cooldown' and count>0 and count<=99 and count or nil
+                        item.charge_side=charge_side
+                        if old then old.charge_count=count end
+                    end
+                    local position=timer_due and b.get(icon,'position') or nil
+                    if not old or old.x~=item.x or old.y~=item.y or (position and (position[1]~=item.x or position[2]~=item.y)) then
+                        b.set(icon,'position',{item.x,item.y})
+                    end
+                    if not old or old.alpha~=item.alpha then opacity(icon,item.alpha) end
+                    if not old then visible(icon,1) end
+                    local retained=old or {}
+                    retained.signature,retained.x,retained.y=signature,item.x,item.y
+                    retained.alpha,retained.denominator=item.alpha,denominator
+                    retained.charge_key=charge_key
+                    retained.charge_count=tonumber(ffi.cast('uint32_t *',icon+0x14bc)[0])
+                    drawn[i]=retained
+                elseif old then visible(icon,0);drawn[i]=nil
+                elseif not drawn.initialized then visible(icon,0) end
+            end
+            self.next_tick=now+250
+            drawn.initialized=true
+            if not self.shown then visible(address,1);self.shown=true end
+        end)
+        draw_labels()
+    end
+    function self.close()
+        self.hide()
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
+    end
+    return self
+end
+
+return {cooldown_dock_timed=cooldown_dock_timed,cooldown_dock_model=cooldown_dock_model,cooldown_dock_text=cooldown_dock_text,cooldown_closed_notices=cooldown_closed_notices,cooldown_dock=cooldown_dock}
+]=],
+["src/binding_warning.lua"]=[=[-- Read only the recognized MBM v3 registry/header, as the MCM binding page does.
+local function dbf_binding_reader(host)
+    local function up(fn,wanted)
+        if type(fn)~='function' or not debug or not debug.getupvalue then return end
+        for i=1,64 do local name,value=debug.getupvalue(fn,i);if not name then return end;if name==wanted then return value end end
+    end
+    if type(host)~='table' or host.api~=1 or type(host.version)~='number' or host.version<3 then return end
+    local public=type(host.binding_info)=='function' and type(host.binding)=='function'
+    local state=up(host.register_binding,'state')
+    local header=up(host.is_down,'live_header')
+    local read,words=up(header,'read_words'),up(header,'words')
+    if type(state)~='table' or type(state.registry)~='table' or up(host.is_down,'state')~=state
+        or up(header,'state')~=state or type(read)~='function' or (type(words)~='cdata' and type(words)~='table') then
+        if public then return function(id)
+            local info=host.binding_info(id)
+            if info and info.backend=='extended' then local values=host.binding(id);if type(values)=='table' then return #values>0 end end
+        end end
+        return
+    end
+    return function(id)
+        if public then local info=host.binding_info(id)
+            if info and info.backend=='extended' then local values=host.binding(id);if type(values)=='table' then return #values>0 end;return end
+        end
+        if not state.build_rows then return end
+        local record=state.registry[id];if type(record)~='table' then return end
+        local bucket,count=header(record);count=tonumber(count)
+        if not bucket or not count or count<0 or count>16 or count%1~=0 then return end
+        if not read(bucket,8) or tonumber(words[0])~=record.code or tonumber(words[1])~=count then return end
+        return count>0
+    end
+end
+local function dbf_binding_warning_view()
+    local gui,world,sr,text_id,background,signature
+    local self={}
+    local function live()
+        if not sr or not world then return false end
+        for _,w in pairs(sr.Application.worlds() or {}) do if w==world then return true end end
+        return false
+    end
+    function self.hide()
+        if gui and live() then pcall(sr.World.destroy_gui,world,gui) end
+        gui,world,text_id,background,signature=nil,nil,nil,nil,nil
+    end
+    function self.show(text)
+        if not text then self.hide();return end
+        local current=rawget(_G,'stingray')
+        if type(current)~='table' or not current.Gui or not current.World or not current.Application then return end
+        if sr~=current or (gui and not live()) then self.hide();sr=current end
+        sr=current
+        local G,A=sr.Gui,sr.Application
+        local w,h=G.resolution();if not w or not h or w<=0 or h<=0 then return end
+        local next_signature=text..':'..w..':'..h
+        if gui and signature==next_signature then return end
+        if not gui then
+            local main=A.main_world();world=main
+            for _,candidate in pairs(A.worlds() or {}) do if candidate~=main then world=candidate;break end end
+            if not world then return end
+            gui=sr.World.create_screen_gui(world,'scale',1,1)
+            if not gui then return end
+        end
+        if text_id then G.destroy_text(gui,text_id) end
+        if background then G.destroy_rect(gui,background) end
+        local font='core/performance_hud/debug'
+        local size=math.max(14,math.min(20,w/75))
+        local width=math.min(w-32,#text*size*0.62+28)
+        local x=(w-width)/2
+        background=G.rect(gui,sr.Vector3(x,16,950),sr.Vector2(width,size+20),sr.Color(210,15,15,15))
+        text_id=G.text(gui,text,font,size,font,sr.Vector3(x+14,26,951),sr.Color(255,255,220,80))
+        signature=next_signature
+    end
+    return self
+end
+local function dbf_binding_warning(view,reader_factory)
+    view=view or dbf_binding_warning_view();reader_factory=reader_factory or dbf_binding_reader
+    local owner,reader,next_check,requirements
+    local self={}
+    function self.hide() view.hide();next_check=nil end
+    function self.step(enabled,host,ids,required,now)
+        if not enabled then self.hide();return end
+        local key=table.concat(required,',')
+        if host~=owner or key~=requirements then
+            owner,requirements=host,key;reader=reader_factory(host);next_check=nil
+        end
+        -- MBM exposes no mapping-change subscription. Check at most twice a second,
+        -- reading only the three registered DBF action headers; unknown is not unbound.
+        if next_check and now<next_check then return end
+        next_check=now+500
+        local missing={}
+        for _,name in ipairs(required) do
+            local ok,bound=pcall(function() return reader and reader(ids[name]) end)
+            if ok and bound==false then missing[#missing+1]=({next='Next',previous='Previous',confirm='Confirm'})[name] end
+        end
+        local message=#missing>0 and ('DBF: Bind '..table.concat(missing,' / ')..' in MODS controls.') or nil
+        local ok,why=pcall(view.show,message)
+        self.status=ok and message or ('Binding warning unavailable: '..tostring(why))
+    end
+    return self
+end
+
+return {dbf_binding_reader=dbf_binding_reader,dbf_binding_warning_view=dbf_binding_warning_view,dbf_binding_warning=dbf_binding_warning}
+]=],
+["src/binding_defaults.lua"]=[=[-- Keep controls on MBM's native MODS page, including v4 providers.
+-- Author defaults are extended-only; do not trade away native UI/input for them.
+local function dbf_binding_options(menu,key)
+    local options={category="Diver's Best Friend"}
+    if menu.version>=4 then options.backend='native' end
+    return options
+end
+
+return {dbf_binding_options=dbf_binding_options}
+]=],
+["src/selection.lua"]=[=[-- Pointing and discrete navigation share the proven explicit-confirm path.
 local function selection_controller(input,report)
     local self={selected=nil,status='Open the native stratagem menu',job=nil,interval_ms=70}
     local previous,opened={},false
@@ -1754,7 +2630,7 @@ local function selection_controller(input,report)
         owner=snapshot.identity
         local eligible={}
         for _,row in ipairs(snapshot.rows) do
-            if selectable_kind(row.kind) then eligible[#eligible+1]=row end
+            if selectable_kind(row.kind) and not row.blacklisted and(not snapshot.list_order or not row.timer_kind and not row.unavailable)then eligible[#eligible+1]=row end
         end
         if snapshot.list_order then
             -- Native payload/storage indices are not display indices. Use the
@@ -1823,7 +2699,7 @@ local function selection_controller(input,report)
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then
-                local interval=input_interval(self.interval_ms,70)
+                local interval=usage_interval(self)
                 self.job=result;self.job.interval_ms=interval
                 self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
                 next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')
@@ -1833,7 +2709,9 @@ local function selection_controller(input,report)
     return self
 end
 
--- Only a sampled Hold falling edge can confirm. A disappearing HUD alone
+return {selection_controller=selection_controller}
+]=],
+["src/release.lua"]=[=[-- Only a sampled Hold falling edge can confirm. A disappearing HUD alone
 -- never confirms, and explicit Confirm suppresses release for this opening.
 local function release_controller(input,report)
     local armed,blocked
@@ -1844,6 +2722,17 @@ local function release_controller(input,report)
             if not ok then report('Release cleanup failed: '..tostring(why)) end
         end
         self.job=nil;armed=nil;blocked=nil
+    end
+    function self.shortcut(slot,snapshot,now)
+        if self.job or not snapshot then return false end
+        local ok,job=pcall(input.begin_shortcut,slot)
+        if not ok then report('Shortcut not started: '..tostring(job));return false end
+        local interval=usage_interval(self)
+        job.shortcut=true;job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity
+        job.deadline=now+math.max(3000,#job.code*interval+1500)
+        self.job=job;armed=nil;blocked=true
+        report('Equipped slot '..slot..'; interval='..interval..'ms')
+        return true
     end
     function self.step(enabled,snapshot,selected,now,explicit)
         if not enabled or not snapshot then self.status='Disabled or no valid radial snapshot';self.reset();return end
@@ -1902,7 +2791,7 @@ local function release_controller(input,report)
                 and state.hud==previous.hud then
                 local called,job=pcall(input.begin_release,previous.kind,previous)
                 if called then
-                    local interval=input_interval(self.interval_ms,70)
+                    local interval=usage_interval(self)
                     job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity;job.address=previous.address
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job
@@ -1927,7 +2816,9 @@ local function release_controller(input,report)
     return self
 end
 
--- IDs are native stratagem kinds, never menu slots, names or direction codes.
+return {release_controller=release_controller}
+]=],
+["src/blacklist.lua"]=[=[-- IDs are native stratagem kinds, never menu slots, names or direction codes.
 local function stratagem_blacklist(values)
     local excluded={}
     if values.hide_sos==true then excluded[145]=true end
@@ -1942,13 +2833,19 @@ local function blacklist_signature(excluded)
     for kind=1,149 do if excluded[kind] then ids[#ids+1]=kind end end
     return table.concat(ids,',')
 end
-local function blacklist_snapshot(snapshot,excluded)
+local function blacklist_snapshot(snapshot,excluded,keep_visible,hide_cooldown)
     if not snapshot or not snapshot.open then return snapshot end
     local filtered={}
     for key,value in pairs(snapshot) do filtered[key]=value end
     filtered.rows,filtered.excluded_rows={},{}
+    filtered.native_rows=snapshot.rows
     for _,row in ipairs(snapshot.rows) do
-        local target=excluded[row.kind] and filtered.excluded_rows or filtered.rows
+        if keep_visible and excluded[row.kind]then
+            local copy={};for key,value in pairs(row)do copy[key]=value end
+            copy.blacklisted=true;row=copy
+        end
+        local hidden=(excluded[row.kind]and not keep_visible)or(hide_cooldown and row.timer_kind=='cooldown')
+        local target=hidden and filtered.excluded_rows or filtered.rows
         target[#target+1]=row
     end
     return filtered
@@ -2000,16 +2897,17 @@ local function blacklist_list_visibility(b)
             for _,row in ipairs(snapshot.excluded_rows) do
                 excluded[row.address]=true;add(row.address,'scale',{0,0})
             end
-            local slot=0
+            -- Native rows can be inserted/reordered during a transition. Their
+            -- old endpoints may temporarily coincide; never reuse those as a
+            -- set of compacted slots. Construct unique slots from row height.
+            local y=ordered[1]and ordered[1].target[2]or 0
             for _,item in ipairs(ordered) do
                 if not excluded[item.row.address] then
-                    slot=slot+1
-                    local y=ordered[slot].target[2]
-                    if item.target[2]~=y then
-                        add(item.row.address,'position',{item.position[1],y})
-                        add(item.row.address,'animation_a',{item.animation_a[1],y})
-                        add(item.row.address,'animation_b',{item.target[1],y})
-                    end
+                    add(item.row.address,'position',{item.position[1],y})
+                    add(item.row.address,'animation_a',{item.animation_a[1],y})
+                    add(item.row.address,'animation_b',{item.target[1],y})
+                    local scale=b.get(item.row.address,'scale')or{1,1}
+                    y=y-(item.row.height or 68)*math.max(1,scale[2])
                 end
             end
         end
@@ -2023,41 +2921,168 @@ local function blacklist_list_visibility(b)
             if not item then
                 item={identity=snapshot.identity,address=change.address,property=change.property,before=current};saved[id]=item
             elseif not same(current,item.applied) then item.before=current end
-            b.set(change.address,change.property,change.value)
+            if not same(current,change.value)then b.set(change.address,change.property,change.value)end
             item.applied=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
         end
     end
     return self
 end
 
-local function canary_settings(menu,api,radial)
+return {stratagem_blacklist=stratagem_blacklist,blacklist_signature=blacklist_signature,blacklist_snapshot=blacklist_snapshot,blacklist_list_visibility=blacklist_list_visibility}
+]=],
+["src/settings.lua"]=[=[local function dbf_menu_subscribe(menu,id,fn)
+    local broker=rawget(_G,'DBFMenuSubscriptions')
+    if not broker then broker=setmetatable({}, {__mode='k'});rawset(_G,'DBFMenuSubscriptions',broker) end
+    local rows=broker[menu]
+    if not rows then rows={};broker[menu]=rows end
+    local record=rows[id]
+    if not record then
+        record={}
+        local callback=function(...) if record.fn then return record.fn(...) end end
+        setfenv(callback,_G)
+        if menu.on_change(id,callback)~=true then return false end
+        rows[id]=record
+    end
+    record.fn=fn;record.owner=rawget(_G,'DiversBestFriend')
+    return true
+end
+-- Original BSL Mod Options Menu strips unknown registration fields. Bind the
+-- same DBF rules explicitly to MCM's authoritative imported handle as well.
+local function dbf_mcm_conditions(menu,state)
+    local mcm=rawget(_G,'DBFMCM')
+    if not mcm or not mcm.mods or not state.condition_specs then return end
+    if state.condition_mcm==mcm and state.condition_revision==mcm.revision then return end
+    state.condition_mcm=mcm;state.condition_revision=mcm.revision
+    local owner
+    for _,mod in pairs(mcm.mods)do
+        if mod.legacy and type(mod.name)=='string' and mod.name:upper()=="DIVER'S BEST FRIEND" then
+            if owner then return end;owner=mod
+        end
+    end
+    if not owner or not owner.handle or type(owner.handle.set_condition)~='function' then return end
+    if state.condition_owner==owner then return end
+    local keys={}
+    for _,spec in ipairs(state.condition_specs)do
+        for key,c in pairs(owner.controls)do
+            if c.label==spec[3] or c.label==spec[2]..' / '..spec[3] then
+                keys['native_stratagem_radial.'..spec[1]]=key
+            end
+        end
+    end
+    for id,rule in pairs(state.condition_rules)do
+        local key=keys['native_stratagem_radial.'..id]
+        if key then
+            owner.handle.set_condition(key,{enabled_if=function(get)
+                return rule(function(native_id)
+                    local mapped=keys[native_id]
+                    if mapped then return get(mapped)end
+                    return menu.get(native_id)
+                end)
+            end})
+        end
+    end
+    state.condition_owner=owner;state.condition_revision=mcm.revision
+end
+local function canary_settings(menu,api,radial,now)
+    dbf_mcm_conditions(menu,api)
+    if api.settings_menu==menu and api.cached and not api.dirty then
+        if api.subscribed and not api.retry_registration then return api.cached end
+        -- Old providers without notifications retain a bounded compatibility check.
+        if now and now<(api.next_refresh or 0) then return api.cached end
+    end
+    if api.settings_menu~=menu then
+        api.settings_menu=menu;api.subscriptions={};api.registered={};api.cached=nil
+    end
+    api.dirty=false;api.retry_registration=false
+    api.next_refresh=(now or 0)+250
     local prefix='native_stratagem_radial.'
     local specs={
         {'enabled','Selection','Enable Mod','toggle',true},
-        {'selection_mode','Selection','Mode','choice',1,{'Native wheel','Keybindings - list','Experimental'}},
+        {'selection_mode_ordered','Appearance','Mode','choice',1,{'Wedge Wheel','List Select','Native wheel'}},
         {'selection_sounds','Selection','Sound feedback','toggle',true},
-        {'experimental_layout','Appearance','Experimental layout','choice',1,{'Cards - copied list rows','Expanded wedges'},nil,nil,'Experimental mode only.'},
+        {'experimental_layout','Appearance','Wedge Wheel layout','choice',2,{'Cards - copied list rows','Expanded wedges'},nil,nil,'Available while Wedge Wheel is selected.'},
         {'appearance_preset','Appearance','Preset','choice',1,{'Custom','Compact','Standard','Large'},nil,nil,'Custom uses the size sliders below. Other presets override sizes; opacity and colors stay independent.'},
         {'wheel_size','Appearance','Wheel size (%)','slider',100,70,130,5,'All radial layouts. Custom preset only.'},
         {'icon_size','Appearance','Icon size (%)','slider',100,70,130,5,'Native and expanded wheels. Relative to wheel size; Custom preset only.'},
         {'label_size','Appearance','Center label size (%)','slider',100,70,130,5,'Native and expanded wheels. Relative to wheel size; Custom preset only.'},
         {'native_opacity','Appearance','Native wheel opacity (%)','slider',100,0,100,5,'Native wheel only; background opacity. Selected highlight stays visible.'},
-        {'full_color_icons','Appearance','Full-color stratagem icons','toggle',true},
         {'wedge_darkness','Appearance','Expanded wedge darkness (%)','slider',70,0,100,5,'Expanded wedges only.'},
-        {'wedge_opacity','Appearance','Expanded wedge opacity (%)','slider',75,0,100,5,'Expanded wedges only; selected highlight stays visible.'},
-        {'select_on_release','Controller','Select on Release','toggle',false,nil,nil,nil,'Radial modes with a Hold menu binding: point then release. Center before releasing to cancel. Also works with mouse.'},
+        {'wedge_opacity','Appearance','Wedge opacity (%)','slider',50,0,100,5,'Expanded wedges only; selected highlight stays visible.'},
+        {'cooldown_timers','Appearance','Show cooldown timers','toggle',true,nil,nil,nil,'Show native remaining time on dock icons, using the game font.'},
+        {'cooldown_timer','Appearance','Cooldown timer position','choice',2,{'Off','Above icon','Below icon','Inside icon'},nil,nil,'Position of regular cooldown timers. Short countdown style controls inbound, impact and brief cooldowns separately.'},
+        {'short_timer_style','Appearance','Short countdown style','choice',2,{'Use cooldown position','Large inside icon'},nil,nil,'Separate style for inbound, impact and brief cooldown countdowns.'},
+        {'dim_unselected','Appearance','Dim unselected stratagems','toggle',true,nil,nil,nil,'Dim unselected available entries in List Select. Native cooldown styling stays unchanged.'},
+        {'hide_blacklisted_list','Appearance','Hide blacklisted stratagems','toggle',false,nil,nil,nil,'Hide blacklisted entries in List Select. Off keeps them visible but unselectable. Wheels always omit them.'},
+        {'hide_cooldown_list','Appearance','Hide stratagems on cooldown','toggle',false,nil,nil,nil,'Hide cooldown entries in List Select. Inbound entries remain visible. Does not affect the cooldown dock or overview.'},
+        {'brief_timer_limit','Appearance','Brief cooldown threshold','slider',10,1,30,1,'Cooldowns at or below this many seconds use the short countdown style.'},
+        {'hide_closed_status','Appearance','Hide top-left status notices','toggle',true,nil,nil,nil,'Hide native inbound, impact and cooldown notices while the stratagem menu is closed. The open list stays complete.'},
+        {'dock_gap','Appearance','Dock gap above stamina','slider',24,0,80,2,'Gap above the native stamina bar, in HUD units.'},
+        {'cooldown_icons','Appearance','Show cooldown display','toggle',true,nil,nil,nil,'Show the chosen dock or overview. Off hides the display and stops its timer checks.'},
+        {'cooldown_display','Appearance','Cooldown display style','choice',1,{'Icon dock','Compact overview'},nil,nil,'Use a compact vertical list of icons, status and native remaining times instead of the horizontal dock.'},
+        {'short_status_placement','Appearance','Short status placement','choice',3,{'Together','Left of dock','Right of dock','Below stamina bar'},nil,nil,'Dock only. Separate inbound, impact, brief and per-charge cooldowns from longer cooldowns. Left/right adds a divider; below uses the stamina bar as the divider.'},
+        {'track_unavailable','Appearance','Track unavailable / ineligible','toggle',false,nil,nil,nil,'Include native unavailable or ineligible stratagems in the cooldown display. No countdown is invented when the game supplies none.'},
+        {'balance_separated_dock','Appearance','Center Cooldown Separator','toggle',true,nil,nil,nil,'Center the entire left/right separated bar. Off keeps the main cooldown group centered instead.'},
+        {'release_selection_mode','Controller','Select on Release','choice',1,{'Automatic (controller)','On','Off'},nil,nil,'Automatic enables release selection for active controller input. On also enables mouse. Requires a Hold menu binding; center before releasing to cancel.'},
         {'input_interval_ms','Advanced','Input interval (ms)','slider',70,0,250,5,'Delay between directions. 0 sends one per frame; applies to the next code.'},
-        {'vertical_offset','Advanced','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
+        {'randomize_input_delay','Advanced','Randomize input delay','toggle',false,nil,nil,nil,'Choose one delay between 70 and 240 ms for each stratagem use. Overrides the fixed delay.'},
+        {'vertical_offset','Appearance','Radial vertical offset (down)','slider',0,-600,600,25,'Radial layouts: positive moves down. Leave at 0 for automatic centering.'},
     }
-    local hidden={wheel_size=true,icon_size=true,label_size=true,native_opacity=true,full_color_icons=true,wedge_darkness=true,wedge_opacity=true,vertical_offset=true}
+    -- DBF owns its dependencies; MCM evaluates them against draft values.
+    -- Older options providers ignore this optional presentation metadata.
+    local function value(get,key)return get('native_stratagem_radial.'..key)end
+    local function wheel(get)return value(get,'selection_mode_ordered')~=2 end
+    local function expanded(get)return value(get,'selection_mode_ordered')==1 and value(get,'experimental_layout')==2 end
+    local function display(get)return value(get,'cooldown_icons')==true end
+    local function dock(get)return display(get) and value(get,'cooldown_display')==1 end
+    local function timers(get)return display(get) and value(get,'cooldown_timers')==true end
+    local conditions={
+        experimental_layout=function(get)return value(get,'selection_mode_ordered')==1 end,
+        wedge_darkness=expanded,wedge_opacity=expanded,
+        native_opacity=function(get)return value(get,'selection_mode_ordered')==3 end,
+        wheel_size=function(get)return wheel(get) and value(get,'appearance_preset')==1 end,
+        icon_size=function(get)return (expanded(get) or value(get,'selection_mode_ordered')==3) and value(get,'appearance_preset')==1 end,
+        label_size=function(get)return (expanded(get) or value(get,'selection_mode_ordered')==3) and value(get,'appearance_preset')==1 end,
+        vertical_offset=wheel,
+        dim_unselected=function(get)return value(get,'selection_mode_ordered')==2 end,
+        hide_blacklisted_list=function(get)return value(get,'selection_mode_ordered')==2 end,
+        hide_cooldown_list=function(get)return value(get,'selection_mode_ordered')==2 end,
+        input_interval_ms=function(get)return value(get,'randomize_input_delay')~=true end,
+        cooldown_display=display,dock_gap=display,track_unavailable=display,cooldown_timers=display,
+        short_status_placement=dock,
+        balance_separated_dock=function(get)local position=value(get,'short_status_placement');return dock(get) and (position==2 or position==3) end,
+        cooldown_timer=timers,short_timer_style=timers,brief_timer_limit=display,
+    }
+    api.condition_specs=specs;api.condition_rules=conditions
+    local hidden={}
+    -- Read the old toggle before registration; a saved On remains explicit On.
+    if api.values==nil and menu.get(prefix..'release_selection_mode')==nil then
+        api.values={release_selection_mode=menu.get(prefix..'select_on_release')==true and 2 or 1}
+    end
     local values={}
     api.values=api.values or {}
     local previous
+    local subscribed=type(menu.on_change)=='function'
+    local previous_interval=api.values.input_interval_ms
     for _,s in ipairs(specs) do
-        local spec={mod="Diver's Best Friend",label=s[2]..' / '..s[3],type=s[4],default=s[5],gap=previous~=s[2],description=s[9] or s[3]}
+        local spec={mod="Diver's Best Friend",mod_id="hwg90.divers_best_friend",label=s[2]..' / '..s[3],type=s[4],default=s[5],gap=previous~=s[2],description=s[9] or s[3]}
+        spec.enabled_if=conditions[s[1]]
+        if s[1]=='selection_mode_ordered' then
+            local legacy=menu.get(prefix..'selection_mode')
+            if legacy==1 or legacy==2 or legacy==3 then spec.default=4-legacy
+            elseif legacy==4 then spec.default=1 end
+        end
+        if s[1]=='release_selection_mode' and api.values.release_selection_mode then spec.default=api.values.release_selection_mode end
         if s[4]=='choice' then spec.choices=s[6] end
         if s[4]=='slider' then spec.min=s[6];spec.max=s[7];spec.step=s[8] end
         if not hidden[s[1]] and not api.registered[s[1]] then api.registered[s[1]]=menu.register_option(prefix..s[1],spec)==true end
+        if not hidden[s[1]] and not api.registered[s[1]] then api.retry_registration=true end
+        local key=s[1]
+        if subscribed and not hidden[key] and not api.subscriptions[key] then
+            api.subscriptions[key]=dbf_menu_subscribe(menu,prefix..key,function()
+                if api.settings_menu==menu then api.dirty=true end
+            end)==true
+        end
+        if not hidden[key] then subscribed=subscribed and api.subscriptions[key]==true end
         local v=menu.get(prefix..s[1]);local valid=false
         if s[4]=='toggle' then valid=type(v)=='boolean'
         elseif type(v)=='number' and v==v then
@@ -2067,21 +3092,32 @@ local function canary_settings(menu,api,radial)
             end
         end
         if valid then api.values[s[1]]=v end
-        if api.values[s[1]]==nil then api.values[s[1]]=s[5] end
+        if api.values[s[1]]==nil then api.values[s[1]]=spec.default end
         values[s[1]]=api.values[s[1]]
         if not hidden[s[1]] then previous=s[2] end
+    end
+    if previous_interval~=nil and previous_interval~=values.input_interval_ms and values.randomize_input_delay then
+        if type(menu.set)=='function'then menu.set(prefix..'randomize_input_delay',false)end
+        values.randomize_input_delay=false;api.values.randomize_input_delay=false
     end
     local presets={{values.wheel_size,values.icon_size,values.label_size},{85,100,95},{100,100,100},{115,110,110}}
     local sizes=presets[values.appearance_preset]
     radial.wheel_scale,radial.icon_scale,radial.label_scale=sizes[1]/100,sizes[2]/100,sizes[3]/100
     radial.native_opacity=values.native_opacity/100
-    radial.full_color=values.full_color_icons
+    radial.full_color=true
     radial.wedge_darkness,radial.wedge_opacity=values.wedge_darkness,values.wedge_opacity
-    radial.vertical_offset=0
+    radial.vertical_offset=values.vertical_offset
+    values.selection_mode=4-values.selection_mode_ordered
+    values.select_on_release=values.release_selection_mode==2
+    values.controller_release_auto=values.release_selection_mode==1
+    dbf_mcm_conditions(menu,api)
+    api.cached=values;api.subscribed=subscribed
     return values
 end
 
--- UI-only sounds: one tick per changed target, one cue per accepted job.
+return {dbf_menu_subscribe=dbf_menu_subscribe,dbf_mcm_conditions=dbf_mcm_conditions,canary_settings=canary_settings}
+]=],
+["src/feedback.lua"]=[=[-- UI-only sounds: one tick per changed target, one cue per accepted job.
 local function selection_feedback(b,report)
     local owner,last_target,last_job,last_tick=nil,nil,nil,-math.huge
     local failed=false
@@ -2113,13 +3149,23 @@ local function selection_feedback(b,report)
     return self
 end
 
--- HUD+ 0.2.8 owns a second list and hides the vanilla group used by ASS.
--- Interpose at its feature boundary; never edit its settings or native memory.
+return {selection_feedback=selection_feedback}
+]=],
+["src/hud_plus.lua"]=[=[-- Recognize the selection ownership contract, never a HUD+ version string.
+-- Future presentation changes may alter observe/put without changing handoff.
 local function hud_plus_compat(active)
     local self={status='HUD+ not detected',scans=0}
-    local top,runtimes,seen_programs=nil,{},{}
-    local pins={prepare='0f6d0b5c',observe='6eec2b6b',put='6be59f1a',
-        vanilla='c5fd46ff',drop='057f16e2'}
+    local top,runtimes,seen_programs,seen_features=nil,{},{},{}
+    local installed=setmetatable({}, {__mode='k'})
+    local bindings={}
+    -- Only owner-provided lifecycle methods perform cleanup. Each contract
+    -- fingerprints its Lua helper closures too, including held-input release.
+    local lifecycle={prepare='0f6d0b5c',vanilla='c5fd46ff',drop='057f16e2',close='8b14074f'}
+    local picker_contracts={
+        {name='immediate-picker',methods={reset='594d0655'},absent={'frame','leave'}},
+        {name='paced-picker',methods={reset='4dcd1a05',frame='ae220d38',leave='27a70348'},
+            helpers={reset={start_cell='f0e31473'},frame={unblock_aim='789b2088'}}},
+    }
     local function member(t,k)
         if type(t)~='table' then return nil end
         local v=rawget(t,k)
@@ -2130,37 +3176,112 @@ local function hud_plus_compat(active)
     end
     local function fingerprint(fn)
         if type(fn)~='function' then return nil end
-        local ok,bytes=pcall(string.dump,fn,true) -- Strip chunk path/debug data.
+        local ok,bytes=pcall(string.dump,fn,true)
         if not ok then return nil end
         local a,b=1,0
         for i=1,#bytes do a=(a+bytes:byte(i))%65521;b=(b+a)%65521 end
         return string.format('%08x',b*65536+a)
     end
+    local function helpers_match(fn,expected)
+        local found={}
+        if not debug or type(debug.getupvalue)~='function' then return false end
+        for i=1,64 do
+            local name,value=debug.getupvalue(fn,i)
+            if not name then break end
+            if type(value)=='function' then
+                if not expected or expected[name]~=fingerprint(value) then return false end
+                found[name]=true
+            end
+        end
+        for name in pairs(expected or {}) do if not found[name] then return false end end
+        return true
+    end
+    local function picker_contract(pick)
+        if pick==nil then return {name='no-picker'} end
+        if type(pick)~='table' then return end
+        for _,contract in ipairs(picker_contracts) do
+            local matches=true
+            for method,pin in pairs(contract.methods) do
+                local fn=member(pick,method)
+                if fingerprint(fn)~=pin or not helpers_match(fn,contract.helpers and contract.helpers[method]) then matches=false;break end
+            end
+            for _,method in ipairs(contract.absent or {}) do if member(pick,method)~=nil then matches=false end end
+            if matches then return contract end
+        end
+    end
     local function bind(program)
         local feature=member(member(program,'world_hud'),'stratagem')
         if not feature then return end
-        for name,pin in pairs(pins) do
-            if fingerprint(member(feature,name))~=pin then
-                self.status='HUD+ stratagem adapter unsupported';return
-            end
+        if installed[feature] then self.status=installed[feature];return end
+        local function unsupported(reason)
+            self.status='HUD+ stratagem adapter unsupported: '..reason
         end
-        if type(member(feature,'inputs'))~='table' or type(member(feature,'list'))~='table' then return end
+        for method,pin in pairs(lifecycle) do
+            local fn=member(feature,method)
+            if fingerprint(fn)~=pin or not helpers_match(fn) then unsupported('lifecycle '..method);return end
+        end
+        local pick=member(feature,'pick')
+        local contract=picker_contract(pick)
+        if not contract then unsupported('picker cleanup contract');return end
+        for _,method in ipairs({'observe','put'}) do
+            if type(member(feature,method))~='function' then unsupported('missing '..method);return end
+        end
+        local inputs=member(feature,'inputs')
+        if type(inputs)~='table' or type(member(inputs,'observe'))~='function'
+            or type(member(feature,'list'))~='table' or type(member(feature,'card'))~='table' then
+            unsupported('selection feature shape');return
+        end
+        local originals={prepare=rawget(feature,'prepare'),observe=rawget(feature,'observe'),put=rawget(feature,'put')}
         local prepare,observe,put=feature.prepare,feature.observe,feature.put
-        -- Instance methods only: no shared class mutation, per-frame discovery,
-        -- option saves, or repeated opacity writes. HUD+ restores opacity and
-        -- destroys its owned duplicate through its normal disabled path.
+        local vanilla,drop=feature.vanilla,feature.drop
+        local reset=pick and member(pick,'reset')
+        local frame=pick and member(pick,'frame')
+        local yielding=false
+        local function takeover(owner)
+            if yielding then return end
+            -- reset restores a held menu trigger; frame releases consumed aim.
+            -- Capture the verified instance methods, not mutable global classes.
+            if reset then reset(pick) end
+            if frame then frame(pick,false) end
+            vanilla(owner,false);drop(owner);owner.segment=false
+            yielding=true
+        end
         feature.prepare=function(owner,enabled,...)
-            if active() then enabled=false end
+            if active() then takeover(owner);enabled=false else yielding=false end
             return prepare(owner,enabled,...)
         end
-        feature.observe=function(owner,enabled,...)
-            if active() then enabled=false end
-            return observe(owner,enabled,...)
+        feature.observe=function(owner,enabled,world,player,players,arrow,cell,...)
+            if not active() then
+                yielding=false
+                return observe(owner,enabled,world,player,players,arrow,cell,...)
+            end
+            takeover(owner)
+            -- Preserve the extension's shared arrow input, while keeping the
+            -- competing list/picker idle. No original observe/drop loop.
+            if arrow then inputs:observe(owner.panel,world,player,players,cell) end
+            owner.world=world
+            return inputs.showing
         end
         feature.put=function(owner,...)
-            if not active() then return put(owner,...) end
+            if not active() then yielding=false;return put(owner,...) end
+            takeover(owner)
         end
-        self.status='HUD+ 0.2.8 list/picker yield to ASS while enabled'
+        bindings[#bindings+1]={feature=feature,originals=originals,wrappers={prepare=feature.prepare,observe=feature.observe,put=feature.put}}
+        self.contract=contract.name
+        self.status='HUD+ '..contract.name..' list/picker yield to ASS while enabled'
+        installed[feature]=self.status
+    end
+    function self.close()
+        for _,binding in ipairs(bindings) do
+            for name,fn in pairs(binding.wrappers) do
+                if rawget(binding.feature,name)~=fn then return false,'HUD+ handoff was replaced by another owner' end
+            end
+        end
+        for _,binding in ipairs(bindings) do
+            for name in pairs(binding.wrappers) do rawset(binding.feature,name,binding.originals[name]) end
+        end
+        bindings={}
+        return true
     end
     function self.refresh(update)
         if update~=top and self.scans<8 and debug and debug.getupvalue then
@@ -2187,8 +3308,9 @@ local function hud_plus_compat(active)
         end
         for _,runtime in ipairs(runtimes) do
             local program=rawget(runtime,'program')
-            if program and seen_programs[runtime]~=program then
-                seen_programs[runtime]=program
+            local feature=member(member(program,'world_hud'),'stratagem')
+            if program and (seen_programs[runtime]~=program or seen_features[runtime]~=feature) then
+                seen_programs[runtime]=program;seen_features[runtime]=feature
                 bind(program)
             end
         end
@@ -2196,7 +3318,9 @@ local function hud_plus_compat(active)
     return self
 end
 
--- Recognise Foliage Pass-Through's sole reviewed ProjectileInfo variant.
+return {hud_plus_compat=hud_plus_compat}
+]=],
+["src/foliage_compat.lua"]=[=[-- Recognise Foliage Pass-Through's sole reviewed ProjectileInfo variant.
 -- No native writes, guard wrappers, masked fields or relaxed comparisons.
 -- Update Runtime's Lua review snapshots only when the ENTIRE native row is
 -- byte-identical to that snapshot except the owner's exact 0 -> 2 template.
@@ -2269,7 +3393,9 @@ local function foliage_compatibility(read,pointer,base,address,env)
     return self
 end
 
-local api={api=1,revision=45,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
+return {foliage_compatibility=foliage_compatibility}
+]=],
+["src/entry.lua"]=[=[local api={api=1,revision=46,enabled=true,mode=1,experimental_layout=1,status='initializing',count=0}
 local MOD_NAME = "Diver's Best Friend"
 rawset(_G,'DiversBestFriend',api)
 -- Compatibility alias for existing diagnostics and duplicate-load detection.
@@ -2280,15 +3406,19 @@ local hud_compat=hud_plus_compat and hud_plus_compat(function()
     return api.enabled and initialized and not failed and not recovering
 end)
 local recovery_attempts=0
-local frames=0
 local backend,selection,input,duplicates,pointing,last_tick,list_controller,camera,active_mode
+local auxiliary={}
 local wheel,expanded,release_selection
 local excluded,exclusion_signature,hidden_rows={},'',nil
 local blacklist_release_blocked=false
 local mission_blacklist_state={}
 local next_blacklist_sample=0
+local blacklist_menu_open,blacklist_hud,previous_excluded
+local empty_excluded={}
 local select_on_release=false
+local controller_release_auto,controller_input=false,false
 local input_interval_ms=70
+local randomize_input_delay=false
 local binding_owner={}
 local selection_events={}
 local native_events,native_seen={},{}
@@ -2299,11 +3429,12 @@ local function native_checkpoint(message)
     local loader=assert(rawget(_G,'CowboyBingusModLoader'),'Shared Loader unavailable')
     local file=assert(loader.open_log('DiversBestFriend-native.log'),'Cannot open native checkpoint log')
     native_events[#native_events+1]=message
-    file:write(MOD_NAME..' R45 - Compatibility\n'..table.concat(native_events,'\n')..'\n')
+    file:write(MOD_NAME..' R46 - Homecoming Update\n'..table.concat(native_events,'\n')..'\n')
     file:close()
     native_seen[message]=true
 end
 local binding_ids={next="native_stratagem_radial.next",previous="native_stratagem_radial.previous",confirm="native_stratagem_radial.confirm"}
+for slot=1,4 do binding_ids['slot'..slot]='native_stratagem_radial.slot'..slot end
 local function selection_report(message)
     -- Button telemetry must not overwrite the last actual confirmation result.
     if not message:find('; buttons=',1,true) then api.last_confirmation=message end
@@ -2312,7 +3443,7 @@ local function selection_report(message)
     api.last_selection=message
 end
 local migration_checked,migrate_expanded
-local mode_names={'Native wheel','Keybindings - list','Experimental'}
+local mode_names={'Native wheel','List Select','Wedge Wheel'}
 local function report(status,force)
     api.status=status
     if status==last_status and not force then return end
@@ -2322,7 +3453,7 @@ local function report(status,force)
         if not loader or type(loader.open_log)~='function' then return end
         local file=loader.open_log('DiversBestFriend.log')
         if file then
-            file:write(MOD_NAME..' R45 - Compatibility\nstatus='..status..'\ncount='..api.count..'\n')
+            file:write(MOD_NAME..' R46 - Homecoming Update\nstatus='..status..'\ncount='..api.count..'\n')
             file:write('full_color_icons='..tostring(radial.full_color~=false)..'\n')
             file:write('wedge_darkness='..tostring(radial.wedge_darkness)..'; wedge_opacity='..tostring(radial.wedge_opacity)..'\n')
             file:write('centering='..tostring(api.centering or 'not sampled')..'; vertical_offset='..tostring(radial.vertical_offset)..'\n')
@@ -2342,7 +3473,7 @@ local function report(status,force)
 end
 local settings_owner,settings_state
 local sound_feedback,sounds_enabled
-local function options()
+local function options(now)
     local menu=rawget(_G,'ModOptionsMenu')
     if type(menu)~='table' or menu.api~=1 or type(menu.register_option)~='function' or type(menu.get)~='function' then return end
     if migration_checked~=menu then
@@ -2368,15 +3499,35 @@ local function options()
         end
     end
     if settings_owner~=menu then settings_owner=menu;settings_state={registered={}} end
-    local values=canary_settings(menu,settings_state,radial)
+    local values=canary_settings(menu,settings_state,radial,now)
     api.enabled,api.mode,api.experimental_layout=values.enabled,values.selection_mode,values.experimental_layout
+    api.cooldown_icons=values.cooldown_icons
+    api.hide_blacklisted_list=values.hide_blacklisted_list
+    api.hide_cooldown_list=values.hide_cooldown_list
+    api.hide_closed_status=values.hide_closed_status
+    radial.dock_gap=values.dock_gap
+    radial.cooldown_display=values.cooldown_display
+    radial.short_status_placement=values.short_status_placement
+    radial.balance_separated_dock=values.balance_separated_dock
+    radial.track_unavailable=values.track_unavailable
+    radial.cooldown_timer=values.cooldown_timers and values.cooldown_timer or 1
+    radial.short_timer_style=values.short_timer_style
+    radial.dim_unselected=values.dim_unselected
+    radial.brief_timer_limit=values.brief_timer_limit
     select_on_release,input_interval_ms,sounds_enabled=values.select_on_release,values.input_interval_ms,values.selection_sounds
+    controller_release_auto=values.controller_release_auto
+    randomize_input_delay=values.randomize_input_delay
 
     if migrate_expanded then
         api.mode,api.experimental_layout=3,2
         if type(menu.set)=='function' and menu.set('native_stratagem_radial.experimental_layout',2)
-            and menu.set('native_stratagem_radial.selection_mode',3) then migrate_expanded=false end
+            and menu.set('native_stratagem_radial.selection_mode',3) and menu.set('native_stratagem_radial.selection_mode_ordered',1) then migrate_expanded=false end
     end
+end
+
+-- Programmatic owners that use a silent menu.set can invalidate explicitly.
+function api.invalidate_settings()
+    if settings_state then settings_state.dirty=true end
 end
 
 local function bindings()
@@ -2385,16 +3536,28 @@ local function bindings()
         or not (menu.version>=2) then
         api.selection_status='Requires Mod Bindings Menu v2 or newer'; return nil
     end
-    local labels={next='Next stratagem',previous='Previous stratagem',confirm='Confirm stratagem'}
+    local labels={next='Next stratagem',previous='Previous stratagem',confirm='Confirm stratagem',slot1='Equip stratagem slot 1',slot2='Equip stratagem slot 2',slot3='Equip stratagem slot 3',slot4='Equip stratagem slot 4'}
     local buttons={}
-    for _,key in ipairs({'next','previous','confirm'}) do
+    auxiliary.binding_retry=auxiliary.binding_retry or {}
+    local now=backend and backend.milliseconds() or 0
+    api.hotkey_error=nil
+    for _,key in ipairs({'next','previous','confirm','slot1','slot2','slot3','slot4'}) do
         local id=binding_ids[key]
+        local optional=key:match('^slot')~=nil
         if binding_owner[id]~=menu then
-            local ok,why=menu.register_binding(id,labels[key],nil,{category=MOD_NAME})
-            if not ok then api.selection_status='Binding unavailable: '..tostring(why); return nil end
-            binding_owner[id]=menu
+            local retry=auxiliary.binding_retry[id]
+            local ok,why
+            if retry and retry.owner==menu and now<retry.at then why=retry.reason
+            else
+                ok,why=menu.register_binding(id,labels[key],nil,dbf_binding_options and dbf_binding_options(menu,key) or {category=MOD_NAME})
+                if not ok then auxiliary.binding_retry[id]={owner=menu,at=now+1000,reason=why}end
+            end
+            if ok then binding_owner[id]=menu;auxiliary.binding_retry[id]=nil
+            elseif not optional then api.selection_status='Binding unavailable: '..tostring(why);return nil
+            else api.hotkey_error='Hotkey unavailable: '..tostring(why)end
         end
-        buttons[key]=menu.is_down(id)
+        if binding_owner[id]==menu then buttons[key]=menu.is_down(id) else buttons[key]=false end
+        if key:match('^slot')then buttons[key]=buttons[key]==true end
         if type(buttons[key])~='boolean' then api.selection_status='Waiting for native bindings'; return nil end
     end
     return buttons
@@ -2430,33 +3593,42 @@ local function cleanup_ui()
     clean(duplicates,'hide')
     clean(wheel,'hide')
     clean(expanded,'hide')
+    clean(auxiliary.dock,'hide')
+    clean(auxiliary.closed_notices,'restore')
     clean(hidden_rows,'restore')
+    clean(auxiliary.binding_warning,'hide')
     radial.selected=nil;api.count=0
     return #errors==0,table.concat(errors,'; ')
 end
+-- Keep the assembled Lua 5.1 callback below its 60-upvalue limit.
+local factories={native_backend=native_backend,blacklist_list_visibility=blacklist_list_visibility,camera_capture=camera_capture,input_backend=input_backend,selection_controller=selection_controller,selection_feedback=selection_feedback,release_controller=release_controller,duplicate_cards=duplicate_cards,native_pointing=native_pointing,emote_wheel=emote_wheel,expanded_wheel=expanded_wheel,cooldown_dock=cooldown_dock,cooldown_closed_notices=cooldown_closed_notices,dbf_binding_warning=dbf_binding_warning}
 local function step()
     if failed then return end
     local ok,why=pcall(function()
-        options()
+        local now=backend and backend.milliseconds() or 0
+        options(now)
         if not controller then
-            backend=native_backend()
+            backend=factories.native_backend()
             backend.checkpoint=native_checkpoint
-            hidden_rows=blacklist_list_visibility(backend)
+            hidden_rows=factories.blacklist_list_visibility(backend)
             native_checkpoint('native adapter ready; menu not entered')
             controller=radial.controller(backend)
             list_controller=radial.list_controller(backend)
-            camera=camera_capture(backend)
-            input=input_backend(backend)
-            selection=selection_controller(input,selection_report)
-            sound_feedback=selection_feedback(backend,selection_report)
-            release_selection=release_controller(input,selection_report)
-            duplicates=duplicate_cards(backend)
-            pointing=native_pointing(backend)
-            wheel=emote_wheel(backend,duplicates,input)
-            expanded=expanded_wheel(backend,duplicates,input)
+            camera=factories.camera_capture(backend)
+            input=factories.input_backend(backend)
+            selection=factories.selection_controller(input,selection_report)
+            sound_feedback=factories.selection_feedback(backend,selection_report)
+            release_selection=factories.release_controller(input,selection_report)
+            duplicates=factories.duplicate_cards(backend)
+            pointing=factories.native_pointing(backend)
+            wheel=factories.emote_wheel(backend,duplicates,input)
+            expanded=factories.expanded_wheel(backend,duplicates,input)
+            if factories.cooldown_dock then auxiliary.dock=factories.cooldown_dock(backend,duplicates,input) end
+            if factories.cooldown_closed_notices then auxiliary.closed_notices=factories.cooldown_closed_notices(backend)end
+            if factories.dbf_binding_warning then auxiliary.binding_warning=factories.dbf_binding_warning() end
             initialized=true
         end
-        local now=backend.milliseconds()
+        if now==0 then now=backend.milliseconds() end
         if recovering then
             -- A missing/failed snapshot does not prove that the menu closed.
             -- Poll only; do not construct UI or replay the cancelled input.
@@ -2467,26 +3639,6 @@ local function step()
                 report('UI recovered; reopen the stratagem menu',true)
             end
             return
-        end
-        if now>=next_blacklist_sample then
-            next_blacklist_sample=now+1000
-            local sampled,available=pcall(input.mission_blacklist_kinds)
-            local menu=rawget(_G,'ModOptionsMenu')
-            if menu and menu.api==1 then
-                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
-                mission_blacklist_state.available=sampled and available or nil
-            end
-        end
-        local menu=rawget(_G,'ModOptionsMenu')
-        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or {}
-        local signature=blacklist_signature(excluded)
-        if signature~=exclusion_signature then
-            -- An applied edit cancels queued/armed input before any more pulses.
-            selection.step(nil,nil,now);release_selection.reset()
-            controller.restore();list_controller.restore();hidden_rows.restore()
-            duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
-            exclusion_signature=signature
-            blacklist_release_blocked=true
         end
         local dt=last_tick and math.max(0.001,math.min((now-last_tick)/1000,0.05)) or 1/60
         last_tick=now
@@ -2505,10 +3657,73 @@ local function step()
         if snapshot and snapshot.open and snapshot.center then
             api.centering=tostring(snapshot.geometry)..string.format(' local_center=%.2f,%.2f',snapshot.center[1],snapshot.center[2])
         end
+        if snapshot and snapshot.open and (not blacklist_menu_open or blacklist_hud~=snapshot.identity) then
+            api.invalidate_settings();options(now)
+            local refreshed_key=api.mode..':'..(api.mode==3 and api.experimental_layout or 0)
+            if refreshed_key~=active_mode then
+                controller.restore();list_controller.restore();duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
+                selection.step(nil,nil,now);release_selection.reset()
+                active_mode=refreshed_key
+                legacy=api.mode==3 and api.experimental_layout==1
+                expanded_layout=api.mode==3 and api.experimental_layout==2
+                snapshot=api.enabled and backend.snapshot() or nil
+            end
+        end
+        if not api.enabled then snapshot=nil end
         local was_open=snapshot and snapshot.open
         local decorated,why=pcall(input.decorate,snapshot)
         if not decorated then snapshot=nil; buttons=nil; api.selection_status=tostring(why) end
-        snapshot=blacklist_snapshot(snapshot,excluded)
+        -- Release open-list geometry before the closed-menu dock takes row ownership.
+        if snapshot and not snapshot.open then
+            controller.restore();list_controller.restore();hidden_rows.restore()
+        end
+        if auxiliary.closed_notices then auxiliary.closed_notices.step(api.enabled and api.hide_closed_status and snapshot or nil)end
+        if auxiliary.dock then
+            if not api.enabled or not api.cooldown_icons or not snapshot then auxiliary.dock.hide();auxiliary.dock_snapshot=nil
+            else
+                -- Native cached timer changes expose no subscription here. Bound discovery
+                -- to 4 Hz / 16 cards; animation runs only while positions are changing.
+                if snapshot.open then auxiliary.dock_snapshot=snapshot;auxiliary.next_dock_sample=now+250
+                elseif not auxiliary.next_dock_sample or now>=auxiliary.next_dock_sample or(auxiliary.dock_snapshot and auxiliary.dock_snapshot.open)then
+                    auxiliary.next_dock_sample=now+250
+                    local good,value=pcall(function()
+                        local value=backend.snapshot(true)
+                        input.decorate(value)
+                        return value
+                    end)
+                    auxiliary.dock_snapshot=good and value or nil
+                end
+                if auxiliary.dock_snapshot then auxiliary.dock.sample(auxiliary.dock_snapshot,now);auxiliary.dock.draw(now,snapshot.hud_visible) else auxiliary.dock.hide() end
+            end
+        end
+        if snapshot and snapshot.open and (not blacklist_menu_open or blacklist_hud~=snapshot.identity or now>=next_blacklist_sample) then
+            next_blacklist_sample=now+1000
+            local sampled,available=pcall(input.mission_blacklist_kinds)
+            local menu=rawget(_G,'ModOptionsMenu')
+            if menu and menu.api==1 then
+                if mission_blacklist_state.menu~=menu then mission_blacklist_state={menu=menu} end
+                mission_blacklist_state.available=sampled and available or nil
+            end
+        end
+        blacklist_menu_open=snapshot and snapshot.open or false
+        blacklist_hud=snapshot and snapshot.identity
+        local menu=rawget(_G,'ModOptionsMenu')
+        excluded=(menu and menu.api==1) and mission_blacklist_settings(menu,mission_blacklist_state,mission_blacklist_state.available) or empty_excluded
+        local signature=exclusion_signature
+        local filter_key=tostring(api.hide_blacklisted_list)..':'..tostring(api.hide_cooldown_list)
+        if excluded~=previous_excluded or auxiliary.list_filter_key~=filter_key then
+            signature=blacklist_signature(excluded)..':'..filter_key
+            previous_excluded=excluded;auxiliary.list_filter_key=filter_key
+        end
+        if signature~=exclusion_signature then
+            -- An applied edit cancels queued/armed input before any more pulses.
+            selection.step(nil,nil,now);release_selection.reset()
+            controller.restore();list_controller.restore();hidden_rows.restore()
+            duplicates.hide();wheel.hide();expanded.hide();pointing.reset();camera.release()
+            exclusion_signature=signature
+            blacklist_release_blocked=true
+        end
+        snapshot=blacklist_snapshot(snapshot,excluded,api.mode==2 and not api.hide_blacklisted_list,api.mode==2 and api.hide_cooldown_list)
         local vector,paged
         local empty=snapshot and snapshot.open and #snapshot.rows==0
         if empty then selection.step(nil,nil,now);release_selection.reset() end
@@ -2537,11 +3752,11 @@ local function step()
                 if buttons then
                     camera.capture()
                     -- Navigation edges were consumed as page changes by the wheel.
-                    buttons={next=false,previous=false,confirm=buttons.confirm}
+                    buttons.next,buttons.previous=false,false
                     local target
                     if not legacy and not expanded_layout then target=wheel.address end
                     local pointed,result=pcall(pointing.sample,context,dt,target)
-                    if pointed then vector=result;api.pointing_status=string.format('x=%.3f y=%.3f',vector[1],vector[2])
+                    if pointed then vector=result;controller_input=result.controller==true;api.controller_input=controller_input;api.pointing_status=string.format('x=%.3f y=%.3f',vector[1],vector[2])
                     else api.pointing_status=tostring(result);pointing.reset();camera.release();buttons=nil end
                 else pointing.reset();camera.release() end
             else
@@ -2555,14 +3770,39 @@ local function step()
         if snapshot and api.mode==2 then snapshot.list_order=true end
         if was_open and not buttons then api.last_block=api.selection_status end
         selection.interval_ms=input_interval_ms
+        selection.randomize_delay=randomize_input_delay
+        release_selection.randomize_delay=randomize_input_delay
+        release_selection.interval_ms=input_interval_ms
+        local previous=auxiliary.shortcut_buttons or {}
+        for slot=1,4 do
+            local key='slot'..slot;local down=buttons and buttons[key]==true
+            if down and previous[key]==false and api.enabled and snapshot and not selection.job and not release_selection.job then
+                local mcm=rawget(_G,'DBFMCM')
+                if not(mcm and type(mcm.is_open)=='function'and mcm.is_open())then release_selection.shortcut(slot,snapshot,now)end
+            end
+            if buttons then previous[key]=down else previous[key]=nil end
+        end
+        auxiliary.shortcut_buttons=previous
         if not release_selection.job then selection.step(snapshot,buttons,now,vector) end
         release_selection.interval_ms=input_interval_ms
-        release_selection.step(select_on_release and not blacklist_release_blocked and api.enabled and api.mode~=2 and buttons~=nil,
+        release_selection.step(((select_on_release or (controller_release_auto and controller_input)) and api.mode~=2 or release_selection.job and release_selection.job.shortcut) and not blacklist_release_blocked and api.enabled and buttons~=nil,
             snapshot,selection.selected,now,selection.job~=nil or (buttons and buttons.confirm))
         if not was_open then blacklist_release_blocked=false end
         if release_selection.job then selection.selected=release_selection.job.address end
         sound_feedback.step(sounds_enabled and api.enabled and buttons~=nil,snapshot,selection.selected,
             release_selection.job or selection.job,now,api.mode==2,paged)
+        if auxiliary.binding_warning then
+            local required={}
+            if api.mode==2 then required={'next','previous','confirm'}
+            else
+                if not (select_on_release or (controller_release_auto and controller_input)) then required={'confirm'} end
+                if api.mode==1 and wheel.pages and wheel.pages>1 then
+                    required[#required+1]='next';required[#required+1]='previous'
+                end
+            end
+            auxiliary.binding_warning.step(api.enabled and snapshot~=nil and snapshot.hud_visible~=false,rawget(_G,'ModBindingsMenu'),binding_ids,required,now)
+            api.binding_warning=auxiliary.binding_warning.status
+        end
         radial.selected=selection.selected
         if buttons then api.selection_status=selection.status end
         if was_open then
@@ -2599,8 +3839,7 @@ local function step()
         api.count=display.count
         api.observation=display.observation
         if snapshot and snapshot.open then recovery_attempts=0 end
-        frames=frames+1
-        report(display.status,(api.count>0 and frames%120==0) or api.last_selection~=api.reported_selection)
+        report(display.status,api.last_selection~=api.reported_selection)
         api.reported_selection=api.last_selection
     end)
     if not ok then
@@ -2618,8 +3857,30 @@ local function step()
 end
 local foliage_compat
 local previous=rawget(_G,'update')
+function api.shutdown()
+    api.enabled=false
+    local clean,why=cleanup_ui()
+    if not clean then return false,why end
+    if hud_compat then local ok,problem=hud_compat.close();if not ok then return false,problem end end
+    for _,object in ipairs({wheel or false,expanded or false,auxiliary.dock or false,duplicates or false}) do
+        if object and object.close then
+            local ok,problem=object.close();if ok==false then return false,problem end
+        end
+    end
+    if mission_blacklist_state.native then mission_blacklist_state.native.unregister();mission_blacklist_state.native=nil end
+    local broker=rawget(_G,'DBFMenuSubscriptions') or {}
+    for _,rows in pairs(broker) do for _,record in pairs(rows) do
+        if record.owner==api then record.fn,record.owner=nil,nil end
+    end end
+    auxiliary.stopped=true
+    if rawget(_G,'update')==auxiliary.wrapper then rawset(_G,'update',previous) end
+    if rawget(_G,'DiversBestFriend')==api then rawset(_G,'DiversBestFriend',nil) end
+    if rawget(_G,'NativeStratagemRadial')==api then rawset(_G,'NativeStratagemRadial',nil) end
+    return true
+end
 local function after(...) step(); return ... end
 update=function(...)
+    if auxiliary.stopped then if type(previous)=='function' then return previous(...) end;return end
     if not foliage_compat and foliage_compatibility and backend then
         foliage_compat=foliage_compatibility(backend.read,function(at)
             local s=backend.read(at,8)
@@ -2640,4 +3901,29 @@ update=function(...)
     if type(previous)=='function' then return after(previous(...)) end
     return after()
 end
+auxiliary.wrapper=update
 report('loaded; awaiting native HUD')
+
+return {api=api,MOD_NAME=MOD_NAME,controller=controller,failed=failed,last_status=last_status,initialized=initialized,recovering=recovering,hud_compat=hud_compat,recovery_attempts=recovery_attempts,backend=backend,selection=selection,input=input,duplicates=duplicates,pointing=pointing,last_tick=last_tick,list_controller=list_controller,camera=camera,active_mode=active_mode,auxiliary=auxiliary,wheel=wheel,expanded=expanded,release_selection=release_selection,excluded=excluded,exclusion_signature=exclusion_signature,hidden_rows=hidden_rows,blacklist_release_blocked=blacklist_release_blocked,mission_blacklist_state=mission_blacklist_state,next_blacklist_sample=next_blacklist_sample,blacklist_menu_open=blacklist_menu_open,blacklist_hud=blacklist_hud,previous_excluded=previous_excluded,empty_excluded=empty_excluded,select_on_release=select_on_release,controller_release_auto=controller_release_auto,controller_input=controller_input,input_interval_ms=input_interval_ms,randomize_input_delay=randomize_input_delay,binding_owner=binding_owner,selection_events=selection_events,native_events=native_events,native_seen=native_seen,native_checkpoint=native_checkpoint,binding_ids=binding_ids,selection_report=selection_report,migration_checked=migration_checked,migrate_expanded=migrate_expanded,mode_names=mode_names,report=report,settings_owner=settings_owner,settings_state=settings_state,sound_feedback=sound_feedback,sounds_enabled=sounds_enabled,options=options,bindings=bindings,transient_ui_errors=transient_ui_errors,transient_ui_error=transient_ui_error,cleanup_ui=cleanup_ui,factories=factories,step=step,foliage_compat=foliage_compat,previous=previous,after=after}
+]=],
+}
+local order={"src/layout.lua","src/guards.lua","src/native.lua","src/menu_latch.lua","src/mission_blacklist.lua","src/input.lua","src/pointing.lua","src/camera.lua","src/icon_colors.lua","src/duplicate.lua","src/emote.lua","src/expanded.lua","src/cooldown_dock.lua","src/binding_warning.lua","src/binding_defaults.lua","src/selection.lua","src/release.lua","src/blacklist.lua","src/settings.lua","src/feedback.lua","src/hud_plus.lua","src/foliage_compat.lua","src/entry.lua"
+}
+local scope=setmetatable({}, {__index=_G})
+local cache={}
+local function require_module(name)
+    if cache[name] then return cache[name] end
+    local source=assert(sources[name],'ASS module missing: '..tostring(name))
+    local chunk=assert(loadstring(source,'@DiversBestFriend/'..name))
+    setfenv(chunk,scope)
+    local exports=chunk()
+    assert(type(exports)=='table','ASS module must export a table: '..name)
+    cache[name]=exports
+    sources[name]=nil
+    return exports
+end
+for _,name in ipairs(order) do
+    for key,value in pairs(require_module(name)) do scope[key]=value end
+end
+assert(type(scope.update)=='function','ASS startup callback unavailable')
+rawset(_G,'update',scope.update)

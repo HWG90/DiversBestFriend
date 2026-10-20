@@ -1,10 +1,18 @@
--- HUD+ 0.2.8 owns a second list and hides the vanilla group used by ASS.
--- Interpose at its feature boundary; never edit its settings or native memory.
+-- Recognize the selection ownership contract, never a HUD+ version string.
+-- Future presentation changes may alter observe/put without changing handoff.
 local function hud_plus_compat(active)
     local self={status='HUD+ not detected',scans=0}
-    local top,runtimes,seen_programs=nil,{},{}
-    local pins={prepare='0f6d0b5c',observe='6eec2b6b',put='6be59f1a',
-        vanilla='c5fd46ff',drop='057f16e2'}
+    local top,runtimes,seen_programs,seen_features=nil,{},{},{}
+    local installed=setmetatable({}, {__mode='k'})
+    local bindings={}
+    -- Only owner-provided lifecycle methods perform cleanup. Each contract
+    -- fingerprints its Lua helper closures too, including held-input release.
+    local lifecycle={prepare='0f6d0b5c',vanilla='c5fd46ff',drop='057f16e2',close='8b14074f'}
+    local picker_contracts={
+        {name='immediate-picker',methods={reset='594d0655'},absent={'frame','leave'}},
+        {name='paced-picker',methods={reset='4dcd1a05',frame='ae220d38',leave='27a70348'},
+            helpers={reset={start_cell='f0e31473'},frame={unblock_aim='789b2088'}}},
+    }
     local function member(t,k)
         if type(t)~='table' then return nil end
         local v=rawget(t,k)
@@ -15,37 +23,112 @@ local function hud_plus_compat(active)
     end
     local function fingerprint(fn)
         if type(fn)~='function' then return nil end
-        local ok,bytes=pcall(string.dump,fn,true) -- Strip chunk path/debug data.
+        local ok,bytes=pcall(string.dump,fn,true)
         if not ok then return nil end
         local a,b=1,0
         for i=1,#bytes do a=(a+bytes:byte(i))%65521;b=(b+a)%65521 end
         return string.format('%08x',b*65536+a)
     end
+    local function helpers_match(fn,expected)
+        local found={}
+        if not debug or type(debug.getupvalue)~='function' then return false end
+        for i=1,64 do
+            local name,value=debug.getupvalue(fn,i)
+            if not name then break end
+            if type(value)=='function' then
+                if not expected or expected[name]~=fingerprint(value) then return false end
+                found[name]=true
+            end
+        end
+        for name in pairs(expected or {}) do if not found[name] then return false end end
+        return true
+    end
+    local function picker_contract(pick)
+        if pick==nil then return {name='no-picker'} end
+        if type(pick)~='table' then return end
+        for _,contract in ipairs(picker_contracts) do
+            local matches=true
+            for method,pin in pairs(contract.methods) do
+                local fn=member(pick,method)
+                if fingerprint(fn)~=pin or not helpers_match(fn,contract.helpers and contract.helpers[method]) then matches=false;break end
+            end
+            for _,method in ipairs(contract.absent or {}) do if member(pick,method)~=nil then matches=false end end
+            if matches then return contract end
+        end
+    end
     local function bind(program)
         local feature=member(member(program,'world_hud'),'stratagem')
         if not feature then return end
-        for name,pin in pairs(pins) do
-            if fingerprint(member(feature,name))~=pin then
-                self.status='HUD+ stratagem adapter unsupported';return
-            end
+        if installed[feature] then self.status=installed[feature];return end
+        local function unsupported(reason)
+            self.status='HUD+ stratagem adapter unsupported: '..reason
         end
-        if type(member(feature,'inputs'))~='table' or type(member(feature,'list'))~='table' then return end
+        for method,pin in pairs(lifecycle) do
+            local fn=member(feature,method)
+            if fingerprint(fn)~=pin or not helpers_match(fn) then unsupported('lifecycle '..method);return end
+        end
+        local pick=member(feature,'pick')
+        local contract=picker_contract(pick)
+        if not contract then unsupported('picker cleanup contract');return end
+        for _,method in ipairs({'observe','put'}) do
+            if type(member(feature,method))~='function' then unsupported('missing '..method);return end
+        end
+        local inputs=member(feature,'inputs')
+        if type(inputs)~='table' or type(member(inputs,'observe'))~='function'
+            or type(member(feature,'list'))~='table' or type(member(feature,'card'))~='table' then
+            unsupported('selection feature shape');return
+        end
+        local originals={prepare=rawget(feature,'prepare'),observe=rawget(feature,'observe'),put=rawget(feature,'put')}
         local prepare,observe,put=feature.prepare,feature.observe,feature.put
-        -- Instance methods only: no shared class mutation, per-frame discovery,
-        -- option saves, or repeated opacity writes. HUD+ restores opacity and
-        -- destroys its owned duplicate through its normal disabled path.
+        local vanilla,drop=feature.vanilla,feature.drop
+        local reset=pick and member(pick,'reset')
+        local frame=pick and member(pick,'frame')
+        local yielding=false
+        local function takeover(owner)
+            if yielding then return end
+            -- reset restores a held menu trigger; frame releases consumed aim.
+            -- Capture the verified instance methods, not mutable global classes.
+            if reset then reset(pick) end
+            if frame then frame(pick,false) end
+            vanilla(owner,false);drop(owner);owner.segment=false
+            yielding=true
+        end
         feature.prepare=function(owner,enabled,...)
-            if active() then enabled=false end
+            if active() then takeover(owner);enabled=false else yielding=false end
             return prepare(owner,enabled,...)
         end
-        feature.observe=function(owner,enabled,...)
-            if active() then enabled=false end
-            return observe(owner,enabled,...)
+        feature.observe=function(owner,enabled,world,player,players,arrow,cell,...)
+            if not active() then
+                yielding=false
+                return observe(owner,enabled,world,player,players,arrow,cell,...)
+            end
+            takeover(owner)
+            -- Preserve the extension's shared arrow input, while keeping the
+            -- competing list/picker idle. No original observe/drop loop.
+            if arrow then inputs:observe(owner.panel,world,player,players,cell) end
+            owner.world=world
+            return inputs.showing
         end
         feature.put=function(owner,...)
-            if not active() then return put(owner,...) end
+            if not active() then yielding=false;return put(owner,...) end
+            takeover(owner)
         end
-        self.status='HUD+ 0.2.8 list/picker yield to ASS while enabled'
+        bindings[#bindings+1]={feature=feature,originals=originals,wrappers={prepare=feature.prepare,observe=feature.observe,put=feature.put}}
+        self.contract=contract.name
+        self.status='HUD+ '..contract.name..' list/picker yield to ASS while enabled'
+        installed[feature]=self.status
+    end
+    function self.close()
+        for _,binding in ipairs(bindings) do
+            for name,fn in pairs(binding.wrappers) do
+                if rawget(binding.feature,name)~=fn then return false,'HUD+ handoff was replaced by another owner' end
+            end
+        end
+        for _,binding in ipairs(bindings) do
+            for name in pairs(binding.wrappers) do rawset(binding.feature,name,binding.originals[name]) end
+        end
+        bindings={}
+        return true
     end
     function self.refresh(update)
         if update~=top and self.scans<8 and debug and debug.getupvalue then
@@ -72,8 +155,9 @@ local function hud_plus_compat(active)
         end
         for _,runtime in ipairs(runtimes) do
             local program=rawget(runtime,'program')
-            if program and seen_programs[runtime]~=program then
-                seen_programs[runtime]=program
+            local feature=member(member(program,'world_hud'),'stratagem')
+            if program and (seen_programs[runtime]~=program or seen_features[runtime]~=feature) then
+                seen_programs[runtime]=program;seen_features[runtime]=feature
                 bind(program)
             end
         end

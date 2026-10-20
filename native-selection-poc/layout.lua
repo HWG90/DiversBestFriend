@@ -1,5 +1,5 @@
 -- Pure layout/controller. Native widgets retain their own content and input.
-local radial = {vertical_offset=0,full_color=true,wedge_darkness=70,wedge_opacity=75}
+local radial = {vertical_offset=0,full_color=true,wedge_darkness=70,wedge_opacity=50}
 -- Matrix columns follow the native widget transform at +0x64. Resolve the
 -- viewport midpoint in list-local coordinates, then subtract the card anchor.
 function radial.center(viewport,list)
@@ -13,36 +13,98 @@ function radial.center(viewport,list)
             (dy*m[1]-dx*m[2])/determinant-list.height/2}
 end
 
--- List mode uses the original native list and only scales the selected row.
+-- List mode highlights the selected native row and dims the other rows.
 -- Its positions, arrows and parent hierarchy remain under native control.
 function radial.list_controller(backend)
     local self={count=0,status='native menu closed'}
     local saved
-    local function same(a,b) return a and b and a[1]==b[1] and a[2]==b[2] end
-    function self.restore()
-        if saved and backend.valid(saved.identity) then
-            if same(backend.get(saved.address,'scale'),saved.applied) then
-                backend.set(saved.address,'scale',saved.before)
-            end
+    local dimmed,dim_identity={},nil
+    local style_key
+    local function same(a,b)
+        if not a or not b or #a~=#b then return false end
+        for i=1,#a do if a[i]~=b[i]then return false end end
+        return true
+    end
+    local function get(address)
+        if backend.get_text_style then return backend.get_text_style(address)end
+        return {assert(backend.get_opacity(address))}
+    end
+    local function put(address,value)
+        if backend.set_text_style then backend.set_text_style(address,value)
+        else backend.set_opacity(address,value[1])end
+    end
+    local function blocked(row)return row.timer_kind~=nil or row.unavailable==true end
+    local function owned_style(current,applied)
+        if not current or not applied or #current~=#applied then return false end
+        if #current~=4 then return same(current,applied)end
+        for i=2,4 do if current[i]~=applied[i]then return false end end
+        return true
+    end
+    local function restore_style(address,item)
+        local current=get(address)
+        if owned_style(current,item.applied)then
+            local target={unpack(item.before)}
+            if #target==4 then target[1]=current[1]end
+            put(address,target)
         end
-        saved=nil;self.count=0
+    end
+    function self.restore()
+        if saved and backend.valid(saved.identity) and same(backend.get(saved.address,'scale'),saved.applied)then
+            backend.set(saved.address,'scale',saved.before)
+        end
+        if dim_identity and backend.valid(dim_identity)then
+            for address,item in pairs(dimmed)do restore_style(address,item)end
+        end
+        dimmed,dim_identity={},nil;saved=nil;style_key=nil;self.count=0
     end
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then
-            self.restore();self.status=enabled and 'native menu closed' or 'disabled';return
+            self.restore();self.status=enabled and 'native menu closed'or'disabled';return
         end
         local selected
-        for _,row in ipairs(snapshot.rows) do if row.address==radial.selected then selected=row.address end end
-        if saved and (saved.identity~=snapshot.identity or saved.address~=selected) then self.restore() end
+        for _,row in ipairs(snapshot.rows)do if row.address==radial.selected and not row.blacklisted and not blocked(row)then selected=row.address end end
+        if (saved and(saved.identity~=snapshot.identity or saved.address~=selected))or
+            (dim_identity and dim_identity~=snapshot.identity)then self.restore()end
+        dim_identity=snapshot.identity
+        local parts={tostring(selected),tostring(snapshot.identity),tostring(radial.dim_unselected)}
+        for _,row in ipairs(snapshot.native_rows or snapshot.rows)do parts[#parts+1]=row.address..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable)end
+        local next_key=table.concat(parts,'|')
+        if style_key==next_key then return end
+        style_key=next_key
+        local active={}
+        for _,row in ipairs(snapshot.rows)do
+            if radial.dim_unselected~=false and ((selected and row.address~=selected)or row.blacklisted)and not blocked(row)then
+                local targets=backend.opacity_targets and backend.opacity_targets(row.address)or{}
+                for index,address in ipairs(targets)do
+                    active[address]=true
+                    local current=get(address);local item=dimmed[address]
+                    if not item then item={before=current};dimmed[address]=item
+                    elseif not owned_style(current,item.applied)then item.before=current end
+                    if #current==4 then item.before[1]=current[1]end
+                    local target={unpack(item.before)}
+                    if #target==4 then
+                        -- Preserve native fade/visibility alpha, font, shadow and layout.
+                        -- Tint only the text containers, never the blur or card art.
+                        for channel=2,4 do target[channel]=item.before[channel]*0.35 end
+                    else target[1]=item.before[1]*0.35 end
+                    if not same(current,target)then put(address,target)end
+                    item.applied=get(address)
+                end
+            end
+        end
+        for address,item in pairs(dimmed)do if not active[address]then
+            restore_style(address,item)
+            dimmed[address]=nil
+        end end
         if selected then
             local current=assert(backend.get(selected,'scale'),'List row scale unavailable')
             if not saved then saved={identity=snapshot.identity,address=selected,before=current}
-            elseif not same(current,saved.applied) then saved.before=current end
-            backend.set(selected,'scale',{saved.before[1]*1.10,saved.before[2]*1.10})
+            elseif not same(current,saved.applied)then saved.before=current end
+            local target={saved.before[1]*1.10,saved.before[2]*1.10}
+            if not same(current,target)then backend.set(selected,'scale',target)end
             saved.applied=assert(backend.get(selected,'scale'))
         end
-        self.count=#snapshot.rows
-        self.status='native list selection ('..self.count..' cards)'
+        self.count=#snapshot.rows;self.status='native list selection ('..self.count..' cards)'
     end
     return self
 end

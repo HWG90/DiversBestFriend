@@ -8,15 +8,13 @@
 
 Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
-[R45 release notes](docs/RELEASE-r45.md) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16658) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+[Homecoming release notes](docs/RELEASE-r46.md) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current release: R45 - Plays Nicely With Others
+## Current release: R46 — The Homecoming Update
 
-R45 adds compatibility with HUD Plus 0.2.8 and Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0, fixes exhausted single-use entries such as Shredder, and resolves the Foliage Pass-Through donor conflict that blocked some custom barrages and launchers. These compatibility mods are optional; ASS works without them and with foliage on or off.
+Cooldown dock and compact overview, native game-font timers, Wedge Wheel customization, four unbound gameplay hotkeys, and optional randomized input pacing. Existing saved preferences and bindings are retained.
 
-Download the **BSL**, **MDL**, or **LLL** package from [R45 releases](https://github.com/HWG90/DiversBestFriend/releases/tag/r45). Install one ASS variant, retain the required menu/binding dependencies, and restart. The LLL compatibility predecessor was reported working in-game; MDL has isolated adapter coverage. See [detailed R45 changes and validation](docs/RELEASE-r45.md).
-
-Build all three packages with `py -3 scripts/build_release.py`. Outputs are written to `dist/releases/r45`, with SHA-256 checksums. Settings and binding IDs are retained. R42's bounded transient HUD recovery is included.
+See [R46 release notes](docs/RELEASE-r46.md). Build all three loader packages with `py -3 scripts/build_release.py`; outputs and checksums are in `dist/releases/r46`. Choose one loader variant from the R46 release.
 
 ## Selection modes
 

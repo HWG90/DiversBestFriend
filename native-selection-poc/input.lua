@@ -9,6 +9,9 @@ local function input_interval(ms,default)
     if type(ms)~='number' or ms~=ms or ms<0 or ms>250 then return default end
     return ms
 end
+local function usage_interval(owner)
+    return owner.randomize_delay and math.random(70,240)or input_interval(owner.interval_ms,70)
+end
 local function input_backend(b)
     local base=b.base
     local ffi=require('ffi')
@@ -184,6 +187,12 @@ local function input_backend(b)
         for a=1,4 do assert(read(c.actions+32*a,1)=='\0','Manual direction input detected') end
     end
     local out={presentation=presentation,view_context=function() return context(false) end}
+    function out.display_codes(rows)
+        local c=context(false,true)
+        local result={}
+        for i,row in ipairs(rows) do result[i]=code(row.kind,c) end
+        return result
+    end
     function out.mission_blacklist_kinds()
         local c=context(false,true)
         local count=num(c.payload+0x788)
@@ -202,7 +211,7 @@ local function input_backend(b)
         return result
     end
     function out.decorate(snapshot)
-        if not snapshot or not snapshot.open then return end
+        if not snapshot or (not snapshot.open and not snapshot.dock_rows) then return end
         -- Highlighting only needs the same peer-owned list used by the HUD.
         -- Activation-specific guards belong in begin/advance, not navigation.
         local peer=read(ptr(base+0x347cef0)+0xb398,8)
@@ -224,7 +233,7 @@ local function input_backend(b)
             if row.entry and row.entry>=0 and row.entry<n then row.kind=num(payload+0x188+row.entry*0x30)
             else row.kind=nil end
             row.timer_seconds,row.timer_kind,row.unavailable=nil,nil,nil
-            if selectable_kind(row.kind) then decorate_timer(row) end
+            if selectable_kind(row.kind) then decorate_timer(row);row.dock_payload=payload end
         end
     end
     function out.begin(kind)
@@ -285,11 +294,11 @@ local function input_backend(b)
         c.unobstructed=num(ui+0x429c+20)==0
         return c
     end
-    function out.begin_release(kind,armed)
+    local function begin_latched(kind,armed,shortcut)
         local c=out.release_state()
         assert(c.identity==armed.identity and c.component==armed.component and c.hud==armed.hud,
             'Release owner changed')
-        assert(c.hold and not c.down and c.unobstructed,'Not an unobstructed Hold release')
+        assert((shortcut or c.hold)and not c.down and c.unobstructed,'Native menu input is held or obstructed')
         assert(num(c.component)==0 and num(c.component+0x14)==0 and num(c.component+0x2c)==0,
             'Manual input or completed selection cancels release')
         idle_actions(c)
@@ -340,6 +349,17 @@ local function input_backend(b)
         result.reopened=reopened
         result.latch=lease
         return result
+    end
+    function out.begin_release(kind,armed)return begin_latched(kind,armed,false)end
+    function out.begin_shortcut(slot)
+        assert(type(slot)=='number'and slot%1==0 and slot>=1 and slot<=4,'Invalid equipped slot')
+        local c=out.release_state()
+        local n=num(c.payload+0x788);assert(n>=8 and n<=32,'Equipped stratagem slots unavailable')
+        -- Native payload entries 0..3 are the shared mission slots; 4..7
+        -- retain the four equipped slots independently of display sorting.
+        local kind=num(c.payload+0x188+(slot+3)*0x30)
+        assert(selectable_kind(kind),'Equipped slot is empty')
+        return begin_latched(kind,c,true)
     end
     function out.hold_release(job)
         local c=out.release_state()

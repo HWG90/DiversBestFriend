@@ -10,6 +10,17 @@ local function release_controller(input,report)
         end
         self.job=nil;armed=nil;blocked=nil
     end
+    function self.shortcut(slot,snapshot,now)
+        if self.job or not snapshot then return false end
+        local ok,job=pcall(input.begin_shortcut,slot)
+        if not ok then report('Shortcut not started: '..tostring(job));return false end
+        local interval=usage_interval(self)
+        job.shortcut=true;job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity
+        job.deadline=now+math.max(3000,#job.code*interval+1500)
+        self.job=job;armed=nil;blocked=true
+        report('Equipped slot '..slot..'; interval='..interval..'ms')
+        return true
+    end
     function self.step(enabled,snapshot,selected,now,explicit)
         if not enabled or not snapshot then self.status='Disabled or no valid radial snapshot';self.reset();return end
         if self.job then
@@ -67,7 +78,7 @@ local function release_controller(input,report)
                 and state.hud==previous.hud then
                 local called,job=pcall(input.begin_release,previous.kind,previous)
                 if called then
-                    local interval=input_interval(self.interval_ms,70)
+                    local interval=usage_interval(self)
                     job.interval_ms=interval;job.next_at=now;job.snapshot_identity=snapshot.identity;job.address=previous.address
                     job.deadline=now+math.max(3000,#job.code*interval+1500)
                     self.job=job

@@ -136,6 +136,10 @@ assert(not cards.rows[1].unavailable,'ready transition clears exhausted state')
 local function reset() num(component,0);num(component+0x14,0);num(component+0x2c,0) end
 for _,c in ipairs(cases) do
     reset(); expected=c
+    local before_display=writes
+    local display=input.display_codes({{kind=c[1]}})[1]
+    assert(#display==#c[2] and writes==before_display,'display reads codes without input writes')
+    for i,d in ipairs(display)do assert(d==c[2][i],'display follows validated selection code')end
     local job=input.begin(c[1]);assert(job.component==component)
     for i=1,#c[2] do
         local done=input.advance(job);assert(done==(i==#c[2]))
@@ -373,3 +377,19 @@ if custom_fixture then
 else
     print('Compendium owner fixture skipped: set ASS_CUSTOM_CODES_FIXTURE')
 end
+
+-- Direct shortcuts share the proven native latch and exact equipped indices.
+num(payload+0x788,8);num(payload+0x188+7*0x30,cases[4][1])
+for slot=1,4 do
+    release_fixture();expected=slot==4 and cases[4]or cases[slot+4]
+    local direct=input.begin_shortcut(slot)
+    assert(direct.kind==expected[1],'shortcut must use its equipped payload slot')
+    input.hold_release(direct)
+    for i=1,#direct.code do input.advance_release(direct)end
+    num(avatar+0xfd8,0);put(hud+0x395100+0x38769,'\0')
+    assert(input.release_complete(direct));input.end_release(direct,false)
+    assert(read(mapping_table+8,20)==hold_mapping,'shortcut restores original menu mapping')
+end
+assert(not pcall(input.begin_shortcut,0)and not pcall(input.begin_shortcut,5))
+num(payload+0x788,7)
+print('Four direct hotkeys: equipped slot mapping, native open/code/completion, mapping cleanup and invalid-slot refusal passed')

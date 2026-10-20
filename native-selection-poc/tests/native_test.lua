@@ -43,6 +43,10 @@ for i=0,15 do
     word(row+0x3748,i);ptr(row+0xf0,list);put(row+0x36f0,i<4 and '\1' or '\0')
     pair(row+12,270,68);pair(row+20,1,1);pair(row+28,0.8,0.8)
     pair(row+0x3738,20,-i*68);pair(row+0x3740,0,-i*68)
+    for j=0,9 do ptr(row+0x2980+j*0x158+0xf0,row+0x2870)end
+    ptr(row+0x1f18+0xf0,row);ptr(row+0x24a8+0xf0,row);ptr(row+0x2870+0xf0,row)
+    ptr(row+0x2028+0xf0,row+0x1f18);ptr(row+0x490+0xf0,row);ptr(row+0x25b8+0xf0,row+0x24a8)
+    pair(row+0x7c0+0x24,64,64);matrix(row+0x7c0,2,0,0,2,100,800-i*68)
 end
 local kernel={GetModuleHandleA=function() return ffi.cast('void *',base) end,
     GetCurrentProcess=function() return ffi.cast('void *',1) end}
@@ -62,6 +66,7 @@ local offsets={[0x14476a0]=4,[0x1447160]=12,[0x1447ed0]=20,[0x144f160]=44,[0x144
 local proxy=setmetatable({}, {__index=ffi})
 proxy.load=function(name) assert(name=='kernel32' or name=='user32');return kernel end
 proxy.cast=function(kind,value)
+    if kind=='void (*)(uintptr_t)' and value==base+0x144dd70 then return function(at) ptr(at+0xf0,0) end end
     if kind=='void (*)(uintptr_t)' then assert(value==base+0xa900d0 or value==base+0xa8fb50);return function() error('must not invoke input during drawing') end end
     if kind=='void (*)(uintptr_t, NSR_vec2)' then
         local offset=assert(offsets[value-base])
@@ -75,7 +80,10 @@ setfenv(chunk,env)
 local make=chunk()
 local backend=make()
 local snapshot=assert(backend.snapshot())
+local labels=backend.opacity_targets(list+0x110)
+assert(#labels==3 and labels[1]==list+0x110+0x1f18 and labels[2]==list+0x110+0x24a8 and labels[3]==list+0x110+0x2870,'only text containers dim; blur and tile stay untouched')
 assert(snapshot.panel==panel and snapshot.list==list and #snapshot.rows==4)
+assert(snapshot.rows[1].dock_source==list+0x110+0x7c0 and snapshot.rows[1].dock_from==nil,'fade uses native tile content without flight-origin reads')
 assert(math.abs((snapshot.center[1]+355/2)*1.25-710-960)<0.001,'native snapshot screen center')
 assert(math.abs((snapshot.center[2]+544/2)*1.25+200-540)<0.001,'native snapshot vertical center uses Z')
 for _,height in ipairs({1080,1440,1821}) do
@@ -188,4 +196,39 @@ assert(backend.snapshot()==nil,'reject invalid card dimensions')
 put(base+guards[1].rva,'\0')
 local ok,why=pcall(make)
 assert(not ok and tostring(why):find('Native signature changed',1,true),'reject changed native entry point')
+-- Resource descriptors may be packed/unaligned even though widgets are aligned.
+ptr(base+0x37c5478,0x40000004);ptr(0x40000004+24,0x12345678)
+ptr(base+0x3772268,0x87654321);ptr(base+0x3772ee8,0xabcdef01)
+local checked=0
+local font=backend.dock_font({IdString64={from_hex=function(s)return{temporary=s}end},Application={can_get=function(_,id)
+ assert(type(id)=='table'and id.temporary,'resource lookup needs a native handle');checked=checked+1;return true
+end}})
+assert(font and font.material=='0000000012345678','packed game font material descriptor must be accepted')
+assert(checked==3 and type(font.font)=='string'and type(font.atlas)=='string'and type(font.material)=='string','cached descriptor must contain only durable HEX strings')
+pair(list+0x110+12,270,68)
+local stamina=root+0x24e340+0x5778;local bar=stamina+0x110
+ptr(stamina+0xf0,root+0x820);ptr(bar+0xf0,stamina)
+pair(bar+0x24,230,10);matrix(bar,1,0,0,1,845,80);matrix(root+0x258,1,0,0,1,0,0)
+local anchored=assert(backend.snapshot());assert(anchored.dock_anchor=='native stamina bar'and anchored.dock_y==120,'icon bottom sits six native UI units above actual stamina bar top')
+assert(anchored.dock_below_y==58,'small secondary icons sit six HUD units below actual stamina bar bottom')
 print('Native radial adapter: snapshot, ABI vectors, local scale, hierarchy, mode, dimensions, and signatures passed')
+
+word(state+0xac21c,4);word(base+136,1790161983)
+local owned=0x60000000;local parent=root+0x258
+ptr(owned+0xf0,parent)
+assert(backend.release_owned_ui(nil,owned,root,parent,{}))
+assert(blob(owned+0xf0,8)==string.rep('\0',8),'owned root detached')
+ptr(owned+0xf0,parent)
+assert(not backend.release_owned_ui(nil,owned,root+8,parent,{}),'stale linked root refuses reload')
+ptr(owned+0xf0,0)
+assert(backend.release_owned_ui(nil,owned,root+8,parent,{}),'detached storage can be released after owner loss')
+print('Native teardown: exact owner release, parent detach, stale-link refusal and detached generation passed')
+
+word(root+0x258,16);word(root+0x820,0)
+assert(backend.snapshot(true).hud_visible==false,'hidden gameplay HUD suppresses overlays')
+word(root+0x820,16);word(root+0x258,0)
+assert(backend.snapshot(true).hud_visible==false,'hidden viewport suppresses overlays')
+word(root+0x258,16)
+assert(backend.snapshot(true).hud_visible==true,'HUD restored')
+put(panel+0x38769,'\0');assert(backend.snapshot().hud_visible==true,'closed lightweight snapshot retains native visibility')
+word(root+0x820,0);assert(backend.snapshot().hud_visible==false)

@@ -57,12 +57,11 @@ local function duplicate_cards(b)
         if address and b.valid(identity) and b.pointer(address+0xf0)==parent then visible(address,0) end
     end
     function self.close()
-        if address and b.valid(identity) and b.pointer(address+0xf0)==parent then
-            -- Native release recursively releases children and unlinks this root.
-            release(address)
-            assert(zero_pointer(address+0xf0),'Radial root did not detach')
-            storage,address,identity,parent=nil,nil,nil,nil
-        else self.hide() end
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
     end
     local function prepare(snapshot,context,dt,resource_context)
         if not snapshot or not snapshot.open then self.hide();return snapshot end

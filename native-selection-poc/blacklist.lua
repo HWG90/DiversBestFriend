@@ -13,13 +13,19 @@ local function blacklist_signature(excluded)
     for kind=1,149 do if excluded[kind] then ids[#ids+1]=kind end end
     return table.concat(ids,',')
 end
-local function blacklist_snapshot(snapshot,excluded)
+local function blacklist_snapshot(snapshot,excluded,keep_visible,hide_cooldown)
     if not snapshot or not snapshot.open then return snapshot end
     local filtered={}
     for key,value in pairs(snapshot) do filtered[key]=value end
     filtered.rows,filtered.excluded_rows={},{}
+    filtered.native_rows=snapshot.rows
     for _,row in ipairs(snapshot.rows) do
-        local target=excluded[row.kind] and filtered.excluded_rows or filtered.rows
+        if keep_visible and excluded[row.kind]then
+            local copy={};for key,value in pairs(row)do copy[key]=value end
+            copy.blacklisted=true;row=copy
+        end
+        local hidden=(excluded[row.kind]and not keep_visible)or(hide_cooldown and row.timer_kind=='cooldown')
+        local target=hidden and filtered.excluded_rows or filtered.rows
         target[#target+1]=row
     end
     return filtered
@@ -71,16 +77,17 @@ local function blacklist_list_visibility(b)
             for _,row in ipairs(snapshot.excluded_rows) do
                 excluded[row.address]=true;add(row.address,'scale',{0,0})
             end
-            local slot=0
+            -- Native rows can be inserted/reordered during a transition. Their
+            -- old endpoints may temporarily coincide; never reuse those as a
+            -- set of compacted slots. Construct unique slots from row height.
+            local y=ordered[1]and ordered[1].target[2]or 0
             for _,item in ipairs(ordered) do
                 if not excluded[item.row.address] then
-                    slot=slot+1
-                    local y=ordered[slot].target[2]
-                    if item.target[2]~=y then
-                        add(item.row.address,'position',{item.position[1],y})
-                        add(item.row.address,'animation_a',{item.animation_a[1],y})
-                        add(item.row.address,'animation_b',{item.target[1],y})
-                    end
+                    add(item.row.address,'position',{item.position[1],y})
+                    add(item.row.address,'animation_a',{item.animation_a[1],y})
+                    add(item.row.address,'animation_b',{item.target[1],y})
+                    local scale=b.get(item.row.address,'scale')or{1,1}
+                    y=y-(item.row.height or 68)*math.max(1,scale[2])
                 end
             end
         end
@@ -94,7 +101,7 @@ local function blacklist_list_visibility(b)
             if not item then
                 item={identity=snapshot.identity,address=change.address,property=change.property,before=current};saved[id]=item
             elseif not same(current,item.applied) then item.before=current end
-            b.set(change.address,change.property,change.value)
+            if not same(current,change.value)then b.set(change.address,change.property,change.value)end
             item.applied=assert(b.get(change.address,change.property),'Blacklist row geometry unavailable')
         end
     end

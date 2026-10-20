@@ -18,7 +18,7 @@ local function selection_controller(input,report)
         owner=snapshot.identity
         local eligible={}
         for _,row in ipairs(snapshot.rows) do
-            if selectable_kind(row.kind) then eligible[#eligible+1]=row end
+            if selectable_kind(row.kind) and not row.blacklisted and(not snapshot.list_order or not row.timer_kind and not row.unavailable)then eligible[#eligible+1]=row end
         end
         if snapshot.list_order then
             -- Native payload/storage indices are not display indices. Use the
@@ -87,7 +87,7 @@ local function selection_controller(input,report)
         if edges.confirm then
             local ok,result=pcall(input.begin,row.kind)
             if ok then
-                local interval=input_interval(self.interval_ms,70)
+                local interval=usage_interval(self)
                 self.job=result;self.job.interval_ms=interval
                 self.job.deadline=now+math.max(3000,(self.job.code and #self.job.code or 12)*interval+1500)
                 next_at=now;report('Started native input for kind '..row.kind..'; interval='..interval..'ms')

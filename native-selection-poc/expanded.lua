@@ -32,11 +32,13 @@ local function expanded_wheel(b,scope,input)
     local order=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x14491f0)
     local color=ffi.cast('void (*)(uintptr_t, const float *)',b.base+0x1448690)
     local asset=ffi.cast('void (*)(uintptr_t, uint64_t, uint8_t)',b.base+0x144f800)
+    local uv=ffi.cast('void (*)(uintptr_t, NSR_vec2, NSR_vec2)',b.base+0x143eef0)
     local storage,address,identity,parent,signature
     local retired,content={},{}
-    local SIZE,STRIDE=0x4f10,0x4e0
+    local SIZE,STRIDE=0x15710,0x1560
     local white=ffi.new('float[3]',{1,1,1})
     local yellow=ffi.new('float[3]',{1,0.9,0.35})
+    local arrow_ink=ffi.new('float[3]',{0.08,0.07,0.03})
     local gray=ffi.new('float[3]',{0.5,0.55,0.6})
     local self={count=0,status='expanded wheel closed'}
     local function checkpoint(s) if b.checkpoint then b.checkpoint(s) end end
@@ -56,6 +58,7 @@ local function expanded_wheel(b,scope,input)
         local p=address+0x110+(i-1)*STRIDE
         return p,p+0x110,p+0x220,p+0x380
     end
+    local function arrow(i,j) return address+0x110+(i-1)*STRIDE+0x4e0+(j-1)*0x160 end
     function self.hide()
         if owned() then visible(address,0) end
         self.count=0;signature=nil
@@ -71,6 +74,7 @@ local function expanded_wheel(b,scope,input)
             return a.entry<c.entry
         end)
         for _,row in ipairs(rows) do parts[#parts+1]=row.address..':'..row.kind end
+        local codes=input.display_codes(rows)
         local current=table.concat(parts,',')
         local changed=signature~=current;signature=current
         scope.context_scope(snapshot.list,function(resource)
@@ -107,6 +111,13 @@ local function expanded_wheel(b,scope,input)
                         assert(b.pointer(p+0xf8)==resource,'Expanded child context mismatch')
                     end
                     link(stretch,wedge);link(turn,stretch);link(address,turn);link(address,icon)
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        sprite(p);centered(p,16,0.5);order(p,0x300)
+                        asset(p,0x84c0542299fb4884ULL,0)
+                        assert(b.pointer(p+0xf8)==resource,'Expanded arrow context mismatch')
+                        link(address,p);visible(p,0)
+                    end
                     bounds()
                     checkpoint('expanded slot '..i..' constructor returned')
                 end
@@ -128,6 +139,27 @@ local function expanded_wheel(b,scope,input)
                     rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
                 end
                 local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
+                local sequence=codes[i] or {}
+                assert(#sequence<=12,'Expanded code exceeds arrow capacity')
+                local _,_,pos=expanded_geometry(#rows,math.min(i,math.max(8,#rows)))
+                local spacing=math.min(16,104/math.max(1,#sequence))*size
+                local code_key=table.concat(sequence,',')..':'..size..':'..pos[1]..':'..pos[2]
+                local previous=content['code'..i]
+                if previous~=code_key then
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        assert(b.pointer(p+0xf0)==address,'Expanded arrow ownership changed')
+                        local direction=sequence[j]
+                        visible(p,direction and 1 or 0)
+                        if direction then
+                            assert(direction>=1 and direction<=4 and direction%1==0,'Invalid expanded arrow direction')
+                            uv(p,ffi.new('NSR_vec2',{direction/5,0}),ffi.new('NSR_vec2',{(direction+1)/5,1}))
+                            b.set(p,'size',{spacing,spacing})
+                            b.set(p,'position',{pos[1]+(j-(#sequence+1)/2)*spacing,pos[2]-42*size})
+                        end
+                    end
+                    content['code'..i]=code_key
+                end
                 local row=rows[i]
                 local content_key=row and (row.kind..':'..tostring(radial.full_color~=false)..':'..tostring(row.timer_kind)..':'..tostring(row.unavailable))
                 if row and content[i]~=content_key then
@@ -151,7 +183,7 @@ local function expanded_wheel(b,scope,input)
         -- Independent controls: darkness changes RGB, opacity changes coverage.
         -- Keep the selected sector conspicuous even with a transparent background.
         local brightness=1-(radial.wedge_darkness or 70)/100
-        local alpha=(radial.wedge_opacity or 75)/100
+        local alpha=(radial.wedge_opacity or 50)/100
         gray[0],gray[1],gray[2]=0.5*brightness,0.55*brightness,0.6*brightness
         scope.context_scope(parent,function()
             checkpoint('expanded highlight enter')
@@ -163,7 +195,16 @@ local function expanded_wheel(b,scope,input)
                 opacity(wedge,chosen and math.max(0.95,alpha) or (row and alpha or alpha*0.08/0.3))
                 local timed=row and (row.timer_seconds or row.unavailable)
                 color(icon,(chosen and radial.full_color==false and not timed) and yellow or white)
-                opacity(icon,timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8))
+                local alpha=timed and (chosen and 0.55 or 0.3) or (chosen and 1 or 0.8)
+                opacity(icon,alpha)
+                local arrow_state=tostring(chosen)..':'..tostring(not not timed)
+                if content['highlight'..i]~=arrow_state then
+                    for j=1,12 do
+                        local p=arrow(i,j)
+                        color(p,chosen and arrow_ink or white);opacity(p,chosen and 1 or alpha)
+                    end
+                    content['highlight'..i]=arrow_state
+                end
                 if chosen then kind=row.kind end
             end
             bounds();checkpoint('expanded highlight returned')
@@ -172,6 +213,14 @@ local function expanded_wheel(b,scope,input)
     end
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then self.hide();self.status='expanded wheel closed' end
+    end
+    function self.close()
+        self.hide()
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
     end
     return self
 end

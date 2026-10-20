@@ -115,6 +115,7 @@ identity=identity+8
 assert(not d.owns(copy.rows[1].address),'reject stale HUD owner')
 d.hide();assert(visibility[copy.list]==1,'do not write stale HUD')
 identity=identity-8
+b.release_owned_ui=function(_,at) releases=releases+1;links[at+0xf0]=nil;return true end
 d.close();assert(releases==1 and not d.owns(copy.rows[1].address))
 local saved_get=b.get
 b.get=function() error('simulated layout read failure') end

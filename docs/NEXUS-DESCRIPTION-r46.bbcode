@@ -1,0 +1,127 @@
+[i]We're back, baby![/i]
+
+[center][img]https://raw.githubusercontent.com/HWG90/DiversBestFriend/r45/assets/banner-dbf.png[/img]
+[size=6][b]Diver's Best Friend[/b][/size]
+[size=4]Automated Stratagem System (ASS)[/size]
+[b]The original native auto-stratagem system. Accept no imitations. Unless they’re compatible.[/b]
+[i]No OCR. No Python. No Autohotkey. Just a nice ASS.[/i][/center]
+
+[size=6][b]R46 — The Homecoming Update[/b][/size]
+[center][i]"It's good to be back."[/i][/center]
+
+Celebrating coming back to Nexus, with a new home for your cooldowns and more ways to make your ASS your own.
+
+[b]"Know what you need to know, and when you need to know it."[/b]
+[img]https://i.imgur.com/j2QMCFL.gif[/img]
+
+Cooldown dock or compact overview, game-font timers, separate inbound/impact countdowns, Eagle charge counts, and options for what stays visible. DBF overlays now follow native HUD visibility.
+
+[b]"Fast - but still fair."[/b]
+[img]https://i.imgur.com/0kZXJqm.gif[/img]
+
+Wedge Wheel is the new-user default, with 50% default wedge opacity. Four optional equipped-stratagem hotkeys are unbound by default. Randomized input delay chooses 70–240 ms once per use.
+
+Appearance and Blacklist are grouped in two columns. Hide blacklisted/cooldown list entries, configure timer positions, or reset a page to defaults. Use MCM 0.1.72 or newer for draft-aware conditional controls; DBF owns the rules.
+
+[b]R46 notes:[/b] Keybindings list is now [b]List Select[/b]; Experimental layouts are under [b]Wedge Wheel[/b]. Select on Release defaults to Automatic for controller input. Native MBM does not currently apply author-defined mouse defaults—set Wheel Down, Wheel Up and Mouse 1 in its MODS tab. LLL supports guarded live reload; BSL and MDL remain restart-only. Existing saved preferences and binding IDs are retained.
+
+[url=https://github.com/HWG90/DiversBestFriend/releases/tag/r46]R46 downloads and full release notes[/url]
+
+[size=5][b]What it does[/b][/size]
+Diver's Best Friend puts stratagem selection inside HELLDIVERS 2. Open the normal stratagem menu, choose an entry through a wheel or list, and ASS enters the code through the game's normal input path. You still equip and throw the beacon normally.
+
+It reads live game data rather than trying to read the screen. There is no separate OCR program or external input helper to keep running while you play.
+
+[url=https://github.com/HWG90/DiversBestFriend/releases/tag/r45]R45 downloads and full release notes[/url] | [url=https://github.com/HWG90/DiversBestFriend/blob/r45/docs/INSTALLATION.md]Installation and controls[/url] | [url=https://github.com/HWG90/DiversBestFriend/issues]Report an issue[/url]
+
+[size=5][b]Pick your layout[/b][/size]
+[list]
+[*][b]Native wheel:[/b] eight slots, mouse or stick pointing, and Next/Previous paging.
+[*][b]Keybindings list:[/b] Next/Previous and Confirm, following list order and wrapping at either end. Camera control remains available.
+[*][b]Experimental Cards:[/b] up to sixteen native stratagem cards arranged in a circle.
+[*][b]Experimental Expanded wedges:[/b] up to sixteen entries on a single wheel.
+[/list]
+Radial layouts retain the original top-left stratagem list. Camera control returns when the menu closes.
+
+[b]Select on Release[/b] is optional and off by default. With a Hold menu binding, point at an entry and release to select. Return the pointer to the center before releasing to cancel. List mode uses Confirm.
+
+[b]Input interval[/b] controls the delay between code directions: 0-250 ms, default 70 ms. It applies to both Confirm and Select on Release.
+
+Native and expanded wheels dim entries during delivery or cooldown and show the selected entry's remaining time. Exhausted single-use entries stay dim and cannot be selected again. Scrambled-code handling follows the currently required sequence; normal game availability still applies.
+
+[size=5][b]R45 - Plays Nicely With Others[/b][/size]
+[list]
+[*][b]HUD Plus 0.2.8:[/b] its competing stratagem list and picker yield while ASS controls selection. Other HUD Plus features remain active. HUD Plus resumes its list behavior when ASS is disabled or recovering.
+[*][b]Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0:[/b] custom call-in codes work with Confirm and Select on Release, with ownership and code-content checks retained.
+[*][b]Single-use availability:[/b] fixes entries such as Shredder continuing to look available after use. Becoming unavailable after arming also cancels release selection.
+[*][b]Foliage Pass-Through 1.0:[/b] recognizes its exact projectile collision-template change so Runtime can validate custom gas-barrage and cluster-launcher donors. Other changes remain checked.
+[*]Includes R42 recovery for recognized temporary HUD failures: cancel pending input, restore UI/camera control, then close and reopen the stratagem menu to resume. Held inputs are not replayed.
+[/list]
+[b]HUD Plus, Custom Stratagem Compendium, HD2Runtime and Foliage Pass-Through are optional compatibility targets.[/b] You do not need them to use ASS. Foliage can be on or off; restart after changing it.
+
+[size=5][b]Requirements[/b][/size]
+Install these separately. They are not bundled.
+[list]
+[*][b]One compatible loader:[/b] [url=https://github.com/CowboyBingus/BingusSharedLoader/releases/latest]Bingus Shared Loader[/url] / API 1 for the BSL package; MDL API 2 for the MDL package; or [url=https://github.com/HWG90/LLL/releases]LLL R30+[/url] for the LLL package.
+[*][url=https://github.com/CowboyBingus/ModBindingsMenu/releases/latest]Mod Bindings Menu[/url] v2 or newer / API 1.
+[*][url=https://github.com/CowboyBingus/ModOptionsMenu]Mod Options Menu[/url], available through your chosen loader's shared-addon compatibility route.
+[*]HELLDIVERS 2 on Windows/Steam, supported build 25480438.
+[/list]
+[url=https://www.nexusmods.com/helldivers2/mods/17157]Mod Configuration Menu[/url] is optional. It provides additional blacklist entries; you can use the core selection features without it. Neither the old external Stratagem Wheel app nor the Equipped Stratagems exporter is required.
+
+[size=5][b]Installation - choose ONE file[/b][/size]
+[b]BSL edition - DiversBestFriend-R45-BSL.zip[/b]
+With the game closed, import the ZIP into Arsenal, enable it and deploy. Follow your loader's startup-priority instructions.
+
+[b]LLL edition - DiversBestFriend-R45-LLL.zip[/b]
+With the game closed, extract the complete [b]divers_best_friend[/b] folder into:
+[code]%LOCALAPPDATA%/LLL/Helldivers2/Mods[/code]
+Enable it in LLL. Keep the required binding/options dependencies available.
+
+[b]MDL edition - DiversBestFriend-R45-MDL.zip[/b]
+With the game closed, extract the complete [b]divers_best_friend[/b] folder into:
+[code]%LOCALAPPDATA%/MDL/Helldivers2/Mods[/code]
+Enable it in MDL API 2. This adapter has passed isolated startup/lifecycle tests; MDL gameplay has not been verified.
+
+[b]Install one ASS revision and one loader variant.[/b] Remove or disable the old ASS archive provider before switching to loose LLL/MDL files. Keep the full packaged folder together. Existing binding IDs and saved options are retained. Restart after updates; ASS is restart-only and does not support hot-reload or live provider switching.
+
+[size=5][b]First launch[/b][/size]
+[list=1]
+[*]Open [b]MODS > Diver's Best Friend[/b], choose your selection mode and Apply.
+[*]Configure [b]Next stratagem[/b], [b]Previous stratagem[/b] and [b]Confirm stratagem[/b] in the native bindings menu's MODS tab. Mouse defaults are Wheel Down, Wheel Up and Mouse 1.
+[*]In a mission, open the normal stratagem menu and select an available entry. Keep the menu open until code entry finishes, then throw the beacon normally.
+[*]For release selection, enable [b]Select on Release[/b] and use a Hold stratagem-menu binding. Return to center before releasing to cancel.
+[/list]
+
+[size=5][b]Controller friendly with Select on Release option and radial menus[/b][/size]
+[img]https://i.imgur.com/5sCkrAh.gif[/img]
+
+[size=5][b]Support for custom stratagems[/b][/size]
+[img]https://i.imgur.com/WNtAG8H.gif[/img]
+
+[size=5][b][url=https://www.nexusmods.com/helldivers2/mods/17157]Highly Configurable with MCM support[/url][/b][/size]
+[img]https://i.imgur.com/KoZegyu.gif[/img]
+
+[size=5][b]Settings and blacklist[/b][/size]
+The streamlined Bingus menu keeps Enable Mod, Mode, Sound feedback, Experimental layout, Preset, Select on Release and Input interval. Presets still work and saved appearance values are retained; vertical offset is disabled at zero.
+
+[b]Blacklist SOS Beacon[/b] and [b]Blacklist Eagle Rearm[/b] are simple on/off options available on the ship. The optional MCM blacklist page adds other entries with confirmation. Equipped stratagems remain protected. Filtering affects ASS selection, not the game's actual availability.
+
+[size=5][b]Troubleshooting[/b][/size]
+[list]
+[*][b]Custom stratagems are missing entirely:[/b] verify the Compendium pack is installed, enabled and registered with HD2Runtime. ASS does not install that pack. Deploy with the game closed and restart. Start a fresh mission after a compatibility update.
+[*][b]Older LLL discovery limitation:[/b] some loader builds do not discover Compendium's mixed-resource archive. This is separate from ASS's input compatibility. The minimal scanner correction is currently undergoing deployment verification; check the release notes before using that combination.
+[*][b]Temporary HUD failure:[/b] close and reopen the stratagem menu. If it persists, preserve DiversBestFriend.log and include your mode/layout when reporting it.
+[*][b]A code is rejected:[/b] check cooldown, remaining uses, jamming and normal game restrictions. Close and reopen the menu after manual or interrupted input.
+[*][b]A game update breaks startup:[/b] this implementation uses build-specific native UI functions and signatures. Install a compatible release.
+[/list]
+
+[size=5][b]Videos[/b][/size]
+[url=https://www.youtube.com/watch?v=u5LjI8qUi7E]Original native-selection demo (R24)[/url]
+[url=https://www.youtube.com/watch?v=BcMtszGqTgw]Select on Release and controller demo (R30)[/url]
+These demonstrate earlier revisions; see the R45 notes for current behavior.
+
+[size=5][b]Credits and feedback[/b][/size]
+Thank you to [url=https://github.com/CowboyBingus]CowboyBingus[/url] for the shared loader, bindings/settings infrastructure and wider modding groundwork that made this possible. This is a separate project by Goose / HWG90; please report ASS-specific problems here or through [url=https://github.com/HWG90/DiversBestFriend/issues]GitHub Issues[/url]. Include the revision, loader, game build, mode/layout and reproduction steps.
+
+This project was developed with AI-assisted coding and hands-on game testing. [url=https://github.com/HWG90/DiversBestFriend/blob/r45/CREDITS.md]Full credits[/url] | [url=https://github.com/HWG90/DiversBestFriend]Source code[/url] | [url=https://github.com/HWG90/DiversBestFriend/blob/r45/LICENSE]MIT license for the project code[/url]. The game and separately installed dependencies retain their own ownership and licenses.

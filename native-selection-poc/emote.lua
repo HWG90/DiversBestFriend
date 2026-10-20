@@ -182,5 +182,13 @@ local function emote_wheel(b,scope,input)
     function self.step(enabled,snapshot)
         if not enabled or not snapshot or not snapshot.open then self.hide();self.status='native wheel closed' end
     end
+    function self.close()
+        self.hide()
+        local ok,why=b.release_owned_ui(storage,address,identity,parent,retired)
+        if not ok then return false,why end
+        storage,address,identity,parent=nil,nil,nil,nil
+        for i=#retired,1,-1 do retired[i]=nil end
+        return true
+    end
     return self
 end

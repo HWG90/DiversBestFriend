@@ -1,55 +1,35 @@
-# R45 / HUD Plus 0.2.8 compatibility
+# HUD+ selection handoff
 
-Based on the published R42 tag `r42-ui-recovery-test`, commit
-`dfc7b209c6e8e496b72d89971b538185235a9c7b`. Its assembled runtime SHA-256 is
-`add3fd2930c48c2337b0a15bd20fda237b51a0b439175479a25be04e2ca66a76`, matching
-Arsenal's existing R42 package byte for byte before this compatibility change.
-R42's UI recovery, blacklist, selection safeguards and settings are retained.
+The adapter recognizes the selection cleanup interface, not a version number. Local, unmodified HUD+ 0.2.8 and 0.2.9 Lua were exercised in isolated LuaJIT fixtures. This does not establish live gameplay or runtime frame cost.
 
-HUD Plus 0.2.8 was downloaded from Nexus mod 15298, file 69169. Original ZIP
-SHA-256: `bcb2c911eadb3a016e12b915709ffba96ffa111723512105c0f9ded899d92a71`.
-Its stratagem feature constructs a second list and hides the vanilla group
-with opacity zero. ASS's list and wheels use that original group. The 0.2.8
-feature, list implementation and update-wrapper module are identical to 0.2.7;
-the picker now commits on left-mouse release. The adapter prevents that picker
-from running while ASS owns selection, through the same feature boundary.
+When ASS owns selection, it restores the original list through HUD+ vanilla(false), closes the HUD+ duplicate once, and suppresses HUD+ list/picker rendering. Shared extension arrow observation remains available. Weapon, cooldown, health and other HUD+ features are outside this handoff. When ASS releases ownership, original prepare/observe/put methods and return values resume.
 
-The adapter makes the recognized HUD Plus stratagem feature yield after ASS
-initializes successfully. HUD Plus's normal disabled path restores vanilla
-opacity, releases its duplicate list, and resets its picker. Weapon displays
-and cooldown cards retain their existing code paths. Disabling ASS, a fatal
-runtime failure, or entering R42's transient UI recovery returns control to
-HUD Plus at its next feature update. After recovery ASS reacquires control.
-Saved settings are untouched. The 3D list and picker yield for the whole time
-ASS is active, including while holding a beacon.
+The immediate-picker contract cancels the pending selection. The paced-picker contract also restores the held menu trigger, releases consumed aim, and clears selection timing and remembered selection using HUD+ reset/frame methods. Only instance methods are wrapped. Settings and shared classes are not modified.
 
-Discovery follows at most 128 update closures, with depth 24, 64 upvalues per
-closure, eight update-chain generations, and sixteen runtime owners. It runs
-only when the update callback changes. Bounded runtime program identity checks
-catch deferred startup and successor programs without scanning unchanged
-closures; the inspected runtime exposes no generation subscription. Five
-stripped LuaJIT method fingerprints gate installation. Unknown implementations
-remain untouched. No native guards or parent checks have been weakened.
+## Forward compatibility
 
-Build and test: set `HD2_HUD_PLUS_SOURCE` to the unmodified extracted 0.2.8
-product Lua, then run `py -3 scripts/test.py`. The candidate is written to
-`dist/releases/r45/DiversBestFriend-R45-BSL.zip`.
-Without the external fixture, owner-specific tests explicitly report a skip.
-Third-party source is never included in the candidate package.
+A future HUD+ release can change observe/put presentation code without a new adapter entry if its verified lifecycle and picker cleanup contract remain compatible. prepare, vanilla, drop and close are fingerprinted; picker contracts verify reset and, when present, frame and leave, together with their Lua cleanup helpers. Missing interfaces or unfamiliar cleanup implementations are rejected without partial mutation. This is compatibility by interface, not a guarantee for every future release.
 
-Validation covers package contents and reproducibility; the existing R42
-LuaJIT suite; the real HUD Plus 0.2.8 feature and update-wrapper code; both
-update load orders; deferred startup; list takeover and restoration; picker
-reset; disable/re-enable; return-value preservation; R42 recovery/fatal-failure
-handoffs; and 10,000 idle frames without rediscovery.
+If a future release changes cleanup, inspect that source and add a behavior-named picker contract to picker_contracts in native-selection-poc/hud_plus.lua. If the lifecycle changes, introduce a separate reviewed lifecycle contract rather than weakening validation or adding a version-only exception. Exercise that owner's real feature, picker and runtime modules with the fixture below. Do not copy third-party source into a release package.
 
-The compatibility predecessor was deployed on LLL. HUD Plus coexistence was
-captured and the final combination was reported working in-game. Per-family
-beacon delivery, multiplayer and matched steady-state/transition performance
-measurements are not established by the fixture suite. MDL gameplay remains
-unverified.
+Discovery scans only changed update wrappers and is bounded to eight scans, 128 closures per scan, 64 upvalues per closure and 16 runtimes. Program and feature identity checks detect recreation without rescanning unchanged closures. An active handoff performs cleanup once per ownership transition. Unknown owners remain untouched.
 
-The combined candidate also includes the custom-code reader described in
-CUSTOM-STRATAGEM-COMPATIBILITY.md.
+## Verification
 
-R45 publishes this adapter in BSL, MDL and LLL variants. The LLL predecessor was captured with HUD Plus and later reported working in-game. See docs/RELEASE-r45.md for current validation boundaries.
+Set HD2_HUD_PLUS_SOURCE to the unmodified product Lua, then run:
+
+    py -3 run_lua.py native-selection-poc/tests/hud_plus_test.lua
+
+Repeat for each target. Fixtures cover disabled/resumed ownership, both update-wrapper orders, callback returns, held-trigger/aim cleanup, changed presentation with stable cleanup, unsupported contracts, program and feature recreation, no duplicate wrapping, 10000 unchanged discovery frames and 10000 active frames without repeated drop.
+
+Before accepting deployment, verify visible list ownership, Confirm, release selection, aiming, close/reopen, disable/re-enable and mission transitions in game. Builds remain review candidates until that evidence exists.
+
+## Inspected artifact identities
+
+HUD+ 0.2.8 original ZIP SHA-256: bcb2c911eadb3a016e12b915709ffba96ffa111723512105c0f9ded899d92a71 (Nexus mod 15298, file 69169).
+
+HUD+ 0.2.9 source came from the local Arsenal library. Its main Lua SHA-256 is 31af81f2942cb6c0a1aae6d4ce83b6d9e86644392082d25037c829fa63c3b34e. Those exact source bytes occur at offset 5171 in patch_0, SHA-256 f6f43e580d3d5ea64c601d921e5e12352accedd332a3a6dd07f5ec0312f56212. Library naming and metadata identify 0.2.9; source/patch agreement was independently checked. No claim about installed game bytes is made.
+
+The earlier compatibility baseline was published R42 tag r42-ui-recovery-test, commit dfc7b209c6e8e496b72d89971b538185235a9c7b. This R45 review work retains recovery, blacklist and selection safeguards and includes the existing worktree changes. New compatibility behavior remains undeployed.
+
+LLL cleanup now restores the exact HUD+ instance methods before a reload, leaving shared classes untouched. If another owner has replaced one of those wrappers, cleanup refuses rather than overwriting it.

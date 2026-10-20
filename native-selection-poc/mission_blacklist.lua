@@ -38,6 +38,15 @@ local mission_blacklist_names={
     [148]='EXTRACTION',
 }
 local function mission_blacklist_settings(menu,state,available)
+    local mcm=rawget(_G,'DBFMCM')
+    if state.excluded and not state.dirty and state.available_input==available
+        and state.owner==menu and state.provider==mcm and state.ready then return state.excluded end
+    state.dirty=false
+    if state.owner and state.owner~=menu then
+        if state.native then pcall(state.native.unregister) end
+        state.native=nil;state.provider=nil;state.registered={}
+    end
+    state.owner=menu
     local prefix='native_stratagem_radial.'
     local simple={{kind=145,id='hide_sos',label='Blacklist SOS Beacon'},{kind=49,id='hide_eagle_rearm',label='Blacklist Eagle Rearm'}}
     if not state.enabled then
@@ -70,7 +79,10 @@ local function mission_blacklist_settings(menu,state,available)
     end
     state.registered=state.registered or {}
     local function changed(kind,value,from_native)
-        state.enabled[kind]=value==true;state.save_pending=not state.save()
+        if state.owner~=menu then return end
+        local next_value=value==true
+        if (state.enabled[kind]==true)==next_value then return end
+        state.enabled[kind]=next_value;state.dirty=true;state.save_pending=not state.save()
         if state.syncing then return end
         state.syncing=true
         for _,option in ipairs(simple)do if option.kind==kind and state.registered[kind]then menu.set(prefix..option.id,value==true)end end
@@ -81,32 +93,67 @@ local function mission_blacklist_settings(menu,state,available)
         for _,option in ipairs(simple)do
             if not state.registered[option.kind]then
                 local kind=option.kind
-                local ok=menu.register_option(prefix..option.id,{mod="Diver's Best Friend",label=option.label,type='toggle',default=false,gap=kind==145,
-                    description='Available on the ship. Excludes this stratagem when present in your mission. Use MCM for additional blacklist entries.'})
+                local ok=menu.register_option(prefix..option.id,{mod="Diver's Best Friend",mod_id="hwg90.divers_best_friend",label=option.label,type='toggle',default=false,gap=kind==145,
+                    description='Available on the ship. Prevents selection in List Select and hides it on wheels when present in your mission. Use MCM for additional blacklist entries.'})
                 if ok then
                     menu.set(prefix..option.id,state.enabled[kind]==true)
-                    menu.on_change(prefix..option.id,function(value)if not state.syncing then changed(kind,value,false)end end)
+                    local subscribe=dbf_menu_subscribe or function(m,id,fn)return m.on_change(id,fn)end
+                    subscribe(menu,prefix..option.id,function(value)if not state.syncing then changed(kind,value,false)end end)
                     state.registered[kind]=true
                 end
             end
         end
     end
-    local mcm=rawget(_G,'DBFMCM')
     if state.provider~=mcm then
         if state.native then pcall(state.native.unregister)end
-        state.native=nil;state.provider=mcm
+        state.native=nil;state.provider=mcm;state.registration_attempted=nil
     end
-    if mcm and mcm.api==1 and type(mcm.register)=='function' and not state.native then
+    if mcm and mcm.api==1 and type(mcm.register)=='function' and not state.native and not state.registration_attempted then
+        state.registration_attempted=true
         local ids={};for kind in pairs(mission_blacklist_names)do ids[#ids+1]=kind end;table.sort(ids)
+        local groups={
+            {column=1,label='General',ids={49,145}},
+            {column=1,label='Testing: support and extraction',ids={5,7,28,33,42,98,103,108,111,123,124,132,148}},
+            {column=2,label='Testing: mission devices',ids={17,19,36,64,70,72,84,86,94,122,129}},
+            {column=2,label='Testing: cargo, data and objectives',ids={11,29,48,71,76,78,79,85,102,128,138}},
+        }
         local controls={}
-        for _,kind in ipairs(ids)do
+        for _,group in ipairs(groups)do
+          controls[#controls+1]={type='section',label=group.label,column=group.column}
+          for _,kind in ipairs(group.ids)do
             local target=kind
-            controls[#controls+1]={id='kind_'..kind,type='toggle',label='Blacklist '..mission_blacklist_names[kind],default=state.enabled[kind]==true,
-                description='Excludes this mission-provided stratagem when present. Equipped stratagems and unreadable mission data remain protected.',
+            controls[#controls+1]={id='kind_'..kind,type='toggle',label=mission_blacklist_names[kind],column=group.column,default=state.enabled[kind]==true,
+                description='Prevents selecting this mission-provided stratagem in List Select and hides it on wheels. Equipped stratagems and unreadable mission data remain protected.',
                 on_change=function(value)if not state.syncing then changed(target,value,true)end end}
+          end
         end
-        local ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
-        if ok then
+        local existing=type(mcm.mods)=='table' and mcm.mods.dbf_ass_blacklist
+        local handle,ok
+        if existing then
+            local owned=existing.id=='dbf_ass_blacklist' and existing.name=="Diver's Best Friend - Blacklist"
+                and existing.parent_name=="Diver's Best Friend" and type(existing.controls)=='table'
+                and type(existing.handle)=='table' and type(existing.handle.set)=='function'
+            local count=0
+            if owned then
+                for key,control in pairs(existing.controls) do
+                    local kind=tonumber(key:match('^kind_(%d+)$'))
+                    if not kind or not mission_blacklist_names[kind] or control.type~='toggle' then owned=false;break end
+                    count=count+1
+                end
+                owned=owned and count==#ids
+            end
+            if owned then
+                -- Reuse the exact DBF-owned schema after a provider/reload transition.
+                -- Refresh callbacks in place; do not re-register or steal a foreign ID.
+                for _,control in ipairs(controls) do if control.id then
+                    existing.controls[control.id].on_change=control.on_change
+                end end
+                ok,handle=true,existing.handle
+            else state.registration_error='MCM blacklist ID belongs to an unfamiliar owner' end
+        else
+            ok,handle=pcall(mcm.register,{id='dbf_ass_blacklist',name="Diver's Best Friend - Blacklist",parent_name="Diver's Best Friend",description='Additional blacklist entries are available here. Confirm applies pending selections.',pages={{id='blacklist',name='Blacklist',require_confirmation=true,controls=controls}}})
+        end
+        if ok and type(handle)=='table' and type(handle.set)=='function' then
             state.native=handle
             -- The shared blacklist file is authoritative across both menus.
             state.syncing=true;for _,kind in ipairs(ids)do handle.set('kind_'..kind,state.enabled[kind]==true)end;state.syncing=false
@@ -119,5 +166,14 @@ local function mission_blacklist_settings(menu,state,available)
         if mission_blacklist_names[kind] and state.enabled[kind] and
             ((kind==145 or kind==49) and state.registered[kind] or state.native~=nil)then excluded[kind]=true end
     end
-    return excluded
+    -- Keep the same exclusion object when availability was re-sampled unchanged.
+    local prior=state.excluded
+    local same=prior~=nil
+    for kind in pairs(excluded) do if not prior or not prior[kind] then same=false;break end end
+    if same then for kind in pairs(prior) do if not excluded[kind] then same=false;break end end end
+    state.excluded=same and prior or excluded
+    state.available_input=available
+    state.ready=state.registered[145] and state.registered[49]
+        and (not mcm or state.native~=nil or state.registration_attempted==true)
+    return state.excluded
 end

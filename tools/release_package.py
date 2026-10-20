@@ -2,9 +2,9 @@
 from pathlib import Path
 import hashlib,json,re,zipfile
 ROOT=Path(__file__).resolve().parents[1]
-OUT=ROOT/'dist/releases/r45'
-VERSION='R45'
-ORDER=('layout','guards','native','menu_latch','mission_blacklist','input','pointing','camera','icon_colors','duplicate','emote','expanded','selection','release','blacklist','settings','feedback','hud_plus','foliage_compat','entry')
+OUT=ROOT/'dist/releases/r46'
+VERSION='R46'
+ORDER=('layout','guards','native','menu_latch','mission_blacklist','input','pointing','camera','icon_colors','duplicate','emote','expanded','cooldown_dock','binding_warning','binding_defaults','selection','release','blacklist','settings','feedback','hud_plus','foliage_compat','entry')
 
 def sources(loader):
     modules={}
@@ -29,8 +29,8 @@ def build(loader):
     entry='main.lua' if loader=='LLL' else 'mod.lua'
     files[entry]=(ROOT/'adapters'/entry).read_bytes()
     manifest={'id':'divers_best_friend','name':"Diver's Best Friend",'version':VERSION,'author':'Goose',
-        'description':'ASS R45: HUD Plus, custom stratagem, exhausted-state and Foliage Pass-Through compatibility.'}
-    manifest[loader.lower()]={'entry':entry,'modules':list(modules),'restart_only':True,'retain_until_exit':True}
+        'description':'ASS R46 Homecoming Update: cooldown dock and overview, Wedge Wheel, hotkeys and native timers. HUD Plus 0.2.8 / 0.2.9 cleanup contracts, custom stratagem, exhausted-state and Foliage Pass-Through compatibility.'}
+    manifest[loader.lower()]={'entry':entry,'modules':list(modules),'restart_only':loader!='LLL','retain_until_exit':loader!='LLL'}
     if loader=='MDL':manifest['mdl']['api']=2
     else:manifest['lll']['defaults']='config/defaults.cfg'
     defaults={}
@@ -38,11 +38,12 @@ def build(loader):
     for key,value in re.findall(r"\{\s*'([^']+)'\s*,\s*'[^']+'\s*,\s*'[^']+'\s*,\s*'[^']+'\s*,\s*(true|false|-?\d+(?:\.\d+)?)",settings):defaults[key]=json.loads(value)
     files['config/defaults.cfg']=(json.dumps({'preferences':defaults},indent=2)+'\n').encode()
     files['manifest.json']=(json.dumps(manifest,indent=2)+'\n').encode()
-    files['INSTALL.txt']=("Diver's Best Friend R45 - "+loader+"\n\nClose the game. Extract divers_best_friend into %LOCALAPPDATA%/"+loader+"/Helldivers2/Mods. Enable it in your loader and restart. Install ONE ASS variant; disable/remove the old archive provider. Requires Mod Bindings Menu v2+ / API 1 and Mod Options Menu through your shared-loader compatibility route. MCM is optional. Those dependencies are not bundled. ASS is restart-only: do not hot-reload or switch providers during play. Native/gameplay acceptance is established on LLL; BSL packaging and MDL lifecycle adapters have offline coverage only. See RELEASE-r45.md.\n").encode()
-    for dest,source in {'RELEASE-r45.md':'docs/RELEASE-r45.md','LICENSE':'LICENSE','HUD-PLUS-COMPATIBILITY.md':'native-selection-poc/HUD-PLUS-COMPATIBILITY.md','CUSTOM-STRATAGEM-COMPATIBILITY.md':'native-selection-poc/CUSTOM-STRATAGEM-COMPATIBILITY.md'}.items():files[dest]=(ROOT/source).read_bytes()
+    lifecycle=('LLL supports live reload after successful owned-UI teardown. A linked or unrecognized native owner refuses reload safely.' if loader=='LLL' else 'This loader adapter remains restart-only: do not hot-reload or switch providers during play.')
+    files['INSTALL.txt']=("Diver's Best Friend R46 - Homecoming Update - "+loader+"\n\nClose the game. Extract divers_best_friend into %LOCALAPPDATA%/"+loader+"/Helldivers2/Mods. Enable it in your loader and restart. Install ONE ASS variant; disable/remove the old archive provider. Requires Mod Bindings Menu v2+ / API 1 and Mod Options Menu through your shared-loader compatibility route. MCM is optional. Dependencies are not bundled. "+lifecycle+" Native/gameplay acceptance is on LLL; BSL packaging and MDL lifecycle adapters have offline coverage only. See RELEASE-r46.md.\n").encode()
+    for dest,source in {'RELEASE-r46.md':'docs/RELEASE-r46.md','LICENSE':'LICENSE','HUD-PLUS-COMPATIBILITY.md':'native-selection-poc/HUD-PLUS-COMPATIBILITY.md','CUSTOM-STRATAGEM-COMPATIBILITY.md':'native-selection-poc/CUSTOM-STRATAGEM-COMPATIBILITY.md'}.items():files[dest]=(ROOT/source).read_bytes()
     files['FILES-SHA256.txt']=''.join(hashlib.sha256(b).hexdigest()+'  '+n+'\n' for n,b in sorted(files.items())).encode()
     OUT.mkdir(parents=True,exist_ok=True)
-    target=OUT/f'DiversBestFriend-R45-{loader}.zip'
+    target=OUT/f'DiversBestFriend-R46-{loader}.zip'
     with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
         for n,b in sorted(files.items()):
             info=zipfile.ZipInfo('divers_best_friend/'+n,(1980,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;info.external_attr=0o100644<<16;z.writestr(info,b)

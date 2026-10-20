@@ -1,35 +1,12 @@
 Diver's Best Friend - Automated Stratagem System (ASS)
-Revision 45 - Compatibility
+Revision 46 - Homecoming Update
 
-BSL edition: import DiversBestFriend-R45-BSL.zip into Arsenal, enable and deploy.
-Close the game before replacing files, then restart and enter a fresh mission.
-Install one ASS revision and one loader variant only; remove an old archive
-provider before enabling the loose MDL or LLL edition. Existing binding IDs,
-addon identity and saved options are retained.
+Import DiversBestFriend-R46-BSL.zip into Arsenal, enable and deploy with Bingus Shared Loader. Close the game before replacing files and restart. Install one loader variant only.
 
-Requires a compatible shared loader, Mod Bindings Menu v2+ / API 1 and Mod
-Options Menu. MCM is optional for additional blacklist entries. Dependencies
-and third-party mods are not bundled. Target: Windows/Steam build 25480438.
+Requires Mod Options Menu and Mod Bindings Menu v2+ / API 1. Dependencies are not bundled. MCM is optional and separately installed. Saved settings and bindings are retained.
 
-HUD Plus 0.2.8, Custom Stratagem Compendium 0.4.1, HD2Runtime 0.40.0 and
-Foliage Pass-Through 1.0 are optional compatibility targets. ASS works without
-them. Foliage compatibility only registers an exact, owned raycast-template
-variant; unrelated native changes still fail the normal Runtime guards.
+Modes: Wedge Wheel (default), List Select and Native wheel. Configure Next, Previous and Confirm in MBM. Four equipped-stratagem hotkeys are unbound by default. Throw the beacon normally.
 
-Modes: Native wheel (8 sectors/paging), Keybindings list, Experimental Cards,
-and Experimental Expanded wedges (up to 16 entries). Configure Next,
-Previous and Confirm under MODS in the native bindings menu. Keep the normal
-stratagem menu open until code entry finishes, then throw the beacon yourself.
-Optional Select on Release needs a Hold menu binding. Return to center before
-release to cancel. Input interval: 0-250 ms, default 70 ms.
+Cooldown dock/overview and timers consume native game state. Configure Appearance for timer positions, visibility and separated statuses.
 
-Unavailable single-use entries dim on both wheels and cannot Confirm or arm
-Select on Release. Native cooldown and delivery timers remain in place.
-Bingus options retain SOS Beacon and Eagle Rearm blacklist toggles; optional
-MCM adds other entries with confirmation. Equipped stratagems stay protected.
-
-Recognized transient HUD failures cancel pending input, restore UI/camera,
-and recover after menu close/reopen. Native safety failures remain fatal.
-
-Download all variants and detailed notes:
-https://github.com/HWG90/DiversBestFriend/releases/tag/r45
+Target Windows/Steam build 25480438. BSL remains restart-only. See RELEASE-r46.md for changes, compatibility and validation limits.

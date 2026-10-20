@@ -4,12 +4,15 @@ end
 local make_selection=assert(loadstring(source('input.lua')..'\n'..source('pointing.lua')..'\n'..source('selection.lua')..'\nreturn selection_controller'))()
 local make_release=assert(loadstring(source('input.lua')..'\n'..source('release.lua')..'\nreturn release_controller'))()
 local now,focus,draws,starts,advances=0,true,0,0,0
+local shortcut_calls=0
 local buttons={next=false,previous=false,confirm=false}
 local snapshot={identity=1,open=true,rows={{address=10,kind=3},{address=20,kind=33}}}
 local logs={}
+local settings_callbacks,settings_observed={},{}
 local mode,enabled,experimental_layout=2,true,1
 local blacklist_values={}
 local full_color=true
+local cooldown_icons,dock_samples=true,0
 local release_enabled=false
 local release_down,release_calls=true,0
 local wedge_darkness,wedge_opacity=70,75
@@ -17,11 +20,13 @@ local wedge_registrations=0
 local copies,cursor_only,last_target=0,false,nil
 local expanded_prepares,caption=0,nil
 local snapshot_error,draw_error
+local mission_samples,mission_error=0,false
 local timer_row
 local prepares,samples,captured=0,0,false
 local vector={0,0}
 local env=setmetatable({}, {__index=_G});env._G=env
 env.radial={}
+env.cooldown_dock=function()return {sample=function()dock_samples=dock_samples+1 end,draw=function()end,hide=function()end,close=function()return true end}end
 local hud_active
 local make_hud_compat=assert(loadstring(source('hud_plus.lua')..'\nreturn hud_plus_compat'))()
 env.hud_plus_compat=function(active) hud_active=active;return make_hud_compat(active) end
@@ -38,23 +43,25 @@ env.radial.controller=function()
 end
 env.radial.list_controller=env.radial.controller
 env.camera_capture=function() return {capture=function() captured=true end,release=function() captured=false end} end
-env.ModOptionsMenu={api=1,register_option=function(id,spec)
+env.ModOptionsMenu={api=1,on_change=function(id,fn) settings_callbacks[id]=fn;return true end,register_option=function(id,spec)
     if id:find('input_interval_ms',1,true) then assert(spec.default==70 and spec.min==0 and spec.max==250 and spec.step==5) end
-    if id:find('select_on_release',1,true) then assert(spec.default==false and spec.type=='toggle') end
+    if id:find('release_selection_mode',1,true) then assert(spec.default==1 and spec.type=='choice') end
     if id:find('.wedge_',1,true) then
         assert(spec.type=='slider' and spec.min==0 and spec.max==100 and spec.step==5)
-        assert(spec.default==(id:find('darkness',1,true) and 70 or 75))
+        assert(spec.default==(id:find('darkness',1,true) and 70 or 50))
         wedge_registrations=wedge_registrations+1
     end
-    if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3 and spec.default==1) end
+    if id:find('selection_mode',1,true) then assert(spec.type=='choice' and #spec.choices==3) end
     return true
 end,get=function(id)
     local key=id:match('native_stratagem_radial%.(.*)')
     if key=='hide_sos' or key:find('blacklist_kind_',1,true) then return blacklist_values[key] end
-    if id:find('select_on_release',1,true) then return release_enabled end
+    if id:find('release_selection_mode',1,true) then return release_enabled and 2 or 1 end
+    if id:find('selection_mode_ordered',1,true) then return mode and 4-mode end
     if id:find('selection_mode',1,true) then return mode end
     if id:find('enabled',1,true) then return enabled end
     if id:find('full_color_icons',1,true) then return full_color end
+    if id:find('cooldown_icons',1,true) then return cooldown_icons end
     if id:find('experimental_layout',1,true) then return experimental_layout end
     if id:find('wedge_darkness',1,true) then return wedge_darkness end
     if id:find('wedge_opacity',1,true) then return wedge_opacity end
@@ -64,8 +71,9 @@ env.native_backend=function()
     return {snapshot=function() if snapshot_error then error(snapshot_error) end;return snapshot end,focused=function() return focus end,milliseconds=function() return now end}
 end
 env.input_backend=function()
-    return {view_context=function() return {} end,decorate=function() end,begin=function(kind) starts=starts+1;return {kind=kind} end,
+    return {mission_blacklist_kinds=function() mission_samples=mission_samples+1;if mission_error then error('mission unavailable') end;return {33,145} end,view_context=function() return {} end,decorate=function() end,begin=function(kind) starts=starts+1;return {kind=kind} end,
         release_state=function() return {identity=1,component=2,hud=3,hold=true,down=release_down,unobstructed=true,menu_active=true,clean=true} end,
+        begin_shortcut=function(slot)assert(slot>=1 and slot<=4);shortcut_calls=shortcut_calls+1;return {code={1},kind=3}end,
         begin_release=function() release_calls=release_calls+1;return {code={1},kind=33} end,
         hold_release=function() end,end_release=function() end,advance_release=function() return true,'matched' end,
         release_complete=function() return true,'native finished' end,
@@ -102,6 +110,16 @@ end,is_down=function(id) return buttons[id:match('%.([^%.]+)$')] end}
 env.update=function(a,b) assert(a=='a' and b=='b');return 1,nil,3 end
 local chunk=assert(loadstring(source('entry.lua')));setfenv(chunk,env);chunk()
 local function tick()
+    -- Model the provider's UI notifications, rather than silent fixture variables.
+    for id,callback in pairs(settings_callbacks) do
+        local value=env.ModOptionsMenu.get(id)
+        if settings_observed[id]~=value then settings_observed[id]=value;callback(value) end
+    end
+    -- Suppressed appearance controls are changed by explicit programmatic owners.
+    for _,key in ipairs({'full_color_icons','wedge_darkness','wedge_opacity'}) do
+        local id='native_stratagem_radial.'..key;local value=env.ModOptionsMenu.get(id)
+        if settings_observed[id]~=value then settings_observed[id]=value;env.DiversBestFriend.invalidate_settings() end
+    end
     now=now+100;local a,b,c=env.update('a','b');assert(a==1 and b==nil and c==3)
 end
 assert(not hud_active(),"HUD+ retains ownership before ASS initialization")
@@ -156,11 +174,14 @@ buttons.confirm=false;tick();buttons.confirm=true;tick();assert(starts==before+1
 mode=1;tick();assert(starts==before+1 and not cursor_only and last_target==12345,'return to native mode cancels expanded job and restores native input state')
 print('Expanded layout passed: expanded routing, cursor/caption reuse, held Confirm and return to native mode.')
 
-full_color=false;tick();assert(env.radial.full_color==false)
+full_color=false;tick();assert(env.radial.full_color==true,'obsolete saved toggle cannot disable icon colours')
 full_color=true;tick();assert(env.radial.full_color==true)
-print('Icon option routing passed: live off/on setting reaches render configuration.')
+print('Full-colour icons stay enabled despite obsolete saved values.')
+local sampled_before=dock_samples
+cooldown_icons=false;tick();tick();assert(dock_samples==sampled_before,'disabled dock does not sample timers')
+cooldown_icons=true;tick();assert(dock_samples>sampled_before,'dock can be enabled independently')
 
-assert(env.radial.wedge_darkness==70 and env.radial.wedge_opacity==75 and wedge_registrations==0)
+assert(env.radial.wedge_darkness==70 and env.radial.wedge_opacity==75 and wedge_registrations==2)
 wedge_darkness,wedge_opacity=0,100;tick()
 assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'valid appearance endpoints apply')
 wedge_darkness,wedge_opacity=101,-1;tick()
@@ -168,17 +189,17 @@ assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'out-of-ra
 wedge_darkness,wedge_opacity=0/0,'75';tick()
 assert(env.radial.wedge_darkness==0 and env.radial.wedge_opacity==100,'NaN and nonnumeric settings rejected')
 wedge_darkness,wedge_opacity=70,75;tick()
-assert(wedge_registrations==0,'suppressed appearance settings are never registered')
+assert(wedge_registrations==2,'suppressed appearance settings are never registered')
 print('Wedge option routing passed: defaults, live changes, endpoints and invalid values.')
 
 -- A saved legacy mode 4 migrates using set after both choices register.
 mode=4;experimental_layout=1
 local old_menu=env.ModOptionsMenu
 local migrated={}
-env.ModOptionsMenu={api=1,register_option=old_menu.register_option,get=old_menu.get,
+env.ModOptionsMenu={api=1,on_change=function(id,fn) settings_callbacks[id]=fn;return true end,register_option=old_menu.register_option,get=old_menu.get,
  set=function(id,value)
     migrated[id]=value
-    if id:find('experimental_layout',1,true) then experimental_layout=value else mode=value end
+    if id:find('experimental_layout',1,true) then experimental_layout=value elseif id:find('selection_mode_ordered',1,true) then mode=4-value else mode=value end
     return true
  end}
 tick()
@@ -231,7 +252,7 @@ blacklist_values.hide_sos=true
 for _,layout in ipairs({{1,1},{2,1},{3,1},{3,2}}) do
     mode,experimental_layout=layout[1],layout[2];tick()
     assert(env.NativeStratagemRadial.last_open:find('3',1,true))
-    assert(not env.NativeStratagemRadial.last_open:find(':145:',1,true),'excluded SOS must never reach a selection layout')
+    assert((env.NativeStratagemRadial.last_open:find(':145:',1,true)~=nil)==(mode==2),'blacklisted SOS stays visible only in List Select')
     assert(#snapshot.rows==2 and snapshot.rows[2]==sos,'filter must preserve original mission membership')
 end
 -- Applying an exclusion cancels an existing input before it can advance.
@@ -243,7 +264,7 @@ blacklist_values.hide_sos=true;buttons.confirm=false
 for _,layout in ipairs({{1,1},{2,1},{3,1},{3,2}}) do
     mode,experimental_layout=layout[1],layout[2];local old=samples;tick()
     assert(not captured and samples==old and not env.radial.selected,'all-excluded lists must release camera and clear selection')
-    assert(env.NativeStratagemRadial.selection_status=='No selectable stratagems remain after filtering')
+    assert(env.NativeStratagemRadial.selection_status==(mode==2 and 'No selectable stratagem cards are present'or'No selectable stratagems remain after filtering'))
 end
 blacklist_values={hide_sos=false,blacklist_kind_1=0};mode=1;tick();assert(captured,'clearing exclusions restores the layout')
 print('Blacklist integration passed: all four layouts, original membership, queued input cancellation, empty list safety and recovery.')
@@ -258,10 +279,64 @@ release_down=false;snapshot.open=false;tick()
 assert(release_calls==old_release_calls+1,'a fresh menu opening may arm the remaining allowed stratagem')
 print('Blacklist release safety passed: applied exclusions disarm pending release selection.')
 
+
+mode=1;enabled=true;focus=true;buttons.confirm=false;blacklist_values={};release_enabled=false
+snapshot.open=false;tick()
+local before=release_calls
+vector={0,1,controller=true};snapshot.open=true;release_down=true;tick()
+release_down=false;snapshot.open=false;tick()
+assert(release_calls==before+1,'automatic controller release survives the closing frame')
+tick();assert(release_calls==before+1,'automatic release executes once')
+vector={0,1,controller=false};snapshot.open=true;release_down=true;tick()
+release_down=false;snapshot.open=false;tick()
+assert(release_calls==before+1,'switching to mouse disables automatic release')
+print('Automatic controller release and controller-to-mouse transition passed.')
+
+-- Closed and disabled menus do not scan the native mission payload.
+buttons.confirm=false;snapshot.open=false;tick()
+local scan_baseline=mission_samples
+for i=1,1000 do tick() end
+assert(mission_samples==scan_baseline,'1000 closed frames must not scan mission availability')
+snapshot.open=true;tick();assert(mission_samples==scan_baseline+1,'open refreshes immediately')
+for i=1,9 do tick() end
+assert(mission_samples==scan_baseline+1,'unchanged open frames retain bounded sampling')
+tick();assert(mission_samples==scan_baseline+2,'open-only fallback is capped at one sample per second')
+snapshot.identity=2;tick();assert(mission_samples==scan_baseline+3,'HUD-owner replacement refreshes immediately')
+snapshot.open=false;tick();mission_error=true;snapshot.open=true;tick()
+local failed_samples=mission_samples
+for i=1,9 do tick() end
+assert(mission_samples==failed_samples,'unreadable mission does not trigger an every-frame retry')
+mission_error=false;snapshot.open=false;tick();snapshot.open=true;tick()
+assert(mission_samples==failed_samples+1,'fresh opening retries immediately after unavailable mission')
+enabled=false;tick();scan_baseline=mission_samples
+for i=1,100 do tick() end
+assert(mission_samples==scan_baseline,'disabled mod does not scan mission availability')
+enabled=true;tick();assert(mission_samples==scan_baseline+1,'re-enable refreshes immediately')
+snapshot.identity=1;snapshot.open=false;tick()
+print('Mission scan transitions: 1000 closed frames idle, immediate open/owner/re-enable refresh, bounded open/error fallback passed.')
+
 -- A transient HUD failure must not permanently disable updates or replay input.
 blacklist_values={};mode=1;release_enabled=false;buttons.confirm=false
 snapshot.open=true;tick();assert(captured)
-draw_error='Wheel HUD changed';local starts_before=starts;tick()
+draw_error='Wheel HUD changed';-- Exhausted optional native slots must not disable the main three bindings.
+local original_menu=env.ModBindingsMenu;local attempts=0
+local constrained={api=1,version=2,is_down=original_menu.is_down,register_binding=function(id,...)
+ if id:match('slot')then attempts=attempts+1;return false,'no free binding action'end
+ return original_menu.register_binding(id,...)
+end}
+env.ModBindingsMenu=constrained;buttons.next=false;buttons.previous=false;buttons.confirm=false
+tick();assert(env.DiversBestFriend.hotkey_error and env.DiversBestFriend.selection_status~='Waiting for native bindings')
+local tried=attempts;tick();assert(attempts==tried,'failed optional registration is bounded')
+env.ModBindingsMenu=original_menu;tick()
+
+local starts_before=starts
+buttons.confirm=false;buttons.slot1=false;snapshot.open=false;tick()
+local before_shortcut=shortcut_calls
+buttons.slot1=true;tick();assert(shortcut_calls==before_shortcut+1,'hotkey opens selection from closed gameplay')
+tick();tick();assert(shortcut_calls==before_shortcut+1,'holding shortcut never repeats')
+buttons.slot1=false;tick();snapshot.open=true;tick()
+for slot=1,4 do assert(registered['native_stratagem_radial.slot'..slot],'all four unbound hotkeys registered')end
+;tick()
 assert(not captured and not env.radial.selected)
 assert(env.DiversBestFriend.status:find('UI paused',1,true))
 assert(not hud_active(),'transient recovery yields to HUD+')
@@ -280,3 +355,11 @@ assert(not hud_active(),'fatal guard failure yields to HUD+')
 local old_draws=draws;snapshot.open=false;tick();snapshot.open=true;tick()
 assert(draws==old_draws and not captured,'memory guard failure remains fatal')
 print('Runtime recovery passed: transient pause, verified close, fresh reopen, no held-input replay, persistent diagnostics and fatal memory guards.')
+
+local core=env.DiversBestFriend;local wrapper=env.update
+assert(core.shutdown())
+assert(env.DiversBestFriend==nil and env.NativeStratagemRadial==nil,'reload clears only owned aliases')
+assert(not hud_active(),'shutdown hands HUD+ ownership back')
+local a,b,c=wrapper('a','b');assert(a==1 and b==nil and c==3,'old wrapper becomes a harmless passthrough')
+assert(draws==old_draws,'shutdown wrapper never draws again')
+print('Core live shutdown: callback restoration, alias cleanup and dormant wrapper passed')

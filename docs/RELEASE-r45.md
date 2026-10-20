@@ -7,7 +7,7 @@ barrages and launchers from working.
 
 ## Changes
 
-- **HUD Plus 0.2.8:** its competing stratagem list and picker yield while ASS
+- **HUD Plus 0.2.8 / 0.2.9:** its competing stratagem list and picker yield while ASS
   controls selection. Other HUD Plus features remain active. HUD Plus resumes
   its own list behavior when ASS is disabled or recovering.
 - **Custom Stratagem Compendium 0.4.1 / HD2Runtime 0.40.0:** Confirm and Select
@@ -56,7 +56,7 @@ binding IDs and saved options are retained. Supported Windows/Steam build:
   gameplay acceptance, not an individually recorded test of every custom family.
 - All eleven Compendium call-in codes pass isolated Confirm and Select on
   Release tests using the shipped Runtime owner. HUD Plus tests use the actual
-  0.2.8 feature and update wrappers. Recovery, blacklist, ownership, mutation,
+  0.2.8 and 0.2.9 feature, picker and update wrappers. Cleanup contracts replace the single-version method gate; future presentation changes can be accepted while incompatible cleanup stays untouched. Recovery, blacklist, ownership, mutation,
   timer and selection regression tests pass.
 - Live read-only tests on copied schemas found 14 exact foliage variants. The
   original Runtime gas/cluster guards failed before registration and passed

@@ -1,3 +1,10 @@
+-- Native wheel binding kinds 1/2 use direct stick vectors; mouse kinds
+-- integrate deltas. Require an active device so connected idle pads do not win.
+local function controller_pointing(binding_kind,active_device)
+    return active_device~=nil and active_device>=0 and active_device<32
+        and (binding_kind==1 or binding_kind==2)
+end
+
 -- Point toward the visible card centers, including the ellipse's aspect ratio.
 local function pointing_index(rows,vector,current)
     if not vector or #rows==0 then return nil end
@@ -52,14 +59,18 @@ local function native_pointing(b)
         if b.checkpoint then b.checkpoint('pointing binding query enter') end
         local bound=tonumber(binding(controls,0x700000003,1))
         if b.checkpoint then b.checkpoint('pointing binding query returned') end
-        assert(bound>=65536 and b.read(bound,4),'Native radial bindings unavailable')
+        local bound_bytes=bound>=65536 and b.read(bound,4)
+        assert(bound_bytes and #bound_bytes==4,'Native radial bindings unavailable')
         if b.checkpoint then b.checkpoint('pointing reader enter') end
         reader(target,context.input_owner,math.max(0.001,math.min(dt,0.05)))
         if b.checkpoint then b.checkpoint('pointing reader returned') end
         local v=ffi.cast('float *',target+0x1ce8)
         local x,y=tonumber(v[0]),tonumber(v[1])
         assert(x==x and y==y and math.abs(x)<=1.01 and math.abs(y)<=1.01,'Invalid radial direction')
-        local result={x,y}
+        local active=b.read(controls+0xa7c18,4)
+        local device=active and tonumber(ffi.cast('const int32_t *',active)[0])
+        local kind=bound_bytes:byte(1)%16
+        local result={x,y,controller=controller_pointing(kind,device)}
         if wheel then
             local index=tonumber(ffi.cast('uint32_t *',target+0x1cd8)[0])
             if index<8 and ffi.cast('uint8_t *',target+0x1cc8)[index]~=0 then result.slot=index+1 end
