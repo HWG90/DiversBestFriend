@@ -16,3 +16,6 @@ captures/
 
 # Generated packages and local validation/deployment evidence
 dist/
+
+# Offline test build output
+*.so
