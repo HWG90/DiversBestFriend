@@ -1,9 +1,9 @@
 {
   "id": "divers_best_friend",
   "name": "Diver's Best Friend",
-  "version": "R46-luajit.2-26251122",
+  "version": "R50-luajit-26251122",
   "author": "Goose",
-  "description": "ASS R46 Homecoming Update: cooldown dock and overview, Wedge Wheel, hotkeys and native timers. HUD Plus 0.2.8 / 0.2.9 cleanup contracts, custom stratagem, exhausted-state and Foliage Pass-Through compatibility.",
+  "description": "ASS R50: cooldown dock and overview, Wedge Wheel, hotkeys and native timers. HUD Plus 0.2.8 / 0.2.9 cleanup contracts, custom stratagem, exhausted-state and Foliage Pass-Through compatibility.",
   "lll": {
     "entry": "main.lua",
     "modules": [
@@ -33,12 +33,6 @@
       "src/entry.lua",
       "src/stratagems.lua",
       "src/native_startup.lua",
-      "src/weapon_status_memory.lua",
-      "src/weapon_status_layouts.lua",
-      "src/weapon_status_ammo.lua",
-      "src/weapon_status_reader.lua",
-      "src/weapon_status_strip.lua",
-      "src/weapon_status.lua",
       "src/terminal_guards.lua",
       "src/terminal.lua"
     ],

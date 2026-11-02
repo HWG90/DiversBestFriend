@@ -1,6 +1,6 @@
-# Diver's Best Friend R46, LuaJIT (game build 26251122)
+# Diver's Best Friend R50, LuaJIT (game build 26251122)
 
-R46 as a plain LuaJIT folder mod for Live Lua Loader R38 on HELLDIVERS 2 build 26251122. Every module uses LuaJIT's own `ffi` and `bit`. There is no Lua 5.1/cffi adapter and no `hd2_nativeinfo` DLL. Tested on Linux under Proton.
+R50 is R46 as a plain LuaJIT folder mod for Live Lua Loader R38 on HELLDIVERS 2 build 26251122. Every module uses LuaJIT's own `ffi` and `bit`. There is no Lua 5.1/cffi adapter and no `hd2_nativeinfo` DLL. Tested on Linux under Proton.
 
 The `main` branch is still the R46 release for the shared/startup loaders. This branch adds only this folder.
 
@@ -19,7 +19,6 @@ The `main` branch is still the R46 release for the shared/startup loaders. This 
 - Compact cooldown row option.
 - A stratagem that leaves the list (such as SSSD Delivery) no longer leaves a ghost row behind.
 - Uses the runtime's `hd2.memory` for reads when it is there.
-- Weapon status strip next to the weapon row.
 
 ## Offline checks (stock LuaJIT, no game)
 
@@ -36,4 +35,4 @@ luajit tests/offline_runtime_memory.lua divers_best_friend runtime-memory
 
 Run these from this folder. `fake_win32.so` stands in for kernel32/user32, and `synthetic_image.lua` lays out a synthetic game.dll image. `offline_capture.lua` needs a captured game image, and `offline_archive.lua` needs a built archive, so neither runs on this tree alone.
 
-Synced from development commit `ee120fb`.
+Synced from development commit `ee120fb`, without its weapon status strip.

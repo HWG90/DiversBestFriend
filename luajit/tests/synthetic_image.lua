@@ -27,7 +27,7 @@ local root=region(0x400000)
 local state=region(0xb0000)
 bytes(image,'MZ');put(image+60,'uint32_t',0x100)
 bytes(image+0x100,'PE\0\0');put(image+0x108,'uint32_t',1793123839)
-put(image+0x150,'uint32_t',0x3382000) -- SizeOfImage, checked by the weapon status reader
+put(image+0x150,'uint32_t',0x3382000) -- SizeOfImage
 if layouts_path then
     for _,s in ipairs(data(layouts_path).signatures)do
         bytes(image+s[1],(s[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)))

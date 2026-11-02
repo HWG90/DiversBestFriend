@@ -4,7 +4,7 @@
 --   luajit offline_archive.lua <Addon/63ab3b8f046c401d.lua> <source tree> <log dir> [frames]
 local addon,tree,log_dir,frames=arg[1],arg[2],arg[3],tonumber(arg[4] or 120)
 local here=arg[0]:match('^(.*)/[^/]*$') or '.'
-local env=dofile(here..'/synthetic_image.lua')(tree..'/src/guards.lua',tree..'/src/weapon_status_layouts.lua')
+local env=dofile(here..'/synthetic_image.lua')(tree..'/src/guards.lua')
 local function slurp(path)local f=assert(io.open(path,'rb'));local s=f:read('*a');f:close();return s end
 -- Widget setters as Lua stand-ins (the image holds only their witness bytes):
 -- a frame that calls one writes the synthetic widget instead of crashing.
@@ -55,7 +55,7 @@ collectgarbage('restart')
 print(string.format('steady %d frames: %.2f us/frame, %.0f B garbage/frame, %.1f reads/frame',
     frames,elapsed/frames*1e6,garbage/frames,(env.stats.reads-reads_before)/frames))
 local statuses={}
-for _,key in ipairs({'selection_status','native_status','weapon_status','status'})do
+for _,key in ipairs({'selection_status','native_status','status'})do
     if owner[key]~=nil then statuses[#statuses+1]=key..'='..tostring(owner[key]) end
 end
 print('frames',frames,'update_errors',errors,'reads',env.stats.reads)
