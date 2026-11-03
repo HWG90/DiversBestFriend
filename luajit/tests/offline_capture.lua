@@ -5,8 +5,9 @@
 -- The capture is the module image behind fake_win32.so; its all-zero pages read
 -- as unavailable, like game code the protection runtime has not decrypted yet.
 -- Runs the tree's own checks: native_backend() (PE stamp gate and the 92 code
--- witnesses), the 15 terminal witnesses, and the icon palette reads of
--- icon_colors.lua. Only reads; no game code is called.
+-- witnesses), the weapon status reader's validate() (stamp -> SizeOfImage and
+-- the layout signatures), the 15 terminal witnesses, and the icon palette reads
+-- of icon_colors.lua. Only reads; no game code is called.
 local tree,capture,expect=arg[1],arg[2],arg[3] or 'pass'
 local ffi=require('ffi')
 local here=arg[0]:match('^(.*)/[^/]*$') or '.'
@@ -51,6 +52,10 @@ print(string.format('capture %s: %d pages, %d unavailable',capture:match('[^/]*$
 local ok,b=pcall(scope.native_backend)
 if expect=='refuse' then
     check('tree refuses this build ('..tostring(b)..')',not ok and tostring(b):find('Unsupported game build',1,true))
+    local memory=mod.require('src/weapon_status_memory.lua')
+    local reader=mod.require('src/weapon_status_reader.lua').new(memory.native(),memory,mod.require('src/weapon_status_layouts.lua'),mod.require('src/weapon_status_ammo.lua'))
+    local rok,rwhy=pcall(reader.validate)
+    check('weapon reader refuses this build ('..tostring(rwhy)..')',not rok and tostring(rwhy):find('unsupported game build',1,true))
     print('PASS refuse ('..passed..' checks)');return
 end
 check('native_backend passes the stamp gate and every readable witness'..(ok and '' or ': '..tostring(b)),ok)
@@ -58,6 +63,11 @@ local deferred=b.deferred()
 for _,name in ipairs(deferred)do print('deferred (page not captured): '..name)end
 check(string.format('%d of %d witnesses checked now, %d deferred',#scope.native_guards-#deferred,#scope.native_guards,#deferred),true)
 check('widget setters ready',b.widgets_ready())
+
+local memory=mod.require('src/weapon_status_memory.lua')
+local reader=mod.require('src/weapon_status_reader.lua').new(memory.native(),memory,mod.require('src/weapon_status_layouts.lua'),mod.require('src/weapon_status_ammo.lua'))
+local rok,rwhy=pcall(reader.validate)
+check('weapon reader validate() (stamp, SizeOfImage, layout signatures)'..(rok and '' or ': '..tostring(rwhy)),rok and reader.status=='validated')
 
 local terminal=mod.require('src/terminal_guards.lua')
 local good,missing=0,{}

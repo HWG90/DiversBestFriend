@@ -33,6 +33,12 @@
       "src/entry.lua",
       "src/stratagems.lua",
       "src/native_startup.lua",
+      "src/weapon_status_memory.lua",
+      "src/weapon_status_layouts.lua",
+      "src/weapon_status_ammo.lua",
+      "src/weapon_status_reader.lua",
+      "src/weapon_status_strip.lua",
+      "src/weapon_status.lua",
       "src/terminal_guards.lua",
       "src/terminal.lua"
     ],

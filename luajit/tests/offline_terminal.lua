@@ -4,7 +4,7 @@
 --   luajit offline_terminal.lua <source tree>
 local tree=arg[1] or '../divers_best_friend'
 local here=arg[0]:match('^(.*)/[^/]*$') or '.'
-local env=dofile(here..'/synthetic_image.lua')(tree..'/src/guards.lua')
+local env=dofile(here..'/synthetic_image.lua')(tree..'/src/guards.lua',tree..'/src/weapon_status_layouts.lua')
 local ffi=require('ffi')
 local function slurp(path)local f=assert(io.open(path,'rb'));local s=f:read('*a');f:close();return s end
 local put,image=env.put,env.image

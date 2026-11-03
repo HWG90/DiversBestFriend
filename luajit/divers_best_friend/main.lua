@@ -1,6 +1,6 @@
 -- LLL live lifecycle: detach owned native UI before allowing reload.
 local started,core,callback=false,nil,nil
-local terminal
+local weapon_status,terminal
 return {live_lua_api=1,name="Diver's Best Friend",version='R50',
  on_enable=function()
   assert(not started,'ASS is already enabled')
@@ -10,6 +10,7 @@ return {live_lua_api=1,name="Diver's Best Friend",version='R50',
   end
   assert(type(mod.scope.update)=='function','ASS startup callback unavailable')
   callback=mod.scope.update;core=rawget(_G,'DiversBestFriend');started=true
+  weapon_status=mod.require('src/weapon_status.lua').new(mod.scope)
   terminal=mod.require('src/terminal.lua').new(mod.scope)
   local fields={}
   for key,value in pairs(mod.config.preferences or {}) do
@@ -20,10 +21,11 @@ return {live_lua_api=1,name="Diver's Best Friend",version='R50',
   mod.expose('dbf',{settings=fields})
  end,
  on_update=function(dt)
-  if started and callback then local result=callback(dt);terminal.update(dt);return result end
+  if started and callback then local result=callback(dt);weapon_status.update(dt);terminal.update(dt);return result end
  end,
  on_disable=function()
   if not started then return true end
+  if weapon_status then local ok,why=weapon_status.close();if not ok then return false,why end end
   local owner=rawget(_G,'DiversBestFriend')
   if not owner or owner~=core or type(owner.shutdown)~='function' then return false,'ASS cleanup owner unavailable' end
   local ok,why=owner.shutdown();if not ok then return false,why end
