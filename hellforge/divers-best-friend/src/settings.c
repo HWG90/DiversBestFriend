@@ -30,6 +30,15 @@ static Span trim(const char* b, const char* e)
     return s;
 }
 
+/* The span up to a trailing comment: the first ; or # that follows a space or a tab (Plan 2, Task 12: settings.ini is
+ * edited by hand, and "enabled = false ; off" must turn DBF off), trimmed. A ; or # with no space before it stays. */
+static Span strip_comment(Span s)
+{
+    for (size_t i = 1; i < s.n; i++)
+        if ((s.p[i] == ';' || s.p[i] == '#') && (s.p[i - 1] == ' ' || s.p[i - 1] == '\t')) return trim(s.p, s.p + i);
+    return trim(s.p, s.p + s.n);
+}
+
 /* The span equals `lit` (written in lower case) apart from case. */
 static bool is(Span s, const char* lit)
 {
@@ -381,12 +390,13 @@ static void do_dbf(DbfSettings* s, Problems* p, int line, Span key, Span value)
     } else if (is(key, "input_interval_ms")) {
         if (parse_decimal(value, &ms) && ms <= DBF_INTERVAL_MAX_MS) {
             s->input_interval_ms = ms;
-        } else {
-            s->input_interval_ms = DBF_INTERVAL_DEFAULT_MS;
+        } else { /* like every other key, a bad value keeps what an earlier line (or the default) gave */
             problem_begin(p, line);
             cur_str(p, "input_interval_ms must be a whole number from 0 to 250, not ");
             cur_quoted(p, value);
-            cur_str(p, " (using 70)");
+            cur_str(p, " (keeping ");
+            cur_number(p, s->input_interval_ms);
+            cur_str(p, ")");
             problem_end(p);
         }
     } else {
@@ -469,7 +479,7 @@ int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems,
 
         if (t.n == 0 || t.p[0] == ';' || t.p[0] == '#') continue;
         if (t.p[0] == '[') {
-            sec = do_header(&p, line, t);
+            sec = do_header(&p, line, strip_comment(t));
             continue;
         }
         if (sec == SEC_SKIP) continue; /* inside a section that was listed already */
@@ -481,7 +491,7 @@ int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems,
             continue;
         }
         key = trim(t.p, eq);
-        value = trim(eq + 1, t.p + t.n);
+        value = strip_comment((Span){ eq + 1, (size_t)(t.p + t.n - (eq + 1)) });
         if (key.n == 0) {
             problem_begin(&p, line);
             cur_str(&p, "no key before =");

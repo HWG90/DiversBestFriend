@@ -13,13 +13,16 @@
  *   [blacklist]  kind_<id> = true | false for each id in dbf_blacklist_kinds (the stratagems a player may hide)
  *
  * One setting per line as `key = value`; blank lines are skipped, and so are lines whose first character after the spaces is
- * ; or # (comments are whole lines). Spaces and tabs around names and values are trimmed, section names, keys and values
- * are not case sensitive, a UTF-8 byte order mark at the start is skipped, and a later line for the same key wins.
+ * ; or # (a comment line). A value or a section header may end in a comment too: from the first ; or # that follows a
+ * space or a tab ("enabled = false ; off" is false; a ; or # with no space before it is part of the text). Spaces and tabs
+ * around names and values are trimmed, section names, keys and values are not case sensitive, a UTF-8 byte order mark at
+ * the start is skipped, and a later line for the same key wins.
  *
  * Parsing never fails the file. A line that is not understood is listed in `problems` ("line N: ..."), skipped, and the
  * lines after it are read as usual: unknown sections (their keys are skipped without a line each), unknown keys, a key with
- * no section, a line with no `=`, a value that is not valid for its key. An input_interval_ms that is not a whole number
- * from 0 to 250 is listed and becomes the default (70).
+ * no section, a line with no `=`, a value that is not valid for its key. A value that is not valid leaves its setting as an
+ * earlier line or the default had it; for input_interval_ms (a whole number from 0 to 250) the problem says which value is
+ * kept.
  *
  * Defaults are R46's: enabled and selection_sounds true; input_interval_ms 70; randomize_input_delay, instant_stratagems,
  * hide_sos and hide_eagle_rearm false; every blacklist kind at the default_on of dbf_blacklist_kinds; next = wheel_down,

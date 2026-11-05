@@ -154,7 +154,7 @@ static void test_interval(void)
     CHECK(parse("[dbf]\ninput_interval_ms = 120\n") == 0 && g_s.input_interval_ms == 120, "input_interval_ms 120");
     CHECK(parse("[dbf]\ninput_interval_ms = 250\n") == 0 && g_s.input_interval_ms == 250, "input_interval_ms 250 (the largest)");
     CHECK(parse("[dbf]\ninput_interval_ms =\t 90 \t\n") == 0 && g_s.input_interval_ms == 90, "spaces and tabs around the number are trimmed");
-    CHECK(parse("[dbf]\ninput_interval_ms = 251\n") == 1 && g_s.input_interval_ms == 70, "251: listed, the default 70");
+    CHECK(parse("[dbf]\ninput_interval_ms = 251\n") == 1 && g_s.input_interval_ms == 70, "251: listed, the default 70 stays");
     CHECK(strstr(g_p, "line 2: ") == g_p && strstr(g_p, "input_interval_ms") != NULL, "and the problem names the key and the line");
     CHECK(parse("[dbf]\ninput_interval_ms = -1\n") == 1 && g_s.input_interval_ms == 70, "-1: listed, the default");
     CHECK(parse("[dbf]\ninput_interval_ms = 1000\n") == 1 && g_s.input_interval_ms == 70, "1000: listed, the default");
@@ -165,8 +165,13 @@ static void test_interval(void)
     CHECK(parse("[dbf]\ninput_interval_ms = 0x10\n") == 1 && g_s.input_interval_ms == 70, "0x10: listed, the default");
     CHECK(parse("[dbf]\ninput_interval_ms = +5\n") == 1 && g_s.input_interval_ms == 70, "+5: listed, the default");
     CHECK(parse("[dbf]\ninput_interval_ms = 99999999999999999999999\n") == 1 && g_s.input_interval_ms == 70, "a number too long for an int: listed, the default");
-    CHECK(parse("[dbf]\ninput_interval_ms = 100\ninput_interval_ms = 999\n") == 1 && g_s.input_interval_ms == 70,
-          "a later out-of-range value gives the default, not the earlier value");
+    CHECK(parse("[dbf]\ninput_interval_ms = 100\ninput_interval_ms = 999\n") == 1 && g_s.input_interval_ms == 100,
+          "a later out-of-range value keeps the earlier good value, as every other key does (Task 12)");
+    CHECK(strstr(g_p, "(keeping 100)") != NULL, "and the problem says which value is kept");
+    CHECK(parse("[dbf]\ninput_interval_ms = 0\ninput_interval_ms = fast\n") == 1 && g_s.input_interval_ms == 0,
+          "an earlier 0 is kept too");
+    CHECK(parse("[dbf]\ninput_interval_ms = fast\n") == 1 && strstr(g_p, "(keeping 70)") != NULL,
+          "with no earlier value the default is kept, and said");
     CHECK(parse("[dbf]\ninput_interval_ms = 999\ninput_interval_ms = 100\n") == 1 && g_s.input_interval_ms == 100,
           "and a later good value wins over an earlier bad one");
 }
@@ -192,7 +197,22 @@ static void test_format(void)
     CHECK(parse("[dbf]\nhide_sos = true\n[bindings]\nnext = none\n[dbf]\nhide_eagle_rearm = true\n") == 0 && g_s.hide_sos &&
               g_s.hide_eagle_rearm && g_s.bind[BIND_NEXT].kind == BIND_NONE,
           "a section may be opened again");
-    CHECK(parse("[dbf]\nhide_sos = true ; not a comment\n") == 1 && !g_s.hide_sos, "comments are whole lines: text after a value is part of it");
+    CHECK(parse("[dbf]\nhide_sos = true ; on\n") == 0 && g_s.hide_sos, "a ; comment after a value is not part of it (Task 12)");
+    CHECK(parse("[dbf]\nenabled = false ; off\n") == 0 && !g_s.enabled, "enabled = false ; off turns DBF off");
+    CHECK(parse("[dbf]\nhide_sos = true # on\n") == 0 && g_s.hide_sos, "a # comment after a value too");
+    CHECK(parse("[dbf]\nhide_sos = true\t; on\n") == 0 && g_s.hide_sos, "a tab before the comment counts as a space");
+    CHECK(parse("[dbf]\ninput_interval_ms = 90 ; ms\n") == 0 && g_s.input_interval_ms == 90, "a comment after a number");
+    CHECK(parse("[bindings]\nslot1 = key:0x31 # the 1 key\n") == 0 && g_s.bind[BIND_SLOT1].kind == BIND_KEY &&
+              g_s.bind[BIND_SLOT1].code == 0x31,
+          "a comment after a binding");
+    CHECK(parse("[dbf]\nhide_sos = true;on\n") == 1 && !g_s.hide_sos, "a ; with no space before it is part of the value");
+    CHECK(parse("[dbf]\nhide_sos = true#on\n") == 1 && !g_s.hide_sos, "and so is a # with no space before it");
+    CHECK(parse("[dbf]\nhide_sos = ; nothing\n") == 1 && !g_s.hide_sos, "a value that is all comment is empty: a bad value");
+    CHECK(parse("[dbf] ; options\nhide_sos = true\n") == 0 && g_s.hide_sos, "a comment after a section header");
+    CHECK(parse("[blacklist]\t# hidden rows\nkind_42 = true\n") == 0 && g_s.blacklist_kind[42],
+          "a # comment after a section header, after a tab");
+    CHECK(parse("[dbf];options\nhide_sos = true\n") == 1 && !g_s.hide_sos,
+          "a ; right after the ] is not a comment: the header is not closed, its lines are skipped");
     CHECK(parse("[dbf]\n; hide_sos = true\n") == 0 && !g_s.hide_sos, "a commented-out setting is not read");
     CHECK(parse("[dbf]\ninput_interval_ms = 90\n\n\n[blacklist]\n\nkind_42 = true\n") == 0 && g_s.input_interval_ms == 90 && g_s.blacklist_kind[42],
           "blank lines between settings");
