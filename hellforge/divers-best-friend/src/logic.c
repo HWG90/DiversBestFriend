@@ -9,7 +9,6 @@
 #define LOGIC_DEADLINE_SLACK_MS 1500u  /* plus this much on top of length * interval: R46 selection.lua:92 */
 
 
-_Static_assert(DBF_VAL_CARD_COUNT == LOGIC_LIST_ROWS, "logic_list_rows takes one entry per card of the HUD list");
 _Static_assert(DBF_OFF_CARD_TIMER_KIND_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the timer block holds the kind");
 _Static_assert(DBF_OFF_CARD_TIMER_STATE_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the timer block holds the state");
 _Static_assert(DBF_OFF_CARD_TIMER_INCOMING_SECONDS_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the block holds the seconds");

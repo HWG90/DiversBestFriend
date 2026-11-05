@@ -45,6 +45,11 @@
  *   no-entry-admission  an ENTRY witness byte differs: Confirm sends nothing, and the Status tab says why
  *   no-host-entry  no Overlay Host: the keys still work and the code is entered; one log line says what is missing
  *   release-retry  the write that releases the first direction fails: the job fails, and the next tick puts it back
+ *   card-gone      the stratagem's card turns unavailable during a code: "card membership changed" (R46)
+ *   shortcut-blocked  a host window takes the input during a slot hotkey: cancelled, the latch back, the menu closed
+ *   latch-retry    a latch release cannot be written, once after a refused slot hotkey (the tick retries it for the
+ *                  latch's own player) and once after a done one with the player respawned (the old actions dword is
+ *                  left alone)
  * Every case maps the synthetic game.dll's code pages into executable memory with a 12-byte stub (mov rax, imm64;
  * jmp rax) at each DBF_FN_* RVA, jumping to a C fake here (the input handler, open, close and request_slot over
  * tests/synthetic.c's fakes; the UI sound and the scramble query recorded). The stub's bytes are in the synthetic image
@@ -111,6 +116,7 @@ static struct HfMod g_mod = { "goose.divers-best-friend" };
 
 static char g_lines[MAX_LINES][LINE_SIZE];
 static int g_line_count;
+static char g_last_line[LINE_SIZE]; /* the last line logged, kept however many there were */
 
 static void api_log(HfMod* mod, const char* format, ...)
 {
@@ -120,6 +126,7 @@ static void api_log(HfMod* mod, const char* format, ...)
     vsnprintf(line, sizeof line, format, args);
     va_end(args);
     printf("  [%s] %s\n", mod ? mod->id : "?", line);
+    memcpy(g_last_line, line, sizeof line);
     if (g_line_count < MAX_LINES) memcpy(g_lines[g_line_count++], line, sizeof line);
 }
 
@@ -248,6 +255,15 @@ enum { FN_INPUT, FN_OPEN, FN_CLOSE, FN_REQUEST, FN_SOUND, FN_SCRAMBLE, FN_COUNT 
 #define MAX_CALLS 64
 
 static int g_calls[FN_COUNT];
+static int g_checkpoint_misses; /* calls of the four user-triggered functions whose checkpoint was not the last line */
+
+/* native.h: the input handler, open, close and request_slot log "call <name>(" right before every call. */
+static void checkpoint_before(const char* name)
+{
+    size_t n = strlen(name);
+    if (strncmp(g_last_line, "call ", 5) != 0 || strncmp(g_last_line + 5, name, n) != 0 || g_last_line[5 + n] != '(')
+        g_checkpoint_misses++;
+}
 static int g_handler_tick[MAX_CALLS];    /* the host's tick number at each input handler call */
 static ULONGLONG g_handler_ms[MAX_CALLS]; /* and its GetTickCount64 */
 static uint32_t g_sounds[MAX_CALLS];
@@ -264,6 +280,7 @@ static int fn_calls(void)
 static void host_input_handler(uintptr_t component)
 {
     int n = g_calls[FN_INPUT]++;
+    checkpoint_before("input_handler");
     if (n < MAX_CALLS) {
         g_handler_tick[n] = g_tick_no;
         g_handler_ms[n] = GetTickCount64();
@@ -274,18 +291,21 @@ static void host_input_handler(uintptr_t component)
 static uint8_t host_open_input(uintptr_t component)
 {
     g_calls[FN_OPEN]++;
+    checkpoint_before("open_input");
     return syn_open_input(component);
 }
 
 static void host_close_input(uintptr_t component)
 {
     g_calls[FN_CLOSE]++;
+    checkpoint_before("close_input");
     syn_close_input(component);
 }
 
 static void host_request_slot(uintptr_t weapon, uint32_t slot)
 {
     g_calls[FN_REQUEST]++;
+    checkpoint_before("request_slot");
     syn_request_slot(weapon, slot);
 }
 
@@ -503,7 +523,8 @@ static bool rows_are(const SynScene* scene, int count)
 typedef enum {
     C_NO_HOST, C_API3, C_API4, C_API5, C_NO_TICK, C_RETRY, C_ON_AT_ONCE, C_LATE_MODULE, C_SECOND_LOADED, C_NULL_PANEL,
     C_ON_FAILS, C_MASKED_LOG, C_LIST_CONFIRM, C_INSTANT, C_MENU_CLOSE, C_MISSION_END, C_SHORTCUT, C_SHORTCUT_HUD,
-    C_MOD_STRATAGEM, C_SCRAMBLE, C_NO_ENTRY_ADMISSION, C_NO_HOST_ENTRY, C_RELEASE_RETRY
+    C_MOD_STRATAGEM, C_SCRAMBLE, C_NO_ENTRY_ADMISSION, C_NO_HOST_ENTRY, C_RELEASE_RETRY, C_CARD_GONE, C_SHORTCUT_BLOCKED,
+    C_LATCH_RETRY
 } CaseId;
 
 typedef struct CaseInfo {
@@ -538,6 +559,10 @@ static const CaseInfo CASES[] = {
     [C_NO_ENTRY_ADMISSION] = { "no-entry-admission", "an ENTRY witness differs: Confirm does nothing", true, true, true },
     [C_NO_HOST_ENTRY] = { "no-host-entry", "no Overlay Host: DBF's keys still enter codes", false, true, true },
     [C_RELEASE_RETRY] = { "release-retry", "a direction's release cannot be written: the tick retries it", true, true, true },
+    [C_CARD_GONE] = { "card-gone", "the stratagem's card becomes unavailable during a code", true, true, true },
+    [C_SHORTCUT_BLOCKED] = { "shortcut-blocked", "a host window opens during a slot hotkey", true, true, true },
+    [C_LATCH_RETRY] = { "latch-retry", "a latch release cannot be written: the tick retries it for its owner", true, true,
+                        true },
 };
 
 static CaseId g_case;
@@ -1127,6 +1152,7 @@ static int overlap(const DbfWitness* w)
 }
 
 static int (*s_byte_calls)(void);
+static bool g_skipped; /* no window of this process can take the foreground, or keys do not reach the key state */
 
 /* Everything a code-entry case starts with: the scene, the globals, settings.ini, the stub ranges reported, the fakes'
  * expectation, the window and keys; then init, the game-loaded event and two ticks (game.dll found, every key seen up).
@@ -1145,7 +1171,12 @@ static bool entry_prepare(const SynScene* scene, const char* settings, uint32_t 
     syn_input_expect(kind, code, n);
     syn_menu_reset();
     ready = keys_and_window();
-    CHECK(ready, "a window of this process is in front and keybd_event reaches GetAsyncKeyState (the entry cases need it)");
+    if (!ready) {
+        g_skipped = true;
+        printf("SKIP %s: no window of this process takes the foreground here, or keybd_event does not reach "
+               "GetAsyncKeyState (the code-entry cases press keys as a player would)\n",
+               CASES[g_case].name);
+    }
     return ready;
 }
 
@@ -1230,10 +1261,13 @@ static int count_lines_starting(const char* prefix)
     return n;
 }
 
-/* Every call of the input handler had its checkpoint line first (native.h). */
+/* Every call of the input handler, open, close and request_slot came right after its own checkpoint line (native.h: the
+ * last line of the log names the call in progress). */
 static bool checkpoints(void)
 {
-    return count_lines_starting("call input_handler(") == g_calls[FN_INPUT];
+    if (g_checkpoint_misses == 0) return true;
+    printf("  %d calls without their checkpoint right before them\n", g_checkpoint_misses);
+    return false;
 }
 
 /* The HUD list as the host draws it, with `name` drawn in the accent: the chosen row. */
@@ -1336,7 +1370,7 @@ static void run_list_confirm(void)
     CHECK(status_has("text:Entry: done"), "the Status tab says the entry is done");
     CHECK(ended("Code entry done: Orbital Gatling Barrage (every change put back)"), "and the log says so");
     CHECK(sounds_are(SOUNDS, 2), "two sounds in all: the move and the confirm");
-    CHECK(checkpoints(), "every handler call had its checkpoint line first");
+    CHECK(checkpoints(), "every handler call came right after its checkpoint line");
     CHECK(syn_mapped_write_count() >= 2 * st->code_len && syn_write_count() == 0, "a press and a release per direction");
     CHECK(g_calls[FN_OPEN] == 0 && g_calls[FN_CLOSE] == 0 && g_calls[FN_REQUEST] == 0,
           "a List job opens, closes and requests nothing");
@@ -1543,7 +1577,7 @@ static void run_shortcut(void)
     entry_tick();
     CHECK(status_has("text:Entry: done") && actions_idle(), "the Status tab says done; the action bytes are 0");
     CHECK(checkpoints() && count_lines_starting("call open_input(") == 1 && count_lines_starting("call request_slot(") == 1,
-          "every game call had its checkpoint line");
+          "every game call came right after its checkpoint line");
     end_keys();
 }
 
@@ -1731,6 +1765,116 @@ static void run_release_retry(void)
     end_keys();
 }
 
+/* card-gone: the top row's card (kind 118) turns unavailable after the first direction (its timer state 5): the list no
+ * longer offers it, so the job stops (R46 selection.lua:49-51). */
+static void run_card_gone(void)
+{
+    SynScene scene;
+    const SynStratagem* st;
+    uintptr_t timer;
+    syn_default(&scene);
+    st = &scene.stratagems[0];
+    if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    tap(KEY_CONFIRM);
+    CHECK(g_calls[FN_INPUT] == 1, "the first direction went");
+    timer = syn_card(0) + DBF_OFF_CARD_TIMER_OFFSET;
+    CHECK(syn_poke_u32(timer + DBF_OFF_CARD_TIMER_STATE_OFFSET, DBF_VAL_TIMER_STATE_UNAVAILABLE),
+          "the game marks its card unavailable");
+    Sleep(INTERVAL_MS + 20u);
+    entry_tick();
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1 && actions_idle(), "no direction goes after that; the action bytes are 0");
+    CHECK(ended("Code entry failed: card membership changed (every change put back)"), "failed: card membership changed");
+    CHECK(status_has("text:Entry: failed: card membership changed"), "the Status tab says why");
+    end_keys();
+}
+
+static void (*s_set_capturing)(int);
+
+/* shortcut-blocked: a host window opens (the list's frames say capturing) after a slot hotkey's first direction. */
+static void run_shortcut_blocked(void)
+{
+    static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    s_set_capturing = (void (*)(int))need(g_stub, "stub_set_capturing");
+    shortcut_scene(&scene);
+    st = &scene.stratagems[4];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!s_set_capturing || !entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    CHECK(set_menu_in_game(false), "(the menu is closed in the game)");
+    entry_tick();
+    press_slot1(0);
+    key(KEY_SLOT1, false);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1, "the first direction went");
+    s_set_capturing(1);
+    s_draw(1);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1 && actions_idle(), "no direction goes after that; the action bytes are 0");
+    CHECK(ended("Code entry failed: an Overlay Host window is open (every change put back)"),
+          "failed: an Overlay Host window is open");
+    CHECK(originals(), "the menu binding is Hold again, both dwords 2");
+    CHECK(g_calls[FN_CLOSE] == 1 && checkpoints(), "the menu DBF opened is closed");
+    s_set_capturing(-1);
+    s_draw(1);
+    end_keys();
+}
+
+/* latch-retry: Task 12 fix round I1 and M3. First a slot hotkey the game does not open the menu for: its latch release
+ * cannot write the actions dword; the refusal says so, and the next tick puts it back for the latch's own player (the
+ * dword reads 2 again). Then a slot hotkey that ran: the game closes the menu, the release cannot write the same dword,
+ * the player respawns (another key), and the retry leaves the old block's dword alone, as R46 does for a changed
+ * player. */
+static void run_latch_retry(void)
+{
+    static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    shortcut_scene(&scene);
+    st = &scene.stratagems[4];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    CHECK(set_menu_in_game(false), "(the menu is closed in the game)");
+    entry_tick();
+
+    syn_open_answers(0, false);
+    g_fail_write = g_write_no + 5; /* the latch's four swaps work; the release's first write (the actions dword) fails */
+    key(KEY_SLOT1, true);
+    entry_tick();
+    key(KEY_SLOT1, false);
+    CHECK(ended("Slot 1 not entered: the game did not open the menu (1 change not put back yet: DBF tries again each "
+                "tick)"),
+          "a refused slot hotkey says one change is still to be put back");
+    CHECK(u32_at(syn_local_menu_trigger()) == 0 && u32_at(syn_controls_menu_trigger()) == 2,
+          "(the actions dword still reads the latch's 0)");
+    entry_tick();
+    CHECK(originals() && ended("Every change DBF made to the game is put back"),
+          "the next tick puts it back for the latch's own player: every record and dword reads its original");
+
+    syn_open_answers(1, true);
+    press_slot1(1);
+    key(KEY_SLOT1, false);
+    tick_until_calls(st->code_len);
+    CHECK(handler_took(st->code, st->code_len) && latched(), "a second slot hotkey's code is in; the latch held");
+    g_fail_write = g_write_no + 1; /* the release's first write (the actions dword) fails */
+    CHECK(set_menu_in_game(false), "the game closes the menu");
+    entry_tick();
+    CHECK(ended("Code entry done: Orbital Precision Strike (1 change not put back yet: DBF tries again each tick)"),
+          "done, with one change still to be put back");
+    CHECK(syn_respawn_local(syn_local_key() ^ 0x100u), "the player respawns before the retry (another key)");
+    entry_tick();
+    CHECK(u32_at(syn_local_menu_trigger()) == 0, "the retry did not write the old player's actions dword");
+    CHECK(record_is(0, SYN_MENU_RECORDS[0]) && record_is(2, SYN_MENU_RECORDS[2]) && u32_at(syn_controls_menu_trigger()) == 2,
+          "the records and the controls dword are back");
+    CHECK(logged("latch: the player changed; the old player's menu trigger was left alone") == 1
+              && logged("Every change DBF made to the game is put back") == 2,
+          "and the log says the old player's trigger was left alone, and that nothing is left");
+    end_keys();
+}
+
 /* --- main ------------------------------------------------------------------------------------------------------ */
 
 int main(int argc, char** argv)
@@ -1744,7 +1888,7 @@ int main(int argc, char** argv)
         puts("usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll>] [<hellforge_modloader.dll>]\n"
              "cases: no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel"
              " on-fails masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem"
-             " scramble no-entry-admission no-host-entry release-retry");
+             " scramble no-entry-admission no-host-entry release-retry card-gone shortcut-blocked latch-retry");
         return 2;
     }
     name = argv[2];
@@ -1826,9 +1970,17 @@ int main(int argc, char** argv)
     case C_NO_ENTRY_ADMISSION: run_no_entry_admission(); break;
     case C_NO_HOST_ENTRY: run_no_host_entry(); break;
     case C_RELEASE_RETRY: run_release_retry(); break;
+    case C_CARD_GONE: run_card_gone(); break;
+    case C_SHORTCUT_BLOCKED: run_shortcut_blocked(); break;
+    case C_LATCH_RETRY: run_latch_retry(); break;
     default: run_standard(); break;
     }
 
+    if (g_skipped && test_failures() == 0) {
+        printf("== %s: skipped\n", name);
+        fflush(stdout);
+        return 0;
+    }
     printf("== %s: %d failure(s)\n", name, test_failures());
     fflush(stdout);
     TEST_MAIN_END

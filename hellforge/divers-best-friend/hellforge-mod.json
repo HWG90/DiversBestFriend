@@ -3,7 +3,7 @@
   "id": "goose.divers-best-friend",
   "name": "Diver's Best Friend",
   "version": "R50-hellforge.2",
-  "description": "Picks and enters your stratagems from a wheel or list in game. Needs Goose Overlay Host.",
+  "description": "Enters your stratagem codes for you: pick one from a list, or press a slot hotkey. Keys and controller buttons work on their own; the on-screen list, the settings window and mouse-wheel controls need Goose Overlay Host.",
   "url": "https://github.com/HWG90/DiversBestFriend/tree/hellforge",
   "gameplay": false,
   "code": { "dll": "divers_best_friend.dll", "sdk": 15, "prebuilt": true, "game": "25480438" }

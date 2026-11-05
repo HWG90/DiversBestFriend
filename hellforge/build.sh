@@ -143,17 +143,17 @@ run_wine_tests() {
   "$proton" run 'C:\windows\system32\cmd.exe' /c exit >/dev/null 2>&1 || true
   w() { printf 'Z:%s' "${1//\//\\}"; }
   # Each case in a process of its own (the DLL keeps static state); its full output is kept in build/wine/<case>.log.
-  local passed=0 failed=0 name status stubs
+  local passed=0 failed=0 skipped=0 name status stubs
   # The code-entry cases (Plan 2, Task 12) drive the real DLL end to end: a stub at each game function, settings.ini,
   # keys pressed in a window of the host's own; each runs with the API 5 stub host and the stub loader (no-host-entry with
   # the loader alone).
   for name in no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel on-fails \
               masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem scramble \
-              no-entry-admission no-host-entry release-retry; do
+              no-entry-admission no-host-entry release-retry card-gone shortcut-blocked latch-retry; do
     case $name in
       no-host) stubs=() ;;
       host-api5|list-confirm|instant|menu-close|mission-end|shortcut|shortcut-hud|mod-stratagem|scramble|no-entry-admission|\
-      release-retry)
+      release-retry|card-gone|shortcut-blocked|latch-retry)
         stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       no-host-entry) stubs=("$(w "$out/modloader/hellforge_modloader.dll")") ;;
       masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
@@ -164,9 +164,12 @@ run_wine_tests() {
     WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
         "$(w "$out/wine_host.exe")" "$(w "$mod/$dllName")" "$name" ${stubs[@]+"${stubs[@]}"} > "$out/$name.log" 2>&1 || status=$?
     sed -i 's/\r$//' "$out/$name.log" # a Windows program's text-mode stdout ends its lines with CR LF
-    grep -E '^(==|PASS|FAIL)' "$out/$name.log" || true
-    # A case passes when the host exits 0 and printed its last line (a crash in the DLL never gets there).
+    grep -E '^(==|PASS|FAIL|SKIP)' "$out/$name.log" || true
+    # A case passes when the host exits 0 and printed its last line (a crash in the DLL never gets there). A code-entry
+    # case that finds no desktop where its window can take the foreground and keys reach the key state is skipped.
     if [ "$status" = 0 ] && grep -qx "== $name: 0 failure(s)" "$out/$name.log"; then echo "PASS $name"; passed=$((passed + 1))
+    elif [ "$status" = 0 ] && grep -qx "== $name: skipped" "$out/$name.log"; then
+      echo "SKIP $name (no focusable desktop for its keys; log $out/$name.log)"; skipped=$((skipped + 1))
     else echo "FAIL $name (exit $status; log $out/$name.log)"; failed=$((failed + 1)); fi
   done
   # The real BindPort (src/platform_win.c) in a program of its own: it needs no game and no stub host, so it runs once,
@@ -180,7 +183,8 @@ run_wine_tests() {
   grep -E '^(==|PASS|FAIL|SKIP)' "$out/bind-port.log" || true
   if [ "$status" = 0 ] && grep -qx "== bind-port: 0 failure(s)" "$out/bind-port.log"; then echo "PASS bind-port"; passed=$((passed + 1))
   else echo "FAIL bind-port (exit $status; log $out/bind-port.log)"; failed=$((failed + 1)); fi
-  echo "wine-test: $passed passed, $failed failed"
+  if [ "$skipped" -gt 0 ]; then echo "wine-test: $passed passed, $failed failed, $skipped skipped"
+  else echo "wine-test: $passed passed, $failed failed"; fi
   [ "$failed" -eq 0 ]
 }
 

@@ -12,7 +12,7 @@
  * to be looked at in game in Task 13; Plan 3 replaces the list. */
 #define LIST_TEXT_PX 22.0f            /* DBF's own: the text size */
 #define LIST_MARGIN_PX 24.0f          /* DBF's own: the plate's distance from the left edge of the screen */
-#define LIST_PAD_PX 12.0f             /* DBF's own: inside the plate (DESIGN.md window_padding's 12 px, up and down) */
+#define LIST_PAD_PX 12.0f             /* DBF's own: inside the plate (DESIGN.md has no padding for HUD plates) */
 #define LIST_COLUMN_GAP_PX 18.0f      /* DBF's own: between the name, code and timer columns */
 #define LIST_ROW_GAP_PX 6.0f          /* DBF's own: between two rows */
 #define LIST_PLATE_ROUNDING_PX 6.0f   /* DESIGN.md hud_plate_rounding */

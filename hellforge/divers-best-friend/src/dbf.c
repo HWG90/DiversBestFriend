@@ -79,6 +79,12 @@
 #define SETTINGS_PROBLEMS_SIZE 2048u
 #define PATH_CHARS 600
 #define SLOT_COUNT 4 /* the slot hotkeys: BIND_SLOT1 .. BIND_SLOT4 */
+/* randomize_input_delay's generator: Marsaglia's xorshift32 ("Xorshift RNGs", 2003) with his shift triple 13, 17, 5;
+ * its state must not be 0, so a zero seed takes RANDOM_NONZERO_STATE (2^32 / the golden ratio, any nonzero value does). */
+#define XORSHIFT_A 13
+#define XORSHIFT_B 17
+#define XORSHIFT_C 5
+#define RANDOM_NONZERO_STATE 0x9E3779B9u
 
 /* hellforge_lua_rewrites' type, taken from the SDK's own declaration, so the function pointer GetProcAddress gives can
  * never be typed differently from the prototype the loader is built against. */
@@ -102,14 +108,17 @@ static char g_settings_problem_text[SETTINGS_PROBLEMS_SIZE];
 
 /* The game thread's state. */
 static bool g_started;            /* game.dll was found; every unit is set up */
-static const BindPort* g_bind_port;
+/* The bindings' port: the platform's (platform_win.h), except that its foreground answer is the one sample the tick took
+ * (g_front), so bind_poll's gate and the tick's own reason ("the game is not in front") always agree. */
+static BindPort g_bind_port;
+static bool (*g_platform_foreground)(void);
+static bool g_bind_ready;
+static bool g_front;
 static ListState g_list;
 static EntryJob g_job;            /* the one code entry: a List job, or a slot hotkey's while shortcut_active() */
 static BindAction g_trigger;      /* the binding that started it (Instant waits for it to be up) */
 static uintptr_t g_job_hud;       /* the HUD it began with (R46's HUD identity) */
 static bool g_watching;           /* a job started and its end is not logged yet */
-static uintptr_t g_latch_manager; /* the player a slot hotkey's latch was taken for, while LATCH entries remain */
-static uint32_t g_latch_key;
 static bool g_pending_logged;     /* "not put back yet" was logged: "every change is put back" is due */
 static bool g_slot_prev[SLOT_COUNT]; /* the slot hotkeys' levels at the last tick: a rising edge starts a shortcut */
 static SoundState g_sound;
@@ -117,6 +126,11 @@ static uint32_t g_random;         /* xorshift32 state for randomize_input_delay 
 static char g_bind_status[DBF_LIST_STATUS_SIZE];
 
 /* --- small helpers ------------------------------------------------------------------------------------------------ */
+
+static bool tick_foreground(void)
+{
+    return g_front;
+}
 
 /* One line in the mod's log: the units' log ports (admission, codes, native, latch, sound) and dbf.c's own lines. */
 static void log_line(const char* line)
@@ -132,10 +146,10 @@ static uint64_t now_ms(void)
 /* randomize_input_delay's draw (R46 input.lua:12-14 used math.random; any spread does). */
 static uint32_t next_random(void)
 {
-    uint32_t x = g_random != 0 ? g_random : 0x9E3779B9u;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
+    uint32_t x = g_random != 0 ? g_random : RANDOM_NONZERO_STATE;
+    x ^= x << XORSHIFT_A;
+    x ^= x >> XORSHIFT_B;
+    x ^= x << XORSHIFT_C;
     g_random = x;
     return x;
 }
@@ -205,8 +219,12 @@ static void load_settings(void)
     settings_defaults(&g_settings);
     g_settings_read = false;
     g_settings_problems = 0;
-    if (n == 0 || (size_t)n + folder + name > PATH_CHARS) {
+    if (n == 0) {
         log_line("LOCALAPPDATA is not set: using the default settings");
+        return;
+    }
+    if ((size_t)n + folder + name > PATH_CHARS) { /* n is then the size the value needs */
+        log_line("LOCALAPPDATA is too long for DBF's settings path: using the default settings");
         return;
     }
     memcpy(path + n, DBF_SETTINGS_FOLDER, folder * sizeof(WCHAR));
@@ -289,7 +307,7 @@ static void start(uint64_t now)
     sound_init(&g_sound, nat_ui_sound, log_line);
     memset(&g_job, 0, sizeof g_job);
     g_watching = false;
-    g_random = (uint32_t)now ^ (uint32_t)(now >> 32) ^ 0x2545F491u;
+    g_random = (uint32_t)now ^ (uint32_t)(now >> 32); /* next_random takes RANDOM_NONZERO_STATE for a 0 */
     g_started = true;
 }
 
@@ -336,9 +354,22 @@ static const char* cancel_reason(const GameView* v, const char* blocked)
     if (!v->in_gameplay) return "the mission ended";
     if (!v->hud_ready) return "the HUD went away";
     if (v->hud != g_job_hud) return "the HUD changed";
-    if (v->local_ok && (v->local.manager != g_job.identity_manager || v->local.key != g_job.identity_key))
+    if (v->local_ok && (v->local.manager != g_job.identity_manager || v->local.key != g_job.identity_key
+                        || v->local.component != g_job.component))
         return "player changed";
     return blocked;
+}
+
+/* R46 selection.lua:49-51: a List job stops when the list no longer offers its stratagem, that is when no row of the view
+ * that may be chosen (logic_list_rows: not on a timer, not unavailable, not hidden) shows the job's kind. Not for a slot
+ * hotkey's job, which R46's release path did not tie to the list. */
+static bool card_gone(const GameView* v)
+{
+    bool eligible[LOGIC_LIST_ROWS];
+    int n = logic_list_rows(v, &g_settings, NULL, eligible);
+    for (int i = 0; i < n; i++)
+        if (eligible[i] && v->rows[i].kind == g_job.kind) return false;
+    return true;
 }
 
 /* Plan 2's restore ruling: the job ends through entry_cancel or entry_cancel_shortcut (which gives the latch back with
@@ -352,12 +383,13 @@ static void cancel_job(const GameView* v, const char* why)
 
 /* Each tick, while their journals hold anything: a release the game did not take (ENTRY), and a latch release that left
  * entries (a failed write, or a controls pointer that could not be read), with avatar_valid when the view shows the player
- * the latch was taken for (false with no player). */
+ * the latch was taken for: latch.c's own owner (manager, key and component, R46 input.lua:376; false with no player),
+ * whether the latch came from a slot hotkey that ran or from one refused after the latch was taken. */
 static void retry_restores(const GameView* v)
 {
     if (mem_journal_count(MEM_OWNER_ENTRY) > 0) (void)mem_restore(MEM_OWNER_ENTRY);
     if (!latch_held() && mem_journal_count(MEM_OWNER_LATCH) > 0)
-        (void)latch_release(v->local_ok && v->local.manager == g_latch_manager && v->local.key == g_latch_key);
+        (void)latch_release(v->local_ok && latch_owner_is(&v->local));
     if (g_pending_logged && pending_changes() == 0) {
         g_pending_logged = false;
         log_line("Every change DBF made to the game is put back");
@@ -379,12 +411,15 @@ static void add_restore_state(DbfLine* l)
     g_pending_logged = true;
 }
 
+/* "<who> not entered: <why>", and, when the refusal left changes behind (a slot hotkey refused after it took the latch,
+ * whose release could not write everything back), how many are still to be put back. */
 static void log_refused(const char* who, const char* why)
 {
     DbfLine l;
     dbf_line_begin(&l, who);
     dbf_line_add(&l, " not entered: ");
     dbf_line_add(&l, why);
+    if (pending_changes() > 0) add_restore_state(&l);
     log_line(l.text);
 }
 
@@ -430,19 +465,19 @@ static void watch_job(void)
 /* A slot hotkey's rising edge (R46 entry.lua:399-406): slot `slot`, from the closed or the open menu. */
 static bool begin_shortcut(const GameView* v, int slot, uint64_t now)
 {
-    char why[DBF_REASON_SIZE], who[8] = "Slot 0";
+    char why[DBF_REASON_SIZE];
     uint32_t interval = logic_interval(&g_settings, next_random);
-    who[5] = (char)('0' + slot);
+    DbfLine who;
+    dbf_line_begin(&who, "Slot ");
+    dbf_line_add_uint(&who, (uint32_t)slot);
     if (!entry_begin_shortcut(&g_job, v, slot, interval, g_settings.instant_stratagems, now, why, sizeof why)) {
-        log_refused(who, why);
+        log_refused(who.text, why);
         return false;
     }
     g_trigger = (BindAction)(BIND_SLOT1 + slot - 1);
     g_job_hud = v->hud;
-    g_latch_manager = g_job.identity_manager;
-    g_latch_key = g_job.identity_key;
     g_watching = true;
-    log_started(who, interval);
+    log_started(who.text, interval);
     return true;
 }
 
@@ -470,7 +505,8 @@ static bool begin_list(const GameView* v, int row, uint64_t now)
  *   1. the bindings, polled after the read so that `allowed` uses this tick's view (DBF on, no host window capturing,
  *      the local player there with the UI unobstructed); bind_poll checks the game's window is in front;
  *   2. the restores still owed: ENTRY, and LATCH while the latch is not held;
- *   3. a running job stops when the mission ended, the HUD went or was replaced, the player changed or the input went;
+ *   3. a running job stops when the mission ended, the HUD went or was replaced, the player changed or the input went,
+ *      and a List job when no row that may be chosen shows its stratagem any more ("card membership changed", R46);
  *   4. the slot hotkeys: a rising edge with no job running and no shortcut active starts one (Confirm cancels it, and the
  *      shortcut's step ends it once the game closes the menu, giving the latch back);
  *   5. List Select, which sees a closed list while a shortcut is active (no choice, no Confirm; its edges are still
@@ -487,13 +523,13 @@ static void run(const GameView* v, uint64_t now)
     int row = -1;
     ListEvent event;
 
-    bind_poll(levels, blocked == NULL, g_bind_status, sizeof g_bind_status);
-    if (blocked == NULL && !(g_bind_port->foreground != NULL && g_bind_port->foreground()))
-        blocked = "the game is not in front";
+    bind_poll(levels, blocked == NULL, g_bind_status, sizeof g_bind_status); /* its foreground is g_front, below */
+    if (blocked == NULL && !g_front) blocked = "the game is not in front";
 
     retry_restores(v);
     if (job_active()) {
         const char* why = cancel_reason(v, blocked);
+        if (why == NULL && !shortcut_active() && g_job.state == ENTRY_RUNNING && card_gone(v)) why = "card membership changed";
         if (why != NULL) cancel_job(v, why);
     }
 
@@ -532,12 +568,16 @@ static void Tick(HfMod* mod, float dt, void* user)
     static DbfSnapshot s; /* the game thread's only: snap_publish copies it */
     static UiEvent events[UI_QUEUE_SLOTS];
     uint64_t now = GetTickCount64();
-    if (g_bind_port == NULL) { /* the bindings need nothing of game.dll: from the first tick (platform_win.h: game thread) */
-        g_bind_port = dbf_bind_port(g_ov);
-        bind_init(g_bind_port, g_settings.bind);
+    if (!g_bind_ready) { /* the bindings need nothing of game.dll: from the first tick (platform_win.h: game thread) */
+        g_bind_port = *dbf_bind_port(g_ov);
+        g_platform_foreground = g_bind_port.foreground;
+        g_bind_port.foreground = tick_foreground;
+        bind_init(&g_bind_port, g_settings.bind);
         memset(&g_list, 0, sizeof g_list);
         g_list.chosen = -1;
+        g_bind_ready = true;
     }
+    g_front = g_platform_foreground != NULL && g_platform_foreground(); /* the tick's one look at the window in front */
     if (!g_started) start(now);
     memset(&s, 0, sizeof s);
     s.tick = ++g_ticks;
