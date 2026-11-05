@@ -327,8 +327,9 @@ static void test_reassert(void)
     memcpy(ram_at(at), original, 4); /* the game writes its original back */
     CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED && memcmp(ram_at(at), value, 4) == 0,
           "re-assert: after the game wrote the original back, the next swap writes value again");
-    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(at), original, 4) == 0,
-          "re-assert: one entry (a second would count as not restored), and the original is back");
+    CHECK(mem_journal_count(MEM_OWNER_LATCH) == 1 && mem_restore(MEM_OWNER_LATCH) == 0
+              && memcmp(ram_at(at), original, 4) == 0,
+          "re-assert: one entry, and the original is back");
     CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(at), original, 4) == 0, "re-assert: nothing left");
 
     /* The bytes hold neither the entry's original nor value. */
@@ -379,7 +380,8 @@ static void test_reassert(void)
     CHECK(mem_swap(at, original, value, 2, MEM_OWNER_LATCH) == MEM_FAILED && g_writes == 0
               && memcmp(ram_at(at), original, 4) == 0,
           "re-assert: the same address with another size is MEM_FAILED and writes nothing");
-    CHECK(mem_restore(MEM_OWNER_LATCH) == 1, "re-assert: the refused size added no entry");
+    CHECK(mem_journal_count(MEM_OWNER_LATCH) == 1 && mem_restore(MEM_OWNER_LATCH) == 0,
+          "re-assert: the refused size added no entry (the one there holds its original: restored)");
 
     /* A re-assert adds no entry, so it works with a full journal. */
     reset();
@@ -510,7 +512,112 @@ static void test_failing_writes(void)
     CHECK(mem_swap(RAM_BASE + 0x800, original, value, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "swap that will be restored against a failing write");
     fail_writes(1, 0, 0);
     CHECK(mem_restore(MEM_OWNER_LIST) == 1, "a restore whose write fails counts the entry");
-    CHECK(mem_restore(MEM_OWNER_LIST) == 0, "and the entry is gone");
+    CHECK(mem_journal_count(MEM_OWNER_LIST) == 1 && memcmp(ram_at(RAM_BASE + 0x800), value, 4) == 0,
+          "and the entry stays journaled, the bytes still swapped");
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(RAM_BASE + 0x800), original, 4) == 0
+              && mem_journal_count(MEM_OWNER_LIST) == 0,
+          "a later restore retries it and puts the original back");
+}
+
+/* Bytes that already hold the entry's original count as restored, with no write: while the latch holds, the game writes
+ * its own value back every frame. */
+static void test_restore_finds_the_original(void)
+{
+    const uint8_t value[4] = { 0x41, 0x42, 0x43, 0x44 };
+    uint8_t original[4], other[4];
+    uintptr_t at = RAM_BASE + 0xb00, at2 = RAM_BASE + 0xb10;
+    reset();
+    memcpy(original, ram_at(at), 4);
+    memcpy(other, ram_at(at2), 4);
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED, "original back: the swap");
+    memcpy(ram_at(at), original, 4); /* the game writes its original back */
+    g_writes = 0;
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0, "original back: counted as restored");
+    CHECK(g_writes == 0 && memcmp(ram_at(at), original, 4) == 0, "original back: nothing written, the original stays");
+    CHECK(mem_journal_count(MEM_OWNER_LATCH) == 0, "original back: the entry left the journal");
+
+    reset();
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    mem_swap(at2, other, value, 4, MEM_OWNER_CAMERA);
+    memcpy(ram_at(at), original, 4);
+    g_writes = 0;
+    CHECK(mem_restore_all() == 0 && g_writes == 1 && memcmp(ram_at(at), original, 4) == 0
+              && memcmp(ram_at(at2), other, 4) == 0,
+          "original back, restore_all: the same, and the other entry is written back");
+}
+
+/* A restore whose write fails keeps the entry for a later restore; bytes changed by someone else still leave it. */
+static void test_restore_retries_a_failed_write(void)
+{
+    const uint8_t value[4] = { 0x51, 0x52, 0x53, 0x54 }, theirs[4] = { 0x99, 0x98, 0x97, 0x96 };
+    uint8_t original[4], half[4];
+    uintptr_t at = RAM_BASE + 0xc00;
+
+    /* The write puts in two bytes before it fails: the entry takes the bytes read back. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    fail_writes(1, 2, 0);
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 1 && mem_journal_count(MEM_OWNER_ENTRY) == 1,
+          "half-written restore: counted, the entry kept");
+    memcpy(half, original, 2);
+    memcpy(half + 2, value + 2, 2);
+    CHECK(memcmp(ram_at(at), half, 4) == 0, "half-written restore: two bytes of the original are in");
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && memcmp(ram_at(at), original, 4) == 0
+              && mem_journal_count(MEM_OWNER_ENTRY) == 0,
+          "half-written restore: the retry recognises the bytes read back and puts the original back");
+
+    /* The write reports a failure but put every byte in: the original is back, so it is restored. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    fail_writes(1, 4, 0);
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && memcmp(ram_at(at), original, 4) == 0
+              && mem_journal_count(MEM_OWNER_ENTRY) == 0,
+          "a failed write that put the original in anyway: restored, nothing kept");
+
+    /* The write fails, then the game writes the original back: the retry counts it as restored. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    fail_writes(1, 0, 0);
+    mem_restore(MEM_OWNER_ENTRY);
+    memcpy(ram_at(at), original, 4);
+    g_writes = 0;
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && g_writes == 0 && mem_journal_count(MEM_OWNER_ENTRY) == 0,
+          "failed restore, then the game's original: the retry writes nothing and counts it restored");
+
+    /* The write fails, then someone else writes: the retry leaves their bytes and drops the entry. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    fail_writes(1, 0, 0);
+    mem_restore(MEM_OWNER_ENTRY);
+    memcpy(ram_at(at), theirs, 4);
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 1 && memcmp(ram_at(at), theirs, 4) == 0
+              && mem_journal_count(MEM_OWNER_ENTRY) == 0,
+          "failed restore, then a third party: left alone, the entry dropped");
+
+    /* restore_all keeps a failed entry too, and only that one. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    memcpy(half, ram_at(at + 0x10), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    mem_swap(at + 0x10, half, value, 4, MEM_OWNER_LIST);
+    fail_writes(1, 0, 0); /* newest first: LIST's write fails, LATCH's works */
+    CHECK(mem_restore_all() == 1 && mem_journal_count(MEM_OWNER_LIST) == 1 && mem_journal_count(MEM_OWNER_LATCH) == 0
+              && memcmp(ram_at(at), original, 4) == 0,
+          "restore_all: the failed entry stays, the other is back");
+    CHECK(mem_restore_all() == 0 && memcmp(ram_at(at + 0x10), half, 4) == 0, "restore_all: the retry puts it back");
+
+    /* Bytes that cannot be read at restore leave the journal unrestored, as before. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    g_reads_fail_after = 1;
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 1 && mem_journal_count(MEM_OWNER_ENTRY) == 0,
+          "unreadable at restore: counted and dropped");
+    g_reads_fail_after = 0;
 }
 
 /* A write that fails and whose rollback fails too is journaled, so a later restore can retry. */
@@ -629,6 +736,8 @@ int main(void)
     test_restore_all();
     test_older_owner_restores_first();
     test_failing_writes();
+    test_restore_finds_the_original();
+    test_restore_retries_a_failed_write();
     test_failed_rollback();
     test_init_clears_the_journal();
     test_journal_count();

@@ -144,8 +144,9 @@ static bool send_direction(EntryJob* job, const GameLocal* l)
         problem = "direction could not be pressed";
     else if (!(called = nat_input_handler(component)))
         problem = "input handler unavailable";
-    /* mem_restore counts a byte the game released itself inside the call as not put back; what matters is that the
-     * byte reads released now. */
+    /* A byte the game released itself inside the call counts as put back. What matters is that the byte reads released
+     * now; when the release could not be written, its entry stays journaled for a later mem_restore(MEM_OWNER_ENTRY)
+     * to retry (the tick's, and entry_cancel's). */
     (void)mem_restore(MEM_OWNER_ENTRY);
     if (!mem_u8(address, &byte) || byte != RELEASED) problem = "direction could not be released";
     if (called) job->sent++;
@@ -242,6 +243,6 @@ void entry_step(EntryJob* job, const GameView* v, uint64_t now, bool trigger_dow
 void entry_cancel(EntryJob* job, const char* reason)
 {
     if (!job || job->state != ENTRY_RUNNING) return;
-    (void)mem_restore(MEM_OWNER_ENTRY); /* nothing is journaled between steps; this keeps it so */
+    (void)mem_restore(MEM_OWNER_ENTRY); /* between steps only a release that could not be written is; retry it */
     fail(job, reason ? reason : "cancelled");
 }

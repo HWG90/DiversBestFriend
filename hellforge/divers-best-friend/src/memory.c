@@ -126,23 +126,39 @@ MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_
     return MEM_SWAPPED;
 }
 
-/* True when the entry's original bytes are back: they are written only while the bytes still hold the entry's `written`. */
-static bool put_back(const JournalEntry* entry)
+typedef enum { PUT_BACK, PUT_GONE, PUT_RETRY } PutBack;
+
+/* Puts one entry's original back (see mem_restore): PUT_BACK when the original is there now (already, or written),
+ * PUT_GONE when the bytes cannot be read or are someone else's (neither the original nor what the entry holds), and
+ * PUT_RETRY when the write failed; the entry then takes the bytes read back as what it holds, so a write that changed
+ * some of them is still recognised by the retry. */
+static PutBack put_back(JournalEntry* entry)
 {
     uint8_t now[MEM_SWAP_MAX];
-    if (!mem_read(entry->address, now, entry->size) || memcmp(now, entry->written, entry->size) != 0) return false;
-    return g_port.write && g_port.write(entry->address, entry->original, entry->size) == 0;
+    if (!mem_read(entry->address, now, entry->size)) return PUT_GONE;
+    if (memcmp(now, entry->original, entry->size) == 0) return PUT_BACK; /* the game wrote its own value back */
+    if (memcmp(now, entry->written, entry->size) != 0) return PUT_GONE;
+    if (g_port.write && g_port.write(entry->address, entry->original, entry->size) == 0) return PUT_BACK;
+    if (mem_read(entry->address, now, entry->size)) {
+        if (memcmp(now, entry->original, entry->size) == 0) return PUT_BACK;
+        memcpy(entry->written, now, entry->size);
+    }
+    return PUT_RETRY;
 }
 
-/* One newest-first pass; every entry it visits leaves the journal, whether it could be put back or not. */
+/* One newest-first pass; every entry it visits leaves the journal, except one whose write failed (it stays for a later
+ * restore to retry). */
 static int restore_entries(bool every_owner, MemOwner owner)
 {
     int not_restored = 0;
     size_t i = g_count;
     while (i > 0) {
+        PutBack result;
         i--;
         if (!every_owner && g_journal[i].owner != owner) continue;
-        if (!put_back(&g_journal[i])) not_restored++;
+        result = put_back(&g_journal[i]);
+        if (result != PUT_BACK) not_restored++;
+        if (result == PUT_RETRY) continue;
         memmove(&g_journal[i], &g_journal[i + 1], (g_count - i - 1) * sizeof g_journal[0]);
         g_count--;
     }

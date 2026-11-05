@@ -682,8 +682,9 @@ static void test_writes_and_handler(void)
     fail_writes(1, 1);
     step(&job, 0, false);
     CHECK(state_is(&job, ENTRY_FAILED, "direction could not be released") && sent_is(&job, 1, 1)
-              && action_byte(ACTION_FOR[1]) == 1 && journal_empty(),
-          "the release cannot be written: failed (the byte stays pressed), the journal empty");
+              && action_byte(ACTION_FOR[1]) == 1 && mem_journal_count(MEM_OWNER_ENTRY) == 1,
+          "the release cannot be written: failed, the byte stays pressed and its entry stays journaled");
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && clean(), "  a later restore (the tick's) releases it");
 
     start();
     syn_input_on_call(hook_release);

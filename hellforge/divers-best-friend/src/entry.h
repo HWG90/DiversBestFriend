@@ -29,7 +29,9 @@
  * runs on the component, and mem_restore(MEM_OWNER_ENTRY) puts the byte back, always (when the swap failed, and when the
  * handler did not run too). The byte must then read 0: the game may release it itself inside the call, which counts as
  * released. Afterwards the count must be sent + 1 and the matched kind 0, or, after the last direction, the job's kind
- * (the one asked for, not the scramble's). The journal holds no ENTRY entry after any step.
+ * (the one asked for, not the scramble's). The journal holds no ENTRY entry after any step, except when the release
+ * could not be written ("direction could not be released"): that entry stays for a later mem_restore(MEM_OWNER_ENTRY) to
+ * retry (the tick calls it while ENTRY has entries; entry_cancel does too).
  *
  * Reasons (EntryJob.reason, "" while running or done): "Code entry: <admission's reason>", "menu closed", "menu
  * inactive", "menu state unreadable", "local player unavailable", "close and reopen the menu" (the component was not
@@ -85,7 +87,7 @@ bool entry_begin(EntryJob* job, const GameView* v, uint32_t kind, uint32_t inter
 void entry_step(EntryJob* job, const GameView* v, uint64_t now, bool trigger_down);
 
 /* Stops a running job: ENTRY_FAILED with `reason` (NULL: "cancelled"). Puts back anything still journaled under
- * MEM_OWNER_ENTRY (nothing is, between steps). A job that is not running is left alone. */
+ * MEM_OWNER_ENTRY (between steps, only a release that could not be written). A job that is not running is left alone. */
 void entry_cancel(EntryJob* job, const char* reason);
 
 #endif

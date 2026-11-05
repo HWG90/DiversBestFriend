@@ -81,13 +81,19 @@ bool mem_ptr_aligned(uintptr_t a, uintptr_t* v, uintptr_t alignment);
  * later mem_restore puts the original back while the bytes still hold that. */
 MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_t size, MemOwner owner);
 
-/* Puts back every change of `owner`, newest first. An original is written back only while the bytes still hold what the
- * entry says the mod left there; otherwise they are left alone. Returns how many entries it could not put back (the read
- * failed, the write failed, or the bytes had changed). All of the owner's entries leave the journal either way. Owners
- * whose changes overlap must be restored newer owners first (see the top of this header). */
+/* Puts back every change of `owner`, newest first, deciding each entry by a fresh read of its bytes:
+ *   the entry's original   already back (the game wrote its own value back, as it does every frame while the latch
+ *                          holds): counted as put back, nothing written, the entry leaves the journal;
+ *   what the entry holds   the original is written back and the entry leaves the journal; when that write fails, the
+ *                          entry stays (taking the bytes read back as what it holds, should the failed write have
+ *                          changed some), so a later mem_restore retries it;
+ *   anything else, or unreadable   someone else's bytes now: left alone, and the entry leaves the journal.
+ * Returns how many entries it could not put back: the ones left alone and the ones kept for a retry. Owners whose changes
+ * overlap must be restored newer owners first (see the top of this header); a newer entry kept for a retry leaves its
+ * bytes in place, so an older owner's entry under it is then left alone and dropped. */
 int mem_restore(MemOwner owner);
 
-/* The same for every owner, in one newest-first pass over the whole journal. */
+/* The same for every owner, in one newest-first pass over the whole journal (a failed write keeps its entry here too). */
 int mem_restore_all(void);
 
 /* How many entries `owner` has in the journal (0 for an owner out of range). For tests and status: code entry's must be
