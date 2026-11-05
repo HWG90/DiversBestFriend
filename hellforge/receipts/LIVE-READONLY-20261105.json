@@ -1,0 +1,34 @@
+{
+ "what": "DBF on HellForge plan 1, Task 10: read-only acceptance in game",
+ "build": {
+  "repo_commit": "33e5589",
+  "dll_sha256": "be45072c6c6344e154f05aa7b43a72449ba745a04b6b181ae9c8b18133cd8189",
+  "manifest": "goose.divers-best-friend R50-hellforge.1, prebuilt, game 25480438"
+ },
+ "environment": {
+  "hellforge": "0.4.0-beta (Linux install, Proton)",
+  "game_build": "25480438",
+  "overlay_host": "0.4.0 (serves API 6; DBF asks for API 4)",
+  "session": "6e300aac6a1b4f3da7e1f73bc6df2064",
+  "session_started_utc": "2026-11-05T07:09:34Z"
+ },
+ "log": [
+  "loader: goose.divers-best-friend version R50-hellforge.1, SHA-256 matches the build",
+  "event 1 -> goose.divers-best-friend; its game-thread callback runs in the host's slot (1 shared)",
+  "panel goose.divers-best-friend (\"Diver's Best Friend\", window) registered",
+  "DBF: Admission skips the code HellForge rewrites (hellforge_lua_rewrites found)"
+ ],
+ "user_report": "two Status tab screenshots shared in chat (not stored: they show game imagery)",
+ "items": {
+  "build check": "pass \u2014 Game build 25480438: OK",
+  "admission": "pass \u2014 all 11 mapped features OK on the ship (Selection state, Stratagems, HUD reads, List fade, Code entry, Scrambled codes, Wheel pointing, Camera hold, Select on Release, Sounds, Cooldown display); Weapon strip and Terminals Off (not mapped yet) as expected",
+  "witnesses": "pass \u2014 all 61 emitted R46 witnesses matched the live, unpacked code (none Waiting, none Off)",
+  "outside a mission": "pass \u2014 In a mission: no (not in gameplay), no rows",
+  "in a mission": "pass \u2014 In a mission: yes; no Reader line (full local-player chain resolved)",
+  "rows and codes": "pass \u2014 7 rows, codes match the game: Reinforcement Beacon ^ v > < ^, SOS Beacon ^ v > ^, Resupply v v ^ >, Orbital 120mm HE Barrage > > v < > v, Eagle 500kg Bomb ^ > v v v, AC-8 Autocannon v < v ^ ^ >, Orbital Walking Barrage > v > v > v",
+  "stratagem menu state": "seen once as open in the mission screenshot",
+  "scramble": "as designed \u2014 'Codes do not follow scrambling yet' (Plan 2)",
+  "cosmetic": "the SDK names kind SOS as 'SOSBeacon' (no space)",
+  "crash": "none during the observed session"
+ }
+}
