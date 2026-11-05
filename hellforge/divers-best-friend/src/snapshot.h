@@ -151,6 +151,7 @@ void snap_copy_text(char* dst, size_t size, const char* src);
 
 /* Render thread: queues a copy of *e. False (and counted in ui_dropped) when UI_QUEUE_SLOTS events are waiting; false and
  * not counted for NULL or before snap_init. */
+bool ui_post_batch(const UiEvent* events, int count);
 bool ui_post(const UiEvent* e);
 
 /* Game thread: moves up to `max` queued events, oldest first, into out; returns how many. */

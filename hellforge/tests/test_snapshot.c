@@ -263,6 +263,13 @@ static void test_queue_basics(void)
     snap_init();
     CHECK(ui_dropped() == 0, "snap_init clears the drop count");
     CHECK(ui_drain(out, 80) == 0, "and the queue");
+    UiEvent batch[UI_QUEUE_SLOTS] = {0};
+    for (int i = 0; i < UI_QUEUE_SLOTS; ++i) batch[i].a = i;
+    CHECK(ui_post_batch(batch, UI_QUEUE_SLOTS-1), "stage settings as one batch");
+    CHECK(!ui_post_batch(batch, 2), "refuse a whole batch when only one slot is free");
+    CHECK(ui_drain(out, 80) == UI_QUEUE_SLOTS-1, "refusal does not leave a partial edit");
+    CHECK(ui_post_batch(batch, 2) && ui_drain(out, 80) == 2 && out[0].a == 0 && out[1].a == 1,
+          "retry the complete batch across the ring boundary");
 }
 
 static void test_queue_wrap_and_limits(void)

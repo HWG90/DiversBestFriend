@@ -55,12 +55,13 @@
 #include "text.h"
 #include "native_list.h"
 #include "ui_settings.h"
+#include "editor_shell.h"
 #include "hud_bridge.h"
 #include "settings_editor.h"
 #include "hud_prefs.h"
 #include "migration.h"
 
-#define DBF_VERSION "R50-hellforge.5"
+#define DBF_VERSION "R50-hellforge.6"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
 #define DBF_TITLE "Diver's Best Friend"
@@ -96,6 +97,7 @@ static HfMod* g_mod;
 /* Set in OnGameLoaded before the tick and the panels are registered, and never again: the game thread (Tick) and the
  * render thread (Draw) only read it. NULL: no settings window. */
 static const OvApi* g_ov;
+static OvPanel* g_panel;
 static bool g_loaded;        /* OnGameLoaded ran */
 static bool g_loaded_again;  /* a repeated event was seen and logged */
 static uint64_t g_ticks;
@@ -720,6 +722,8 @@ static void Draw(const OvFrame* frame, void* user)
     const DbfSnapshot* s = snap_acquire();
     if (s == NULL)
         g_ov->text(DBF_TITLE " is starting..."); /* ASCII dots: the host's font has no ellipsis */
+    else if (editor_shell_available(g_ov))
+        editor_shell_draw(g_ov, s, frame, g_panel);
     else
         ui_settings_draw(g_ov, s);
     snap_release();
@@ -748,10 +752,13 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     }
     if (ov != NULL) {
         OvPanelDef panel = { sizeof panel, DBF_PANEL_ID, DBF_TITLE, OV_PANEL_WINDOW, 0 };
-        panel.width = 640.0f;
-        panel.height = 520.0f;
+        bool editor = editor_shell_available(ov);
+        panel.width = editor ? 1260.0f : 640.0f;
+        panel.height = editor ? 930.0f : 520.0f;
+        panel.window_flags = editor ? OV_WINDOW_NO_TITLE | OV_WINDOW_NO_SCROLLBAR : 0;
         panel.draw = Draw;
-        if (ov->register_panel(&panel) == NULL)
+        g_panel = ov->register_panel(&panel);
+        if (g_panel == NULL)
             g_hf->log(g_mod, "The Overlay Host did not take the " DBF_TITLE " window (its log says why)");
     }
 }

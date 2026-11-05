@@ -8,6 +8,8 @@
 #include "goose_overlay.h"
 #include "snapshot.h"
 
+void ui_status_draw(const OvApi* ov, const DbfSnapshot* s);
+
 /* NULL ov: nothing is drawn. */
 void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s);
 

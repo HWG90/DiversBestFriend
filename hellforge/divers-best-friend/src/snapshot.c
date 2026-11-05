@@ -158,20 +158,23 @@ void snap_fill_list(DbfSnapshot* s, const GameView* v, const DbfSettings* settin
     l->settings_problems = settings_problems > 0 ? settings_problems : 0;
 }
 
-bool ui_post(const UiEvent* e)
+bool ui_post_batch(const UiEvent* events, int count)
 {
-    bool taken = false;
-    if (!g_ready || e == NULL) return false;
+    if (!g_ready || !events || count < 1 || count > UI_QUEUE_SLOTS) return false;
     dbf_lock_enter(&g_ui_lock);
-    if (g_count < UI_QUEUE_SLOTS) {
-        g_queue[(g_head + g_count) % UI_QUEUE_SLOTS] = *e;
-        g_count++;
-        taken = true;
-    } else {
-        g_dropped++;
-    }
+    bool taken = count <= UI_QUEUE_SLOTS - g_count;
+    if (taken) {
+        for (int i = 0; i < count; ++i)
+            g_queue[(g_head + g_count + i) % UI_QUEUE_SLOTS] = events[i];
+        g_count += count;
+    } else g_dropped += (uint32_t)count;
     dbf_lock_leave(&g_ui_lock);
     return taken;
+}
+
+bool ui_post(const UiEvent* event)
+{
+    return ui_post_batch(event, 1);
 }
 
 int ui_drain(UiEvent* out, int max)

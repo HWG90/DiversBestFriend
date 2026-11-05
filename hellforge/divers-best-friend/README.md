@@ -2,7 +2,7 @@
 
 This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF, HF-LLL 0.1.0 and Goose Overlay Host 0.6.0. The ZIP contains the native input DLL and the companion archive that draws inside the game HUD.
 
-Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. The strip reflects the changeable controls on the equipped weapon. The Status tab shows build checks, HUD ownership and the latest message from the engine addon.
+Press F7, select **Diver’s Best Friend**, and open **Browse** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. Use **Ctrl+F** to find an option, **Ctrl+E** to review staged changes and **F9** to apply them. **Discard** drops staged edits. **Reset to defaults** stages the default settings for review. The strip reflects the changeable controls on the equipped weapon. The Status tab shows build checks, HUD ownership and the latest message from the engine addon.
 
 In **Controls**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Blacklist**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
 

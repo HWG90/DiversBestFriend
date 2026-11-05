@@ -2,7 +2,7 @@
   "format": 1,
   "id": "goose.divers-best-friend",
   "name": "Diver's Best Friend",
-  "version": "R50-hellforge.5",
+  "version": "R50-hellforge.6",
   "description": "Select stratagems with the native HUD wheel, wedges or list. Show cooldowns and weapon settings on the game HUD. Requires HF-LLL for the HUD and Goose Overlay Host for settings and diagnostics.",
   "url": "https://github.com/HWG90/DiversBestFriend/tree/hellforge",
   "gameplay": false,

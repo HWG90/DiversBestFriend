@@ -109,7 +109,7 @@ static void draw_entry_lines(const OvApi* ov, const ListView* v)
     ov->text(l.text);
 }
 
-static void draw_status(const OvApi* ov, const DbfSnapshot* s)
+void ui_status_draw(const OvApi* ov, const DbfSnapshot* s)
 {
     DbfLine l;
     bool in_mission;
@@ -214,7 +214,7 @@ void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s)
     if (s && s->settings_save_failed) ov->text("Could not save settings.ini. Your previous settings are active.");
     if (!ov->begin_tab_bar("dbf-tabs")) return;
     if (ov->begin_tab_item("Status")) {
-        draw_status(ov, s);
+        ui_status_draw(ov, s);
         ov->end_tab_item();
     }
     if (ov->checkbox && ov->combo && ov->slider_int && ov->begin_disabled && ov->end_disabled &&
