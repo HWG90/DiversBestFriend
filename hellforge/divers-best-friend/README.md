@@ -2,15 +2,15 @@
 
 This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF, HF-LLL 0.1.0 and Goose Overlay Host 0.6.0. The ZIP contains the native input DLL and the companion archive that draws inside the game HUD.
 
-Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. Use **Ctrl+F** to find an option, **Ctrl+E** to review staged changes and **F9** to apply them. **Discard** drops staged edits. **Restore defaults** in **Review** stages the default settings for review. The strip reflects the changeable controls on the equipped weapon. The Diagnostics tab shows build checks, HUD ownership and the latest message from the engine addon.
+Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. Select a category to edit its settings in place, or use **Ctrl+F** to search across categories. Use **Ctrl+E** to review staged changes and **F9** to apply them. **Discard** drops staged edits. **Restore defaults** in **Review** stages the default settings for review. The strip reflects the changeable controls on the equipped weapon. The Diagnostics tab shows build checks, HUD ownership and the latest message from the engine addon.
 
-In **Controls**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Blacklist**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
+In **Key bindings**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Exclusions**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
 
 With the default bindings, scroll down for Next, scroll up for Previous and press the left mouse button to confirm. Slot shortcuts start unbound. To use Select on Release, choose a Hold menu binding in the game. Point at the centre before releasing to cancel.
 
 ## In-mission verification
 
-* Open the stratagem menu with keyboard and controller. Check wedge layout, game icons, highlighting, selection, cancel and release against Lua DBF.
+* Open the stratagem menu with keyboard and controller. Check wedge layout and background blur over a detailed scene, then check game icons, highlighting, selection, cancel and release against Lua DBF.
 * Call a stratagem and check the countdown, charges and ready transition in each cooldown layout. Hide and restore the game HUD.
 * Switch between weapons with different adjustable fire modes, rates, ammunition and zoom. Change a setting and check its icon. Switch back and check that stale icons disappear.
 * Close the settings overlay, cycle the menu and return to the ship. Check that the normal HUD and camera recover.
