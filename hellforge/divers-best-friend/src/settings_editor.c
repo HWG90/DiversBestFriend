@@ -122,11 +122,19 @@ static void binding_page(const OvApi* ov, const DbfSnapshot* s)
     }
     if (!ov->begin_table("dbf-binding-editor", 2)) return;
     ov->table_next_column();
-    for (int i = 0; i < BIND_COUNT; ++i) {
-        if (ov->selectable(actions[i], editor.action == i) && i != editor.action) {
-            editor.action = i;
-            editor.initialized = editor.capturing = false;
+    if (ov->begin_table("dbf-action-values", 2)) {
+        for (int i = 0; i < BIND_COUNT; ++i) {
+            ov->table_next_column();
+            if (ov->selectable(actions[i], editor.action == i) && i != editor.action) {
+                editor.action = i;
+                editor.initialized = editor.capturing = false;
+            }
+            ov->table_next_column();
+            char value[32];
+            bind_describe(&s->options.bind[i], value, sizeof value);
+            ov->text_disabled(value);
         }
+        ov->end_table();
     }
     ov->table_next_column();
     ov->text(actions[editor.action]);
@@ -160,6 +168,9 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searcha
         ov->input_text("Search by name or kind", search, sizeof search);
     }
     ov->text_disabled("Checked stratagems are excluded from selection.");
+    /* Only the rows scroll. Search and the local Apply/Discard controls stay in view. */
+    bool scroll_rows = searchable && ov->begin_child && ov->end_child && ov->frame_height;
+    if (scroll_rows) ov->begin_child("##exclusion-rows", 0, -2 * ov->frame_height(), 0);
     for (int i = 0; i < dbf_blacklist_kind_count; ++i) {
         unsigned kind = dbf_blacklist_kinds[i].kind;
         uint64_t bit = UINT64_C(1) << i;
@@ -192,6 +203,7 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searcha
         ov->pop_id();
     }
     if (!visible) ov->text_disabled("No matching stratagems.");
+    if (scroll_rows) ov->end_child();
     ov->begin_disabled(!changed_rows);
     if (apply_button(ov, searchable ? "APPLY BLACKLIST" : "APPLY") && changed_rows) {
         UiEvent e = {.kind = UI_BLACKLIST, .changed_rows = changed_rows, .hidden_rows = hidden_rows};

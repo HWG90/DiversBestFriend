@@ -13,6 +13,15 @@ static float wheel;
 static bool focused = true, disabled, direct;
 static const char* selected_action;
 static int visible_rows, icon_slots, tabs_opened;
+static bool in_rows, footer_outside;
+static int scrolling_rows;
+static void begin_rows(const char* id, float width, float height, int border)
+{
+    CHECK(!in_rows && !strcmp(id, "##exclusion-rows") && height == -32,
+          "scrolling list reserves space for local actions");
+    in_rows = true;
+}
+static void end_rows(void) { in_rows = false; }
 static void cursor(float* x, float* y) { *x = 12; *y = 20; }
 static float line_height(void) { return 16; }
 static void reserve_icon(float w, float h)
@@ -41,7 +50,11 @@ static int edit_text(const char* label, char* text, size_t cap)
     snprintf(text, cap, "%s", typed);
     return 1;
 }
-static int click(const char* label) { return button && !disabled && !strcmp(button,label); }
+static int click(const char* label)
+{
+    if (!strcmp(label, "APPLY BLACKLIST")) footer_outside = !in_rows;
+    return button && !disabled && !strcmp(button,label);
+}
 static int down(int key) { return vk == key; }
 static int mouse_down(int key) { return mouse == key; }
 static float scroll(void) { return wheel; }
@@ -49,6 +62,7 @@ static int focus(void) { return focused; }
 static int toggle(const char* label, int* value)
 {
     ++visible_rows;
+    if (in_rows) ++scrolling_rows;
     if (!row || strcmp(label,row) || edited_kind != pushed_id) return 0;
     *value = !*value;
     return 1;
@@ -56,7 +70,8 @@ static int toggle(const char* label, int* value)
 static void frame(const char* clicked)
 {
     button = clicked;
-    visible_rows = icon_slots = 0;
+    visible_rows = icon_slots = scrolling_rows = 0;
+    footer_outside = false;
     if (direct) editor_page(&ov, &snap, !strcmp(tab, "BLACKLIST"));
     else editor_tabs(&ov, &snap);
     typed = row = NULL;
@@ -145,6 +160,11 @@ int main(void)
     frame("APPLY BINDING");
     CHECK(commit_one() && snap.options.bind[BIND_SLOT4].code == BIND_PAD_LB,
           "editor action list edits the selected binding");
+    fake_ov_reset();
+    frame(NULL);
+    CHECK(fake_ov_count_prefix("text_disabled:key:q") == BIND_COUNT - 2 &&
+          fake_ov_find("text_disabled:none", 0) >= 0 && fake_ov_find("text_disabled:pad:lb", 0) >= 0,
+          "the action list shows each saved binding including unbound and controller inputs");
     selected_action = NULL;
     action = BIND_SLOT4;
     check_capture(0x75, -1, 0, 0, BIND_KEY, 0x75); /* F6 normally cycles shell pages. */
@@ -160,6 +180,10 @@ int main(void)
     capture_start();
     tab = "BLACKLIST";
     ov.cursor_screen_pos = cursor; ov.text_line_height = line_height; ov.dummy = reserve_icon;
+    ov.begin_child = begin_rows; ov.end_child = end_rows; ov.frame_height = line_height;
+    frame(NULL);
+    CHECK(scrolling_rows == dbf_blacklist_kind_count && footer_outside && !in_rows,
+          "Apply stays outside the scroll area even with every exclusion visible");
     typed = "cArGo"; frame(NULL);
     CHECK(visible_rows == 2 && icon_slots == 2, "name filter is case-insensitive and includes both cargo kinds");
     row = "Cargo container (71)"; edited_kind = 71; frame(NULL);
@@ -177,6 +201,6 @@ int main(void)
           "Controls can submit its own draft after Blacklist applies");
     CHECK(tabs_opened == prior_tabs, "direct pages leave navigation to the caller");
     direct = false; tab = "BLACKLIST"; frame(NULL);
-    CHECK(!icon_slots && visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
+    CHECK(!scrolling_rows && !icon_slots && visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
     TEST_MAIN_END
 }
