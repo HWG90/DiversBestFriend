@@ -329,6 +329,13 @@ bool latch_held(void)
     return g_latch.held;
 }
 
+/* What the latch remembers is cleared once its last entry is gone (latch_release), and a real player manager is never
+ * 0 (mem_ptr), so with no latch and nothing left no player matches. */
+bool latch_owner_is(const GameLocal* l)
+{
+    return latch_player(l);
+}
+
 /* --- slot hotkeys ---------------------------------------------------------------------------------------------- */
 
 /* The job fails with `why` without entry (a refusal before entry_begin, or a done job cancelled). */

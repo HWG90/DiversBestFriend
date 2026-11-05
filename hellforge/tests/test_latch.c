@@ -663,6 +663,44 @@ static void test_release(void)
           "  and released");
 }
 
+/* Task 12 fix round, I1: the tick's retry asks latch_owner_is, which compares manager, key and component as R46's
+ * avatar_valid does (input.lua:376). A respawn into another avatar keeps the manager and the key but not the component
+ * (nor the actions block): the retry must leave the old block's actions dword alone. */
+static void test_owner(void)
+{
+    GameLocal moved, other;
+    start();
+    CHECK(!latch_owner_is(&view()->local), "no latch: nobody is its owner");
+    acquire();
+    CHECK(latch_owner_is(&g_view.local), "the player the latch was taken for is its owner");
+    CHECK(!latch_owner_is(NULL), "no player is not");
+    moved = g_view.local;
+    moved.component += 0x1000u;
+    moved.avatar += 0x1000u;
+    moved.actions += 0x400u;
+    CHECK(!latch_owner_is(&moved), "the same manager and key with another component is not (a respawn)");
+    other = g_view.local;
+    other.key ^= 0x100u;
+    CHECK(!latch_owner_is(&other), "another key is not");
+    other = g_view.local;
+    other.manager += 8u;
+    CHECK(!latch_owner_is(&other), "another manager is not");
+
+    /* Leftovers kept while the controls pointer cannot be read, then retried as the tick does for the moved player. */
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+    latch_release(true);
+    CHECK(journal_is(4, 0) && latch_owner_is(&g_view.local), "the kept entries still belong to the latch's player");
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
+    g_writes = 0;
+    CHECK(latch_release(latch_owner_is(&moved)) == 1 && journal_is(0, 0)
+              && dword_is("the old block's trigger", syn_local_menu_trigger(), 0)
+              && dword_is("the controls trigger", syn_controls_menu_trigger(), 2)
+              && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]) && record_is(syn_menu_bucket(), 2, SYN_MENU_RECORDS[2])
+              && g_writes == 3 && lines_with("trigger was left alone") == 1,
+          "the retry for the respawned player: records and the controls dword back, the old actions dword not written");
+    CHECK(!latch_owner_is(&g_view.local), "with every entry gone the latch has no owner");
+}
+
 static bool refused_acquire(const char* reason)
 {
     bool taken;
@@ -1216,6 +1254,7 @@ static void test_shortcut_refusals(void)
 
 int main(void)
 {
+    test_owner();
     CHECK(start(), "the synthetic image builds with eight payload entries and the binding map");
     test_acquire_and_release();
     test_refresh();

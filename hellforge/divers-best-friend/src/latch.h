@@ -131,6 +131,12 @@ int latch_release(bool avatar_valid);
 /* The lease is held (acquired, not yet released). */
 bool latch_held(void);
 
+/* `l` is the player the latch, or the LATCH entries a release left, belongs to: the same player manager, registry key
+ * and input component it was taken for (R46's avatar_valid, input.lua:376: identity and component). False with no latch
+ * and nothing left, and for NULL. The tick's retry passes it as latch_release's avatar_valid, so leftovers of a refused
+ * slot hotkey are judged against the latch's own player too. */
+bool latch_owner_is(const GameLocal* l);
+
 /* Starts a slot hotkey (see the top): slot 1..4, the pacing and Instant as entry_begin takes them, `now` in ms. */
 bool entry_begin_shortcut(EntryJob* job, const GameView* v, int slot, uint32_t interval_ms, bool instant, uint64_t now,
                           char* reason, size_t n);
