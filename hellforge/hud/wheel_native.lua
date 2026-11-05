@@ -347,7 +347,7 @@ local function native_backend(bridge)
                 rows[#rows+1]={address=address,width=size[1],height=size[2],entry=u32(read(address+0x3748,4),0),list_y=target[2],dock_source=address+0x7c0}
             end
         end
-        return {identity=root,hud_visible=hud_visible,panel=panel,list=list,rows=rows,open=open=='\1',dock_rows=include_closed,dock_parent=root+0x258,stamina_bounds=stamina_bounds,health_bounds=health_bounds,dock_y=dock_y,dock_below_y=dock_below_y,dock_anchor=dock_anchor,center=center,geometry=string.format('viewport=%.1fx%.1f matrix=%s list=%.1fx%.1f matrix=%s',viewport.width,viewport.height,table.concat(viewport.matrix,','),container.width,container.height,table.concat(container.matrix,','))}
+        return {identity=root,hud_visible=hud_visible,panel=panel,list=list,rows=rows,open=open=='\1',list_geometry=container,dock_rows=include_closed,dock_parent=root+0x258,stamina_bounds=stamina_bounds,health_bounds=health_bounds,dock_y=dock_y,dock_below_y=dock_below_y,dock_anchor=dock_anchor,center=center,geometry=string.format('viewport=%.1fx%.1f matrix=%s list=%.1fx%.1f matrix=%s',viewport.width,viewport.height,table.concat(viewport.matrix,','),container.width,container.height,table.concat(container.matrix,','))}
     end
     local release_ui
     function backend.release_owned_ui(storage,address,identity,parent,retired)

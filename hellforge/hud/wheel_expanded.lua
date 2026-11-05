@@ -227,4 +227,99 @@ local function expanded_wheel(b,scope,input)
     return self
 end
 
-return {expanded_geometry=expanded_geometry,expanded_index=expanded_index,expanded_wheel=expanded_wheel}
+-- Build 25480438, stock 9C16BF1BB2D8DE88: the 256-unit sprite covers
+-- radii ~118..256 and a 45-degree arc. Inset the mesh inside its alpha
+-- edge. Six chords keep the inner chords outside the transparent hub.
+-- The expanded sprite first squeezes the tangential axis, then rotates.
+local function wheel_blur()
+    local lease,signature
+    local probe_world,material,probe_after
+    local unavailable_until={}
+    -- Stock archive 007e093ca718ca1a, resource IDs 2391483ABBDA5A58
+    -- and 3C6484761C78B9A0. Neither material exposes a wedge mask.
+    local materials={'content/ui/shared/material/gui_blur','content/ui/shared/material/blur_background'}
+    local self={}
+    function self.hide()
+        if lease then lease.release();lease=nil end
+        signature=nil
+    end
+    function self.draw(source,count,expanded,alpha,now)
+        if not source.list_geometry or count<=0 or alpha<=0 then self.hide();return end
+        local sr=rawget(_G,'stingray')
+        if not sr or not sr.Gui.triangle or not sr.Gui.destroy_triangle or not sr.Gui.material then self.hide();return end
+        local app=sr.Application
+        local world=app.main_world()
+        for _,candidate in pairs(app.worlds() or {}) do
+            if candidate~=world then world=candidate;break end
+        end
+        if not world then self.hide();return end
+        if lease and (lease.world~=world or not lease.valid()) then self.hide() end
+        if world~=probe_world or not material and now>=probe_after then
+            if world~=probe_world then unavailable_until={} end
+            probe_world,material,probe_after=world,nil,now+5000
+            for _,name in ipairs(materials) do
+                if now>=(unavailable_until[name] or 0) and app.can_get('material',name) then
+                    material=name;break
+                end
+            end
+        end
+        if not material then return end
+        local width,height=sr.Gui.resolution()
+        if not width or not height or width<=0 or height<=0 then self.hide();return end
+        local sectors=expanded and math.max(8,count) or 8
+        local scale,offset=radial.wheel_scale or 1,radial.vertical_offset or 0
+        local list,center=source.list_geometry,source.center
+        local plane=list.matrix
+        local cx,cy=center[1]+list.width/2,center[2]+list.height/2
+        local origin_x=plane[1]*cx+plane[3]*cy+plane[5]
+        local origin_y=plane[2]*cx+plane[4]*cy+plane[6]
+        local key=table.concat(plane,',')..':'..table.concat({origin_x,origin_y,width,height,sectors,expanded and count or 8,
+            expanded and 1 or 0,scale,offset,alpha},',')
+        if signature==key and lease then return end
+        self.hide()
+        lease=cooldown_gui_pool(sr,'DBFWheelBlurGuiPool').acquire(world,{})
+        local gui,G=lease.gui,lease.api
+        local ink=style.tokens.colors.text
+        for slot=1,sectors do
+            local angle=90-(slot-1)*360/sectors
+            local stretch=1
+            if expanded then angle,stretch=expanded_geometry(count,slot) end
+            local c,s=math.cos(math.rad(angle)),math.sin(math.rad(angle))
+            local strength=expanded and slot>count and alpha*0.08/0.3 or alpha
+            local tint=sr.Color(math.floor(ink[4]*strength+0.5),ink[1],ink[2],ink[3])
+            local function vertex(radius,across)
+                local x,y=radius*math.cos(across),radius*math.sin(across)*stretch
+                local dx,dy=(c*x-s*y)*scale,(s*x+c*y)*scale-offset
+                local px,py=plane[1]*dx+plane[3]*dy+origin_x,plane[2]*dx+plane[4]*dy+origin_y
+                return {sr.Vector3(px,0,py),sr.Vector2(px/width,py/height)}
+            end
+            -- 25480438 EXE +3E1427 resolves the material; +3E144B reads three UVs.
+            local function triangle(a,b,d)
+                assert(G.triangle(gui,a[1],b[1],d[1],0x225,tint,material,a[2],b[2],d[2]),
+                    'Wheel blur triangle unavailable')
+            end
+            local inner,outer
+            for j=0,6 do
+                local across=math.rad(-21+7*j)
+                local next_inner,next_outer=vertex(120,across),vertex(255,across)
+                if inner then
+                    triangle(inner,outer,next_outer)
+                    triangle(inner,next_outer,next_inner)
+                end
+                inner,outer=next_inner,next_outer
+            end
+        end
+        -- Gui.material queries this GUI's assigned material after retained
+        -- primitives exist. Never show a mesh whose blur binding failed.
+        local bound,handle=pcall(G.material,gui,material)
+        if not bound or not handle then
+            unavailable_until[material]=now+5000
+            material,probe_after=nil,now
+            self.hide();return
+        end
+        lease.show();signature=key
+    end
+    return self
+end
+
+return {wheel_blur=wheel_blur,expanded_geometry=expanded_geometry,expanded_index=expanded_index,expanded_wheel=expanded_wheel}

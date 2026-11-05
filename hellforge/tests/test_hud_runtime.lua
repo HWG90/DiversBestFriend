@@ -5,7 +5,7 @@ local function module(name)
     setfenv(f,scope)
     for key,value in pairs(f()) do scope[key]=value end
 end
-module('wheel_native');module('wheel_input');module('wheel_selection');module('wheel_release');module('runtime')
+module('wheel_native');module('wheel_input');module('wheel_selection');module('wheel_release');module('wheel_expanded');module('runtime')
 local now=0
 local ready_page,granted,capacity,blacklisted=false,false,true,false
 local token,requests,releases,mask=nil,0,0,0
@@ -212,3 +212,27 @@ copied.release.job={finished=true,code={1},snapshot_identity=7,deadline=now+1000
 tick(copied,20);assert(copied:ready() and layouts==1,'only prepared duplicate addresses can be laid out')
 assert(copied:shutdown())
 print('Open stock menu protected during copied-card release completion')
+
+-- With an available native transform, List and copied cards still skip blur.
+local mode_for_blur=2
+bridge.dbf_hud_option=function(key)
+    if key=='selection_mode_ordered' then return mode_for_blur end
+    if key=='experimental_layout' then return 1 end
+    if key=='native_opacity' then return 41 end
+    return old_get(key)
+end
+local calls=0
+scope.wheel_blur=function()
+    local b=object()
+    b.draw=function(source,_,expanded,alpha)
+        assert(source==snapshot and not expanded and alpha==0.41)
+        calls=calls+1
+    end
+    return b
+end
+local routes=scope.dbf_hud_runtime(bridge)
+tick(routes,200);assert(routes:ready() and not routes.blur)
+mode_for_blur=1;tick(routes,200);assert(routes:ready() and not routes.blur)
+mode_for_blur=3;tick(routes,200);assert(routes:ready() and calls==1)
+assert(routes:shutdown())
+dofile('hellforge/tests/wheel_blur.lua')

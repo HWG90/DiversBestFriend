@@ -53,7 +53,7 @@ local function cooldown_gui_pool(sr,name)
         record.owner=owner
         local api=setmetatable({},{__index=G})
         local function owned()return not owner.retired and record.owner==owner and registry.records[world]==record end
-        for _,kind in ipairs({'text','rect','bitmap'})do
+        for _,kind in ipairs({'text','rect','bitmap','triangle'})do
             api[kind]=function(gui,...)
                 assert(owned() and not record.failed and gui==record.gui,'Cooldown GUI ownership changed')
                 local id=G[kind](gui,...)

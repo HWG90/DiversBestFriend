@@ -130,6 +130,7 @@ local function dbf_hud_runtime(bridge)
             clean('list','restore')
             clean('hidden','restore')
         end
+        clean('blur','hide')
         clean('wheel','hide')
         clean('expanded','hide')
         clean('dupes','hide')
@@ -298,7 +299,10 @@ local function dbf_hud_runtime(bridge)
             end
         end
         local surface,missing=surface_ready(mode,s.experimental_layout,now)
-        if not surface then report('Waiting for HUD witness: '..missing);return end
+        if not surface then
+            if r.blur then r.blur.hide() end
+            report('Waiting for HUD witness: '..missing);return
+        end
         local excluded={}
         for _,row in ipairs(snapshot and snapshot.rows or {}) do
             if row.kind and bridge.dbf_hud_blacklisted(row.kind)~=0 then excluded[row.kind]=true end
@@ -336,7 +340,7 @@ local function dbf_hud_runtime(bridge)
             r.block_release=true
             release.reset()
         end
-        local vector,paged,prepared_copies
+        local vector,paged,prepared_copies,blur_source
         local open=snapshot and snapshot.open and #snapshot.rows>0
         if open and mode~=2 and not (release.job and release.job.finished) then
             local ok,context=pcall(r.input.view_context)
@@ -353,6 +357,7 @@ local function dbf_hud_runtime(bridge)
                     end
                 elseif mode==1 then snapshot,changed=r.expanded.prepare(original)
                 else snapshot,changed,paged=r.wheel.prepare(original,buttons,selected.job~=nil or release.job~=nil) end
+                if original.hud_visible and not copied then blur_source=original end
                 if mode==1 then r.wheel.prepare(original,nil,false) end
                 if changed then selected.step(nil,nil,now);r.point.reset() end
                 snapshot.pointer_only=true
@@ -397,6 +402,21 @@ local function dbf_hud_runtime(bridge)
             local timer
             for _,row in ipairs(snapshot.rows) do if row.address==address then timer=row end end
             r.wheel.timer(timer)
+        end
+        if not blur_source then
+            if r.blur then r.blur.hide() end
+        elseif now>=(r.blur_retry or 0) then
+            r.blur=r.blur or wheel_blur()
+            local expanded=mode==1
+            local ok,why=pcall(r.blur.draw,blur_source,#snapshot.rows,expanded,
+                expanded and s.wedge_opacity/100 or s.native_opacity/100,now)
+            if not ok then
+                r.blur.hide();r.blur_retry=now+1000
+                if r.blur_error~=tostring(why) then
+                    r.blur_error=tostring(why)
+                    bridge.dbf_hud_log('Wheel blur paused: '..r.blur_error)
+                end
+            end
         end
         local display=mode==2 and r.list or (copied and r.cards or (mode==1 and r.expanded or r.wheel))
         r.list_open=mode==2 and open
