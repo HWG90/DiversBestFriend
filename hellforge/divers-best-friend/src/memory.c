@@ -158,3 +158,10 @@ int mem_restore_all(void)
 {
     return restore_entries(true, MEM_OWNER_LIST);
 }
+
+int mem_journal_count(MemOwner owner)
+{
+    int n = 0;
+    for (size_t i = 0; i < g_count; i++) n += g_journal[i].owner == owner;
+    return n;
+}

@@ -24,8 +24,13 @@
  * the fake hf->stratagem_row, and syn_set_code points a definition at any array, as a Lua mod's set_code does.
  *
  * The ports: syn_mem_port() reads the image and refuses every write (counting it, so a test can prove the readers wrote
- * nothing); syn_adm_port() serves the two modules, reads code from the same image, and says HellForge may rewrite the
- * definition-table displacement (as it does when it moves the table).
+ * nothing); syn_mem_port_writable() reads the same and writes into pages that exist, for code entry; syn_adm_port()
+ * serves the two modules, reads code from the same image, and says HellForge may rewrite the definition-table
+ * displacement (as it does when it moves the table).
+ *
+ * Code entry (R46 input.lua:240-282) is modelled by a fake of the game's stratagem input handler, syn_input_handler, for
+ * the local player's input component: see "The fake input component" below. syn_build gives that component a clean
+ * count, matched and queued word and the local player's four direction action bytes idle (0).
  *
  * Portable C11 (standard headers, memory.h, admission.h and the generated header): Task 9 builds it for Windows too. */
 #ifndef DBF_SYNTHETIC_H
@@ -93,6 +98,38 @@ int syn_write(uintptr_t address, const void* data, size_t size); /* refuses (-1)
 int syn_write_count(void);                                       /* writes asked for since the program started */
 const MemPort* syn_mem_port(void);
 const AdmPort* syn_adm_port(void);
+/* Writes into pages that exist (syn_build's or a poke's), all or nothing: 0, or -1 with nothing written when a byte of
+ * the range is unmapped. Counted apart from syn_write's refusals. */
+int syn_write_mapped(uintptr_t address, const void* data, size_t size);
+int syn_mapped_write_count(void); /* syn_write_mapped calls since the program started, failed ones too */
+const MemPort* syn_mem_port_writable(void); /* { syn_read, syn_write_mapped } */
+
+/* The fake input component: the game's stratagem input handler (R46 input.lua:251-282, the function at 0xa900d0) as
+ * DBF's code entry drives it, for the local player's input component only (syn_local_component(); another component is
+ * a call that changes nothing). Each call looks at the local player's four direction action bytes, at
+ * syn_local_actions() + 32 * a for a = 1 left, 2 right, 3 up, 4 down (input.lua:188, 263). When exactly one is 1 (R46's
+ * press, input.lua:267) and the others 0, it maps that action back to a code direction with R46's own table (code direction d is action ({3,2,4,1})[d],
+ * input.lua:264: action 3 is direction 1 up, 2 is 2 right, 4 is 3 down, 1 is 4 left), appends the direction byte at
+ * component + 3 + (n + 1), where n is the u32 count at component + 0, and counts it (n + 1 at + 0); when the directions
+ * so far are then exactly the expected code (syn_input_expect), the u32 at component + 0x14 becomes the expected kind
+ * (input.lua:258-260, 275). Nothing else changes: no byte pressed, several pressed, a byte other than 0 or 1, a count
+ * of 12 or more, or syn_input_ignore leave the component as it was. The numbers are written out in synthetic.c on purpose, not taken from
+ * the generated header, so a DIRECTION_n_ACTION swapped there makes code entry press the wrong action here. */
+#define SYN_INPUT_CALLS 32 /* calls whose pressed action is kept */
+void syn_input_handler(uintptr_t component);
+/* Forgets the calls, the expectation, ignore and the hook. syn_build does not call it. */
+void syn_input_reset(void);
+/* The code the game matches, and the kind it then reports at + 0x14 (n 0: nothing ever matches). */
+void syn_input_expect(uint32_t kind, const uint8_t* code, int n);
+/* true: calls record the pressed action and change nothing (the game did not take the direction). */
+void syn_input_ignore(bool ignore);
+/* Called at the end of every handler call with the call's index (0 first), after the component changed: a test changes
+ * the game there, inside the call, as the game's own code could. NULL: none. */
+void syn_input_on_call(void (*hook)(int call));
+int syn_input_calls(void);     /* handler calls since syn_input_reset */
+/* The action found pressed in call `call` (0 first): 1 to 4; 0 none; -1 several, a byte neither 0 nor 1, unreadable, or
+ * another component. */
+int syn_input_action(int call);
 
 /* Changes to the built image. A poke makes the pages it needs; syn_unmap drops the page holding `address`, so its reads
  * fail. */

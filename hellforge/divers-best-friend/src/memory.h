@@ -90,4 +90,8 @@ int mem_restore(MemOwner owner);
 /* The same for every owner, in one newest-first pass over the whole journal. */
 int mem_restore_all(void);
 
+/* How many entries `owner` has in the journal (0 for an owner out of range). For tests and status: code entry's must be
+ * 0 after every step. */
+int mem_journal_count(MemOwner owner);
+
 #endif

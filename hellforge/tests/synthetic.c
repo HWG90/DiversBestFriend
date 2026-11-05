@@ -118,6 +118,16 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define POSITION_STRIDE 0x308u         /* input.lua:152 */
 #define POSITION_AT 0x2e0u             /* input.lua:152: 12 bytes */
 #define SESSION_PEER 0xb398u
+/* The input component and the direction actions (input.lua:240-282). */
+#define COMPONENT_COUNT 0x0u           /* input.lua:241, 258: u32, the directions the game has taken */
+#define COMPONENT_DIRECTIONS 3u        /* input.lua:260: direction i (1-based) at component + 3 + i */
+#define COMPONENT_MATCHED 0x14u        /* input.lua:242, 259, 275: u32, the kind matched once the code is complete */
+#define COMPONENT_QUEUED 0x2cu         /* input.lua:242: u32 */
+#define ACTION_STRIDE 32u              /* input.lua:188, 265: action a's byte at actions + 32 * a */
+#define ACTION_LEFT 1u                 /* input.lua:263: "left=1 right=2 up=3 down=4" */
+#define ACTION_DOWN 4u
+#define ACTION_PRESSED 1u              /* input.lua:267: the byte a press sets (0 released, input.lua:271) */
+#define INPUT_CODE_MAX 12u             /* input.lua:166: a code has at most 12 directions */
 #define MISSION_STRIDE 0x1690u
 #define MISSION_PAYLOAD 0x38u
 #define MISSION_COUNT 0x2d200u
@@ -160,6 +170,7 @@ static int g_count;      /* pages mapped */
 static uintptr_t g_page_at[SYN_MAX_PAGES];
 static uint8_t* g_page_data[SYN_MAX_PAGES];
 static int g_writes;
+static int g_mapped_writes;
 static bool g_built;
 static SynScene g_scene;
 static uintptr_t g_block;               /* HellForge's moved block (syn_move_table); 0 when the table is not moved */
@@ -231,6 +242,23 @@ int syn_write_count(void)
     return g_writes;
 }
 
+int syn_write_mapped(uintptr_t address, const void* data, size_t size)
+{
+    g_mapped_writes++;
+    if (!data || size == 0 || size - 1 > UINTPTR_MAX - address) return -1;
+    /* Every page first, so a range that leaves the mapped pages writes nothing. */
+    for (uintptr_t page = address & ~(uintptr_t)(SYN_PAGE - 1u); page <= address + (size - 1); page += SYN_PAGE) {
+        if (!find_page(page)) return -1;
+        if (page > UINTPTR_MAX - SYN_PAGE) break;
+    }
+    return syn_poke(address, data, size) ? 0 : -1;
+}
+
+int syn_mapped_write_count(void)
+{
+    return g_mapped_writes;
+}
+
 bool syn_poke(uintptr_t address, const void* data, size_t size)
 {
     const uint8_t* src = data;
@@ -289,9 +317,11 @@ static int syn_rewrites(uint32_t rva, uint32_t size)
 }
 
 static const MemPort MEM_PORT = { syn_read, syn_write };
+static const MemPort MEM_PORT_WRITABLE = { syn_read, syn_write_mapped };
 static const AdmPort ADM_PORT = { syn_module_base, syn_read, syn_rewrites };
 
 const MemPort* syn_mem_port(void) { return &MEM_PORT; }
+const MemPort* syn_mem_port_writable(void) { return &MEM_PORT_WRITABLE; }
 const AdmPort* syn_adm_port(void) { return &ADM_PORT; }
 
 /* --- where things are ------------------------------------------------------------------------------------------ */
@@ -495,6 +525,12 @@ bool syn_build(const SynScene* s)
             put32(&b, unit + UNIT_KEY, KEYS[i]);
             put32(&b, avatar + AVATAR_COMPONENT + COMPONENT_OWNER, KEYS[i]);
             put32(&b, avatar + AVATAR_CONTEXT, CONTEXTS[i]);
+            /* The input component is clean (input.lua:241-242) and the four direction actions idle (input.lua:187-188). */
+            put32(&b, avatar + AVATAR_COMPONENT + COMPONENT_COUNT, 0);
+            put32(&b, avatar + AVATAR_COMPONENT + COMPONENT_MATCHED, 0);
+            put32(&b, avatar + AVATAR_COMPONENT + COMPONENT_QUEUED, 0);
+            for (uint32_t a = ACTION_LEFT; a <= ACTION_DOWN; a++)
+                put8(&b, AT_AVATARS + (uintptr_t)AVATARS[i] * ACTIONS_STRIDE + ACTIONS + ACTION_STRIDE * a, 0);
             /* The local one's menu is active: bit 9 and two other bits, so a reader must test the bit, not the word. */
             put32(&b, avatar + AVATAR_MENU, i == 0 ? MENU_ACTIVE_BIT | 0x5u : 0u);
         }
@@ -653,6 +689,78 @@ bool syn_tombstone(uint32_t kind)
     if (!g_built || kind < SYN_MOD_FIRST || kind > SYN_MOD_LAST || g_mod_row[kind - SYN_MOD_FIRST] == 0) return false;
     g_mod_tomb[kind - SYN_MOD_FIRST] = true;
     return true;
+}
+
+/* --- the fake input component (R46 input.lua:240-282) ---------------------------------------------------------- */
+
+/* input.lua:263-264, "Native actions: left=1 right=2 up=3 down=4" and action = ({3,2,4,1})[direction]: the action of
+ * code direction d (1 up, 2 right, 3 down, 4 left). Written out here, not taken from DBF_VAL_DIRECTION_n_ACTION. */
+static const uint8_t ACTION_OF_DIRECTION[5] = { 0, 3, 2, 4, 1 };
+
+static struct {
+    int calls;
+    int action[SYN_INPUT_CALLS];
+    bool ignore;
+    uint32_t kind;
+    uint8_t code[INPUT_CODE_MAX];
+    int n;
+    void (*hook)(int call);
+} g_input;
+
+void syn_input_reset(void)
+{
+    memset(&g_input, 0, sizeof g_input);
+}
+
+void syn_input_expect(uint32_t kind, const uint8_t* code, int n)
+{
+    g_input.kind = kind;
+    g_input.n = code && n > 0 && n <= (int)INPUT_CODE_MAX ? n : 0;
+    memset(g_input.code, 0, sizeof g_input.code);
+    if (g_input.n > 0) memcpy(g_input.code, code, (size_t)g_input.n);
+}
+
+void syn_input_ignore(bool ignore) { g_input.ignore = ignore; }
+void syn_input_on_call(void (*hook)(int call)) { g_input.hook = hook; }
+int syn_input_calls(void) { return g_input.calls; }
+
+int syn_input_action(int call)
+{
+    return call >= 0 && call < g_input.calls && call < SYN_INPUT_CALLS ? g_input.action[call] : 0;
+}
+
+/* The one action byte of the local player's that is pressed (1, R46's pulse_byte(address, 1), input.lua:267) while the
+ * others are released (0): 1 to 4; 0 none; -1 several, a byte that is neither 0 nor 1, or unreadable. */
+static int pressed_action(void)
+{
+    int pressed = 0;
+    for (uint32_t a = ACTION_LEFT; a <= ACTION_DOWN; a++) {
+        uint8_t byte;
+        if (syn_read(syn_local_actions() + ACTION_STRIDE * a, &byte, 1) != 0 || byte > ACTION_PRESSED) return -1;
+        if (byte == 0) continue;
+        if (pressed != 0) return -1;
+        pressed = (int)a;
+    }
+    return pressed;
+}
+
+void syn_input_handler(uintptr_t component)
+{
+    int call = g_input.calls++, pressed = component == syn_local_component() ? pressed_action() : -1;
+    uint32_t n = 0;
+    if (call < SYN_INPUT_CALLS) g_input.action[call] = pressed;
+    if (!g_input.ignore && pressed > 0 && syn_read(component + COMPONENT_COUNT, &n, sizeof n) == 0 && n < INPUT_CODE_MAX) {
+        uint8_t direction = 0, seen[INPUT_CODE_MAX];
+        for (uint8_t d = 1; d <= 4; d++)
+            if (ACTION_OF_DIRECTION[d] == (uint8_t)pressed) direction = d;
+        n++;
+        syn_poke_u8(component + COMPONENT_DIRECTIONS + n, direction);
+        syn_poke_u32(component + COMPONENT_COUNT, n);
+        if (g_input.n == (int)n && syn_read(component + COMPONENT_DIRECTIONS + 1u, seen, n) == 0
+            && memcmp(seen, g_input.code, n) == 0)
+            syn_poke_u32(component + COMPONENT_MATCHED, g_input.kind);
+    }
+    if (g_input.hook) g_input.hook(call);
 }
 
 uintptr_t syn_positions(void) { return AT_POSITIONS; }

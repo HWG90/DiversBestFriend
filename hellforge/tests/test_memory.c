@@ -582,6 +582,34 @@ static void test_init_clears_the_journal(void)
     CHECK(!mem_u8(RAM_BASE, &original[0]), "mem_init(NULL) leaves no port");
 }
 
+/* mem_journal_count: each owner's entries, re-asserts not counted twice, restores and mem_init emptying it. */
+static void test_journal_count(void)
+{
+    const uint8_t one[1] = { 1 }, value[4] = { 9, 8, 7, 6 };
+    uint8_t zero[1], original[4], other[4];
+    reset();
+    CHECK(mem_journal_count(MEM_OWNER_ENTRY) == 0 && mem_journal_count(MEM_OWNER_LATCH) == 0, "an empty journal counts 0");
+    memcpy(zero, ram_at(RAM_BASE + 0xa00), 1);
+    memcpy(original, ram_at(RAM_BASE + 0xa10), 4);
+    memcpy(other, ram_at(RAM_BASE + 0xa20), 4);
+    mem_swap(RAM_BASE + 0xa00, zero, one, 1, MEM_OWNER_ENTRY);
+    mem_swap(RAM_BASE + 0xa10, original, value, 4, MEM_OWNER_LATCH);
+    mem_swap(RAM_BASE + 0xa20, other, value, 4, MEM_OWNER_LATCH);
+    CHECK(mem_journal_count(MEM_OWNER_ENTRY) == 1 && mem_journal_count(MEM_OWNER_LATCH) == 2
+              && mem_journal_count(MEM_OWNER_CAMERA) == 0,
+          "each owner counts its own entries");
+    memcpy(ram_at(RAM_BASE + 0xa10), original, 4);
+    CHECK(mem_swap(RAM_BASE + 0xa10, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED
+              && mem_journal_count(MEM_OWNER_LATCH) == 2,
+          "a re-assert adds no entry");
+    CHECK(mem_journal_count(MEM_OWNER_COUNT) == 0 && mem_journal_count((MemOwner)-1) == 0, "an owner out of range counts 0");
+    mem_restore(MEM_OWNER_ENTRY);
+    CHECK(mem_journal_count(MEM_OWNER_ENTRY) == 0 && mem_journal_count(MEM_OWNER_LATCH) == 2,
+          "mem_restore empties that owner only");
+    mem_init(&FAKE_PORT);
+    CHECK(mem_journal_count(MEM_OWNER_LATCH) == 0, "mem_init empties the journal");
+}
+
 int main(void)
 {
     test_before_init();
@@ -603,5 +631,6 @@ int main(void)
     test_failing_writes();
     test_failed_rollback();
     test_init_clears_the_journal();
+    test_journal_count();
     TEST_MAIN_END
 }
