@@ -15,6 +15,14 @@ static int g_result_bar = 1, g_result_item = 1, g_result_table = 1;
 static char g_stack[STACK_SIZE]; /* 'B' tab bar, 'I' tab item, 'T' table */
 static int g_depth;
 static int g_misuse;
+static int g_old_host;
+
+/* The numbers behind a draw line (fake_ov_geom), by log line. */
+typedef struct Geom {
+    int has;
+    float v[5];
+} Geom;
+static Geom g_geom[LOG_LINES];
 
 static void add(const char* prefix, const char* text)
 {
@@ -22,7 +30,22 @@ static void add(const char* prefix, const char* text)
         g_overflowed = 1;
         return;
     }
+    g_geom[g_count].has = 0;
     snprintf(g_log[g_count++], LINE_SIZE, "%s%s", prefix, text ? text : "(null)");
+}
+
+/* A draw call: the line "<prefix><color as 8 hex digits>[:<text>]", and its numbers kept beside it. */
+static void add_draw(const char* prefix, uint32_t color, const char* text, const float v[5])
+{
+    char rest[LINE_SIZE];
+    int at = g_count;
+    if (text != NULL) snprintf(rest, sizeof rest, "%08X:%s", (unsigned)color, text);
+    else snprintf(rest, sizeof rest, "%08X", (unsigned)color);
+    add(prefix, rest);
+    if (at < g_count) {
+        g_geom[at].has = 1;
+        for (int i = 0; i < 5; i++) g_geom[at].v[i] = v[i];
+    }
 }
 
 static int begin(char kind, int result)
@@ -45,6 +68,35 @@ static void f_text_disabled(const char* text) { add("text_disabled:", text); }
 static void f_text_wrapped(const char* text) { add("text_wrapped:", text); }
 static void f_separator(void) { add("separator", ""); }
 static void f_spacing(void) { add("spacing", ""); }
+
+static void f_draw_rect_filled(float x0, float y0, float x1, float y1, uint32_t color, float rounding)
+{
+    const float v[5] = { x0, y0, x1, y1, rounding };
+    add_draw("rect:", color, NULL, v);
+}
+
+static void f_draw_text(float x, float y, uint32_t color, int font, float size, const char* text)
+{
+    const float v[5] = { x, y, size, (float)font, 0.0f };
+    add_draw("dtext:", color, text ? text : "(null)", v);
+}
+
+/* A byte is `size / 2` wide and a line `size` high; size 0 is a 20 px font. */
+static void f_text_size(int font, float size, const char* text, float* width, float* height)
+{
+    float px = size > 0.0f ? size : 20.0f;
+    (void)font;
+    if (width) *width = (float)(text ? strlen(text) : 0) * px * 0.5f;
+    if (height) *height = px;
+}
+
+uint32_t fake_ov_theme_color(int token)
+{
+    if (g_old_host && token >= OV_THEME_ON_ACCENT) return 0xFFFFFFFFu; /* a host before 0.4.0 */
+    return 0xFFC0DE00u + (uint32_t)token;
+}
+
+static uint32_t f_theme(int token) { return fake_ov_theme_color(token); }
 
 static int f_begin_tab_bar(const char* id)
 {
@@ -95,6 +147,10 @@ static const OvApi g_api = {
     .text_wrapped = f_text_wrapped,
     .separator = f_separator,
     .spacing = f_spacing,
+    .draw_rect_filled = f_draw_rect_filled,
+    .draw_text = f_draw_text,
+    .text_size = f_text_size,
+    .theme = f_theme,
     .begin_tab_bar = f_begin_tab_bar,
     .end_tab_bar = f_end_tab_bar,
     .begin_tab_item = f_begin_tab_item,
@@ -115,6 +171,7 @@ void fake_ov_reset(void)
     g_overflowed = 0;
     g_depth = 0;
     g_misuse = 0;
+    g_old_host = 0;
     g_result_bar = g_result_item = g_result_table = 1;
 }
 
@@ -125,7 +182,16 @@ void fake_ov_set_results(int tab_bar, int tab_item, int table)
     g_result_table = table;
 }
 
+void fake_ov_set_old_host(int old) { g_old_host = old; }
+
 int fake_ov_lines(void) { return g_count; }
+
+int fake_ov_geom(int index, float out[5])
+{
+    if (index < 0 || index >= g_count || !g_geom[index].has) return 0;
+    for (int i = 0; i < 5; i++) out[i] = g_geom[index].v[i];
+    return 1;
+}
 
 const char* fake_ov_line(int index)
 {

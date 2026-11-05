@@ -14,10 +14,14 @@
 #include <string.h>
 #include "addresses_25480438.h"
 #include "admission.h"
+#include "entry.h"
+#include "logic.h"
 #include "memory.h"
+#include "settings.h"
 #include "snapshot.h"
 #include "synthetic.h"
 #include "test.h"
+#include "ui_settings.h"
 
 #define GRACE_OVER 30000u
 
@@ -514,6 +518,267 @@ static void test_snapshot_field_sizes(void)
     CHECK(sizeof s.build_reason == 80, "and so does the build reason");
 }
 
+
+/* --- snap_fill_list ---------------------------------------------------------------------------------------------- */
+
+static void put_u32(uint8_t* block, size_t off, uint32_t v) { memcpy(block + off, &v, sizeof v); }
+
+/* An active row of `kind` on card `card` at list position `y`, with a code of n directions; its timer block is idle. */
+static DbfRow list_row(uint32_t kind, uintptr_t card, float y, const uint8_t* code, int n)
+{
+    DbfRow r;
+    memset(&r, 0, sizeof r);
+    r.card = card;
+    r.list_y = y;
+    r.kind = kind;
+    r.active = true;
+    r.code_len = (uint8_t)n;
+    if (n > 0) memcpy(r.code, code, (size_t)n > sizeof r.code ? sizeof r.code : (size_t)n);
+    put_u32(r.timer, DBF_OFF_CARD_TIMER_KIND_OFFSET, kind);
+    return r;
+}
+
+/* Three cards: A (kind 3, y 1) is the lowest, B (kind 118, y 3) the top, C (kind 150, y 2) in between. List order: B, C, A. */
+static void list_view(GameView* v)
+{
+    static const uint8_t a[5] = { 1, 2, 3, 3, 3 };
+    static const uint8_t b[3] = { 2, 2, 1 };
+    memset(v, 0, sizeof *v);
+    v->in_gameplay = true;
+    v->hud_ready = true;
+    v->menu_open = true;
+    v->row_count = 3;
+    v->rows[0] = list_row(3, 0x1000, 1.0f, a, 5);
+    v->rows[1] = list_row(118, 0x2000, 3.0f, b, 3);
+    v->rows[2] = list_row(150, 0x3000, 2.0f, NULL, 0);
+}
+
+static DbfSettings g_list_settings;
+
+static void fill_list(DbfSnapshot* s, const GameView* v, const ListState* l, const EntryJob* job)
+{
+    snap_fill_list(s, v, &g_list_settings, l, job, "", "settings.ini", 0);
+}
+
+static void test_fill_list_rows(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    memset(&s, 0xa5, sizeof s);
+    s.tick = 77;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.valid && s.list.enabled, "the list view is filled, and DBF is on");
+    CHECK(s.list.row_count == 3, "three rows");
+    CHECK(strcmp(s.list.rows[0].name, "Orbital Precision Strike") == 0 && s.list.rows[0].kind == 118, "the top card comes first");
+    CHECK(strcmp(s.list.rows[1].name, "Stratagem 150") == 0 && s.list.rows[1].kind == 150, "then the one in between");
+    CHECK(strcmp(s.list.rows[2].name, "Eagle 500kg Bomb") == 0 && s.list.rows[2].kind == 3, "then the lowest");
+    CHECK(s.list.rows[0].code_len == 3 && s.list.rows[0].code[0] == 2 && s.list.rows[0].code[2] == 1, "a row keeps its code");
+    CHECK(s.list.rows[2].code_len == 5 && s.list.rows[2].code[4] == 3, "all five directions of the other");
+    CHECK(s.list.rows[1].code_len == 0, "a row with no code has none");
+    CHECK(s.list.rows[0].eligible && s.list.rows[1].eligible && s.list.rows[2].eligible, "all three can be chosen");
+    CHECK(s.list.rows[3].name[0] == '\0' && s.list.rows[3].kind == 0 && !s.list.rows[3].eligible && s.list.rows[15].code_len == 0,
+          "rows past the count are empty (the view was cleared, not merged)");
+    CHECK(s.tick == 77, "the rest of the snapshot is left alone");
+}
+
+static void test_fill_list_eligibility_and_timers(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    /* C (kind 150) on a 45 s cooldown, A (kind 3) unavailable, B hidden by the blacklist. */
+    put_u32(v.rows[2].timer, DBF_OFF_CARD_TIMER_STATE_OFFSET, DBF_VAL_TIMER_STATE_COOLDOWN);
+    {
+        float seconds = 44.2f;
+        memcpy(v.rows[2].timer + DBF_OFF_CARD_TIMER_COOLDOWN_SECONDS_OFFSET, &seconds, sizeof seconds);
+    }
+    put_u32(v.rows[0].timer, DBF_OFF_CARD_TIMER_STATE_OFFSET, DBF_VAL_TIMER_STATE_UNAVAILABLE);
+    g_list_settings.blacklist_kind[118] = true;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(!s.list.rows[0].eligible, "a blacklisted kind is shown but cannot be chosen");
+    CHECK(!s.list.rows[1].eligible && s.list.rows[1].timer.valid && s.list.rows[1].timer.cooldown &&
+              s.list.rows[1].timer.seconds == 45,
+          "a cooldown: not eligible, its seconds rounded up");
+    CHECK(!s.list.rows[2].eligible && s.list.rows[2].timer.unavailable, "an unavailable card: not eligible, flagged");
+    CHECK(s.list.rows[0].timer.valid && !s.list.rows[0].timer.cooldown && !s.list.rows[0].timer.unavailable,
+          "a row with no timer has a valid, empty one");
+
+    list_view(&v);
+    v.rows[0].kind = 0; /* a card whose entry is not in the payload */
+    settings_defaults(&g_list_settings);
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(!s.list.rows[2].eligible, "kind 0 cannot be chosen");
+}
+
+static void test_fill_list_chosen(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    ListState l;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    memset(&l, 0, sizeof l);
+    l.was_open = true;
+    l.chosen = 2; /* GameView.rows[2]: kind 150, second in list order */
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == 1, "chosen is the place in list order, not the index in GameView.rows");
+    l.chosen = 1;
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == 0, "the top card is place 0");
+    l.chosen = 0;
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == 2, "the lowest is place 2");
+    l.chosen = -1;
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == -1, "nothing chosen");
+    l.chosen = 3;
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == -1, "a choice past the rows is none");
+    l.chosen = 0;
+    l.was_open = false;
+    fill_list(&s, &v, &l, NULL);
+    CHECK(s.list.chosen == -1, "a state the list was not open in has no choice");
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.chosen == -1, "no list state: none");
+}
+
+static void test_fill_list_settings(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(strcmp(s.list.bind_next, "wheel_down") == 0 && strcmp(s.list.bind_previous, "wheel_up") == 0 &&
+              strcmp(s.list.bind_confirm, "mouse1") == 0,
+          "the default bindings, spelt as settings.ini spells them");
+    g_list_settings.bind[BIND_NEXT] = (Binding){ BIND_KEY, 'E' };
+    g_list_settings.bind[BIND_CONFIRM].kind = BIND_NONE;
+    g_list_settings.bind[BIND_CONFIRM].code = 0;
+    g_list_settings.enabled = false;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(strcmp(s.list.bind_next, "key:e") == 0 && strcmp(s.list.bind_confirm, "none") == 0, "a key; an unbound action reads none");
+    CHECK(!s.list.enabled && s.list.valid, "the enabled setting is copied (the list is filled either way)");
+
+    snap_fill_list(&s, &v, NULL, NULL, NULL, NULL, NULL, 0);
+    CHECK(s.list.valid && !s.list.enabled, "no settings: DBF is not on");
+    CHECK(strcmp(s.list.bind_next, "none") == 0 && strcmp(s.list.bind_previous, "none") == 0 &&
+              strcmp(s.list.bind_confirm, "none") == 0,
+          "and nothing is bound");
+    CHECK(s.list.row_count == 3, "the rows are still listed");
+}
+
+static void test_fill_list_texts(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    char big[400];
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    snap_fill_list(&s, &v, &g_list_settings, NULL, NULL, "wheel bindings need Overlay Host 0.5.0", "settings.ini", 3);
+    CHECK(strcmp(s.list.bind_status, "wheel bindings need Overlay Host 0.5.0") == 0, "the bindings status is copied");
+    CHECK(strcmp(s.list.settings_file, "settings.ini") == 0 && s.list.settings_problems == 3, "the file name and the problem count");
+    snap_fill_list(&s, &v, &g_list_settings, NULL, NULL, NULL, NULL, -2);
+    CHECK(s.list.bind_status[0] == '\0' && s.list.settings_file[0] == '\0', "NULL texts are empty");
+    CHECK(s.list.settings_problems == 0, "a negative problem count is stored as 0");
+    memset(big, 'z', sizeof big - 1);
+    big[sizeof big - 1] = '\0';
+    snap_fill_list(&s, &v, &g_list_settings, NULL, NULL, big, big, 1);
+    CHECK(strlen(s.list.bind_status) == sizeof s.list.bind_status - 1 && strlen(s.list.settings_file) == sizeof s.list.settings_file - 1,
+          "long texts are cut to their fields, terminated");
+}
+
+static void test_fill_list_entry(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    EntryJob job;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.entry_state == ENTRY_IDLE && s.list.entry_sent == 0 && s.list.entry_len == 0, "no job: idle");
+
+    memset(&job, 0, sizeof job);
+    job.state = ENTRY_RUNNING;
+    job.kind = 118;
+    job.sent = 2;
+    job.code.len = 5;
+    fill_list(&s, &v, NULL, &job);
+    CHECK(s.list.entry_state == ENTRY_RUNNING && s.list.entry_kind == 118 && s.list.entry_sent == 2 && s.list.entry_len == 5,
+          "a running job: its kind, the directions sent and the code's length");
+    CHECK(strcmp(s.list.entry_name, "Orbital Precision Strike") == 0, "and the stratagem's name");
+
+    job.state = ENTRY_FAILED;
+    snap_copy_text(job.reason, sizeof job.reason, "menu closed");
+    fill_list(&s, &v, NULL, &job);
+    CHECK(s.list.entry_state == ENTRY_FAILED && strcmp(s.list.entry_reason, "menu closed") == 0, "a failed job: its reason");
+
+    job.state = ENTRY_DONE;
+    job.reason[0] = '\0';
+    fill_list(&s, &v, NULL, &job);
+    CHECK(s.list.entry_state == ENTRY_DONE && s.list.entry_reason[0] == '\0', "a finished job");
+
+    memset(&job, 0, sizeof job);
+    fill_list(&s, &v, NULL, &job);
+    CHECK(s.list.entry_state == ENTRY_IDLE && s.list.entry_name[0] == '\0', "an idle job has no name");
+}
+
+static void test_fill_list_limits(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    v.rows[0].code_len = 200;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.rows[2].code_len == DBF_CODE_CAPACITY, "a code length past the array is cut to it");
+
+    memset(&v, 0, sizeof v);
+    for (int i = 0; i < 16; i++) {
+        v.rows[i] = list_row(20u + (uint32_t)i, 0x1000u + (uintptr_t)i * 0x100, (float)(16 - i), NULL, 0);
+    }
+    v.row_count = 16;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.row_count == 16 && s.list.rows[0].kind == 20 && s.list.rows[15].kind == 35, "sixteen rows, top first");
+
+    v.row_count = 99;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.row_count == 16, "a row count past sixteen is cut");
+    v.row_count = -4;
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(s.list.row_count == 0 && s.list.valid, "a negative one is none");
+
+    snap_fill_list(&s, NULL, &g_list_settings, NULL, NULL, NULL, NULL, 0);
+    CHECK(s.list.valid && s.list.row_count == 0, "no view: no rows, the rest still filled");
+    snap_fill_list(NULL, &v, &g_list_settings, NULL, NULL, NULL, NULL, 0);
+    CHECK(true, "no snapshot: nothing happens");
+}
+
+static void test_fill_list_names_are_private(void)
+{
+    DbfSnapshot s;
+    GameView v;
+    const char* mine;
+    list_view(&v);
+    settings_defaults(&g_list_settings);
+    mine = dbf_kind_name(777u); /* the render thread's static text */
+    fill_list(&s, &v, NULL, NULL);
+    CHECK(strcmp(mine, "Stratagem 777") == 0, "filling the list does not write the render thread's name buffer");
+    CHECK(strcmp(s.list.rows[1].name, "Stratagem 150") == 0, "(control) while it did name kind 150");
+}
+
+static void test_list_view_fields(void)
+{
+    DbfSnapshot s;
+    CHECK(sizeof s.list.rows / sizeof s.list.rows[0] == 16 && DBF_LIST_ROWS == 16, "the list view has room for the 16 cards");
+    CHECK(sizeof s.list.rows[0].name >= 40, "a name field holds the longest vanilla name (38) and a number name");
+    CHECK(sizeof s.list.entry_reason >= DBF_REASON_SIZE, "the entry reason field holds a whole job reason");
+    CHECK(sizeof s.list.bind_next >= 16, "a binding field holds pad:dpad_right");
+}
+
 int main(void)
 {
     test_before_init();
@@ -533,6 +798,15 @@ int main(void)
     test_capturing_flag();
     test_capturing_two_threads();
     test_snapshot_field_sizes();
+    test_fill_list_rows();
+    test_fill_list_eligibility_and_timers();
+    test_fill_list_chosen();
+    test_fill_list_settings();
+    test_fill_list_texts();
+    test_fill_list_entry();
+    test_fill_list_limits();
+    test_fill_list_names_are_private();
+    test_list_view_fields();
     printf("%s\n", test_failures() == 0 ? "PASS test_snapshot" : "FAIL test_snapshot");
     TEST_MAIN_END
 }

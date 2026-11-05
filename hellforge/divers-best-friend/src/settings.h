@@ -25,6 +25,8 @@
  * hide_sos and hide_eagle_rearm false; every blacklist kind at the default_on of dbf_blacklist_kinds; next = wheel_down,
  * previous = wheel_up, confirm = mouse1, the slot hotkeys unbound.
  *
+ * bind_describe is the other way round: a Binding written as the file spells it, so the Status tab shows what to type.
+ *
  * Portable C11: standard headers, bindings.h and the generated address header (only its extern declaration of
  * dbf_blacklist_kinds: admission.c holds the one definition). No printf: the problem lines are built by hand. */
 #ifndef DBF_SETTINGS_H
@@ -54,5 +56,13 @@ void settings_defaults(DbfSettings* s);
  * separated by '\n' with none after the last; it is always terminated, and a problem that does not fit is left out whole
  * (the return value still counts it). */
 int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems, size_t n);
+
+/* Writes `b` into out[n] as a [bindings] value: none, wheel_up, wheel_down, mouse1 .. mouse5, key:a .. key:z, key:0 ..
+ * key:9, key:f1 .. key:f24, key:0xNN (any other code, two upper case hex digits) or pad:<button>, so that settings_parse of
+ * that text gives the binding back. A binding that cannot work (an unknown kind, a mouse code outside 1 to 5, a key code
+ * outside 1 to 0xFE, a pad mask that is not exactly one named button: bind_init takes these as BIND_NONE too) and a NULL
+ * `b` read none. The text is cut to fit n and always terminated; a NULL `out` or n of 0 does nothing. A wheel binding's
+ * code is not looked at. */
+void bind_describe(const Binding* b, char* out, size_t n);
 
 #endif

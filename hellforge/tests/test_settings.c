@@ -445,6 +445,123 @@ static void test_blacklist(void)
           "an unknown key among kinds does not stop the rest");
 }
 
+
+/* --- bind_describe ----------------------------------------------------------------------------------------------- */
+
+static bool describes(uint8_t kind, uint16_t code, const char* want)
+{
+    Binding b = { kind, code };
+    char out[32];
+    memset(out, 'x', sizeof out);
+    bind_describe(&b, out, sizeof out);
+    if (strcmp(out, want) == 0) return true;
+    printf("  binding kind %u code 0x%x described as \"%s\", expected \"%s\"\n", kind, code, out, want);
+    return false;
+}
+
+static void test_describe_spellings(void)
+{
+    static const struct { const char* name; uint16_t mask; } pads[] = {
+        { "a", 0x1000 }, { "b", 0x2000 }, { "x", 0x4000 }, { "y", 0x8000 }, { "lb", 0x0100 }, { "rb", 0x0200 },
+        { "back", 0x0020 }, { "start", 0x0010 }, { "ls", 0x0040 }, { "rs", 0x0080 }, { "dpad_up", 0x0001 },
+        { "dpad_down", 0x0002 }, { "dpad_left", 0x0004 }, { "dpad_right", 0x0008 },
+    };
+    CHECK(describes(BIND_NONE, 0, "none"), "unbound reads none");
+    CHECK(describes(BIND_WHEEL_UP, 0, "wheel_up") && describes(BIND_WHEEL_DOWN, 0, "wheel_down"), "the wheel");
+    CHECK(describes(BIND_WHEEL_UP, 5, "wheel_up"), "a wheel binding's code is not looked at");
+    CHECK(describes(BIND_MOUSE, 1, "mouse1") && describes(BIND_MOUSE, 5, "mouse5"), "mouse buttons 1 and 5");
+    CHECK(describes(BIND_KEY, 'A', "key:a") && describes(BIND_KEY, 'Z', "key:z"), "letters, lower case");
+    CHECK(describes(BIND_KEY, 'F', "key:f"), "the letter F is not a function key");
+    CHECK(describes(BIND_KEY, '0', "key:0") && describes(BIND_KEY, '9', "key:9"), "digits");
+    CHECK(describes(BIND_KEY, 0x70, "key:f1") && describes(BIND_KEY, 0x7B, "key:f12") && describes(BIND_KEY, 0x87, "key:f24"),
+          "function keys");
+    CHECK(describes(BIND_KEY, 0x1B, "key:0x1B") && describes(BIND_KEY, 0x01, "key:0x01") && describes(BIND_KEY, 0xFE, "key:0xFE"),
+          "any other key in hex, two digits");
+    CHECK(describes(BIND_KEY, 0x88, "key:0x88") && describes(BIND_KEY, 0x40, "key:0x40") && describes(BIND_KEY, 0x2F, "key:0x2F"),
+          "the codes just outside the letters, digits and function keys are hex too");
+    for (size_t i = 0; i < sizeof pads / sizeof pads[0]; i++) {
+        char want[32];
+        snprintf(want, sizeof want, "pad:%s", pads[i].name);
+        CHECK(describes(BIND_PAD, pads[i].mask, want), want);
+    }
+}
+
+static void test_describe_unusable(void)
+{
+    CHECK(describes(BIND_KEY, 0, "none") && describes(BIND_KEY, 0xFF, "none") && describes(BIND_KEY, 0x100, "none"),
+          "a key code outside 1 to 0xFE is none, as bind_init takes it");
+    CHECK(describes(BIND_MOUSE, 0, "none") && describes(BIND_MOUSE, 6, "none"), "a mouse code outside 1 to 5");
+    CHECK(describes(BIND_PAD, 0, "none") && describes(BIND_PAD, 0x0003, "none") && describes(BIND_PAD, 0x0400, "none"),
+          "a pad mask that is not exactly one button");
+    CHECK(describes(9, 0x41, "none") && describes(255, 1, "none"), "an unknown kind");
+}
+
+static void test_describe_round_trip(void)
+{
+    /* Every binding the parser can make reads back, through the parser, as itself. */
+    Binding all[512];
+    int n = 0;
+    bool every = true;
+    all[n++] = (Binding){ BIND_NONE, 0 };
+    all[n++] = (Binding){ BIND_WHEEL_UP, 0 };
+    all[n++] = (Binding){ BIND_WHEEL_DOWN, 0 };
+    for (uint16_t m = 1; m <= 5; m++) all[n++] = (Binding){ BIND_MOUSE, m };
+    for (uint16_t k = 1; k <= 0xFE; k++) all[n++] = (Binding){ BIND_KEY, k };
+    for (int bit = 0; bit < 16; bit++) {
+        uint16_t mask = (uint16_t)(1u << bit);
+        if (mask == 0x0400 || mask == 0x0800) continue; /* XInput bits the settings file has no button name for */
+        all[n++] = (Binding){ BIND_PAD, mask };
+    }
+    for (int i = 0; i < n; i++) {
+        char out[32], text[64];
+        Binding b = all[i];
+        bind_describe(&b, out, sizeof out);
+        snprintf(text, sizeof text, "[bindings]\nconfirm = %s\n", out);
+        if (parse(text) != 0 || g_s.bind[BIND_CONFIRM].kind != b.kind || g_s.bind[BIND_CONFIRM].code != b.code) {
+            printf("  kind %u code 0x%x -> \"%s\" does not parse back to itself\n", b.kind, b.code, out);
+            every = false;
+        }
+    }
+    CHECK(n > 270 && every, "describe, then parse, gives back every binding the parser can make (key 1 to 0xFE, mouse, wheel, pads)");
+}
+
+static void test_describe_defaults(void)
+{
+    DbfSettings d = defaults();
+    char out[32];
+    bind_describe(&d.bind[BIND_NEXT], out, sizeof out);
+    CHECK(strcmp(out, "wheel_down") == 0, "the default Next reads wheel_down");
+    bind_describe(&d.bind[BIND_PREVIOUS], out, sizeof out);
+    CHECK(strcmp(out, "wheel_up") == 0, "Previous wheel_up");
+    bind_describe(&d.bind[BIND_CONFIRM], out, sizeof out);
+    CHECK(strcmp(out, "mouse1") == 0, "Confirm mouse1");
+    bind_describe(&d.bind[BIND_SLOT1], out, sizeof out);
+    CHECK(strcmp(out, "none") == 0, "the slot hotkeys read none");
+}
+
+static void test_describe_buffer(void)
+{
+    Binding b = { BIND_PAD, 0x0008 }; /* pad:dpad_right, 14 bytes */
+    char out[32];
+    memset(out, 'x', sizeof out);
+    bind_describe(&b, out, 15);
+    CHECK(strcmp(out, "pad:dpad_right") == 0 && out[15] == 'x', "exactly fitting: whole, terminated, nothing past it");
+    memset(out, 'x', sizeof out);
+    bind_describe(&b, out, 14);
+    CHECK(strcmp(out, "pad:dpad_righ") == 0 && out[14] == 'x', "one byte short: cut, terminated");
+    memset(out, 'x', sizeof out);
+    bind_describe(&b, out, 1);
+    CHECK(out[0] == '\0' && out[1] == 'x', "a buffer of one byte: just the terminator");
+    memset(out, 'x', sizeof out);
+    bind_describe(&b, out, 0);
+    CHECK(out[0] == 'x', "a buffer of none: untouched");
+    bind_describe(&b, NULL, 8);
+    CHECK(true, "a NULL buffer: nothing happens");
+    memset(out, 'x', sizeof out);
+    bind_describe(NULL, out, sizeof out);
+    CHECK(strcmp(out, "none") == 0, "a NULL binding reads none");
+}
+
 int main(void)
 {
     test_defaults();
@@ -458,6 +575,11 @@ int main(void)
     test_binding_values();
     test_binding_actions();
     test_blacklist();
+    test_describe_spellings();
+    test_describe_unusable();
+    test_describe_round_trip();
+    test_describe_defaults();
+    test_describe_buffer();
     printf("%s\n", test_failures() == 0 ? "PASS test_settings" : "FAIL test_settings");
     TEST_MAIN_END
 }

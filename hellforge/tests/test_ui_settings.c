@@ -60,6 +60,21 @@ static void sample(DbfSnapshot* s)
     set_row(&s->game.rows[3], 3, three, 3);
 }
 
+
+/* The list view the game thread fills (snap_fill_list): bindings at their defaults, no problems in settings.ini, no job. */
+static void fill_list_view(DbfSnapshot* s)
+{
+    ListView* l = &s->list;
+    l->valid = true;
+    l->enabled = true;
+    l->chosen = -1;
+    l->entry_state = ENTRY_IDLE;
+    snap_copy_text(l->bind_next, sizeof l->bind_next, "wheel_down");
+    snap_copy_text(l->bind_previous, sizeof l->bind_previous, "wheel_up");
+    snap_copy_text(l->bind_confirm, sizeof l->bind_confirm, "mouse1");
+    snap_copy_text(l->settings_file, sizeof l->settings_file, "settings.ini");
+}
+
 static void draw(const DbfSnapshot* s)
 {
     fake_ov_reset();
@@ -405,6 +420,153 @@ static void test_hidden_tab(void)
     CHECK(balanced(), "balanced");
 }
 
+
+static void test_entry_lines(void)
+{
+    int scramble, separator, bindings, settings, entry, table;
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    draw(&g_snap);
+    CHECK(has("text:Bindings: wheel_down / wheel_up / mouse1"), "the bindings line: next, previous, confirm");
+    CHECK(has("text:Settings: settings.ini (0 problems)"), "the settings line names the file, not a path");
+    CHECK(has("text:Entry: idle"), "the entry line: idle");
+    CHECK(fake_ov_count_prefix("text:Bindings: ") == 1 && fake_ov_count_prefix("text:Settings: ") == 1 &&
+              fake_ov_count_prefix("text:Entry: ") == 1,
+          "one of each");
+    scramble = fake_ov_find("text:Codes do not follow scrambling yet", 0);
+    bindings = fake_ov_find("text:Bindings: wheel_down / wheel_up / mouse1", 0);
+    settings = fake_ov_find("text:Settings: settings.ini (0 problems)", 0);
+    entry = fake_ov_find("text:Entry: idle", 0);
+    table = fake_ov_find("table:dbf-stratagems", 0);
+    separator = fake_ov_find("separator", scramble);
+    CHECK(scramble < separator && separator < bindings && bindings < settings && settings < entry && entry < table,
+          "after the scramble note, behind a rule: bindings, settings, entry, then the table");
+    CHECK(balanced(), "balanced");
+}
+
+static void test_entry_lines_need_a_filled_list(void)
+{
+    sample(&g_snap);
+    draw(&g_snap);
+    CHECK(fake_ov_count_prefix("text:Bindings: ") == 0 && fake_ov_count_prefix("text:Settings: ") == 0 &&
+              fake_ov_count_prefix("text:Entry: ") == 0,
+          "a snapshot whose list was never filled shows none of the three lines");
+    CHECK(fake_ov_find("separator", 0) >= 0 && fake_ov_count_prefix("separator") == 2,
+          "and no extra rule (the features' and the table's)");
+}
+
+static void test_entry_lines_outside_a_mission(void)
+{
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    g_snap.game.in_gameplay = false;
+    g_snap.game.hud_ready = false;
+    g_snap.game.menu_open = false;
+    draw(&g_snap);
+    CHECK(has("text:Bindings: wheel_down / wheel_up / mouse1") && has("text:Settings: settings.ini (0 problems)") &&
+              has("text:Entry: idle"),
+          "they are drawn outside a mission too: the keys and the file matter there");
+    CHECK(balanced(), "balanced");
+}
+
+static void test_bindings_status(void)
+{
+    int line, status;
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    snap_copy_text(g_snap.list.bind_status, sizeof g_snap.list.bind_status, "wheel bindings need Overlay Host 0.5.0");
+    draw(&g_snap);
+    line = fake_ov_find("text:Bindings: wheel_down / wheel_up / mouse1", 0);
+    status = fake_ov_find("text:wheel bindings need Overlay Host 0.5.0", 0);
+    CHECK(status == line + 1, "the bindings status is the line right under the bindings");
+
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    draw(&g_snap);
+    line = fake_ov_find("text:Bindings: wheel_down / wheel_up / mouse1", 0);
+    CHECK(strncmp(fake_ov_line(line + 1), "text:Settings: ", 15) == 0, "with no status the settings line follows at once");
+}
+
+static void test_unbound_reads_none(void)
+{
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    g_snap.list.bind_next[0] = '\0';
+    g_snap.list.bind_confirm[0] = '\0';
+    draw(&g_snap);
+    CHECK(has("text:Bindings: none / wheel_up / none"), "a binding with no name reads none");
+}
+
+static void test_settings_problem_count(void)
+{
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    g_snap.list.settings_problems = 1;
+    draw(&g_snap);
+    CHECK(has("text:Settings: settings.ini (1 problem)"), "one problem is singular");
+    g_snap.list.settings_problems = 3;
+    draw(&g_snap);
+    CHECK(has("text:Settings: settings.ini (3 problems)"), "three are plural");
+    g_snap.list.settings_problems = 2000000000;
+    draw(&g_snap);
+    CHECK(has("text:Settings: settings.ini (2000000000 problems)"), "a large count is written whole");
+    g_snap.list.settings_problems = -4;
+    draw(&g_snap);
+    CHECK(has("text:Settings: settings.ini (0 problems)"), "a negative count reads 0");
+    g_snap.list.settings_problems = 0;
+    g_snap.list.settings_file[0] = '\0';
+    draw(&g_snap);
+    CHECK(has("text:Settings: defaults (0 problems)"), "no file name (no settings file was read): the defaults are in use");
+}
+
+static void test_entry_states(void)
+{
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    g_snap.list.entry_state = ENTRY_RUNNING;
+    g_snap.list.entry_kind = 118;
+    snap_copy_text(g_snap.list.entry_name, sizeof g_snap.list.entry_name, "Orbital Precision Strike");
+    g_snap.list.entry_sent = 2;
+    g_snap.list.entry_len = 5;
+    draw(&g_snap);
+    CHECK(has("text:Entry: entering Orbital Precision Strike (2/5)"), "running: entering <name> (<sent>/<len>)");
+
+    g_snap.list.entry_sent = 0;
+    draw(&g_snap);
+    CHECK(has("text:Entry: entering Orbital Precision Strike (0/5)"), "nothing sent yet");
+
+    g_snap.list.entry_state = ENTRY_DONE;
+    draw(&g_snap);
+    CHECK(has("text:Entry: done"), "done");
+
+    g_snap.list.entry_state = ENTRY_FAILED;
+    snap_copy_text(g_snap.list.entry_reason, sizeof g_snap.list.entry_reason, "menu closed");
+    draw(&g_snap);
+    CHECK(has("text:Entry: failed: menu closed"), "failed: <reason>");
+
+    g_snap.list.entry_reason[0] = '\0';
+    draw(&g_snap);
+    CHECK(has("text:Entry: failed"), "failed with no reason: just failed");
+
+    memset(g_snap.list.entry_reason, 'r', sizeof g_snap.list.entry_reason - 1);
+    g_snap.list.entry_reason[sizeof g_snap.list.entry_reason - 1] = '\0';
+    draw(&g_snap);
+    CHECK(fake_ov_count_prefix("text:Entry: failed: rrrr") == 1 && fake_ov_overflowed() == 0, "the longest reason is shown whole");
+    CHECK(balanced(), "balanced");
+}
+
+static void test_entry_name_from_the_list(void)
+{
+    sample(&g_snap);
+    fill_list_view(&g_snap);
+    g_snap.list.entry_state = ENTRY_RUNNING;
+    g_snap.list.entry_kind = 150;
+    snap_copy_text(g_snap.list.entry_name, sizeof g_snap.list.entry_name, "Stratagem 150");
+    g_snap.list.entry_len = 4;
+    draw(&g_snap);
+    CHECK(has("text:Entry: entering Stratagem 150 (0/4)"), "a HellForge kind is entered by its number");
+}
+
 static void test_null_api(void)
 {
     sample(&g_snap);
@@ -429,6 +591,14 @@ int main(void)
     test_arrows();
     test_row_limits();
     test_long_reason();
+    test_entry_lines();
+    test_entry_lines_need_a_filled_list();
+    test_entry_lines_outside_a_mission();
+    test_bindings_status();
+    test_unbound_reads_none();
+    test_settings_problem_count();
+    test_entry_states();
+    test_entry_name_from_the_list();
     test_no_snapshot();
     test_hidden_tab();
     test_null_api();

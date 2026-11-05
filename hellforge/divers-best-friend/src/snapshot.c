@@ -2,6 +2,7 @@
 #include <string.h>
 #include "platform.h"
 #include "snapshot.h"
+#include "ui_settings.h"
 
 static bool g_locks_ready; /* the locks were initialised (once, ever: a lock is not initialised twice) */
 static bool g_ready;       /* snap_init has run */
@@ -140,6 +141,48 @@ void snap_fill_admission(DbfSnapshot* s)
         s->admit[f] = adm_feature((Feature)f, &reason);
         snap_copy_text(s->admit_reason[f], sizeof s->admit_reason[f], reason);
     }
+}
+
+void snap_fill_list(DbfSnapshot* s, const GameView* v, const DbfSettings* settings, const ListState* list,
+                    const EntryJob* job, const char* bind_status, const char* settings_file, int settings_problems)
+{
+    ListView* l;
+    int order[DBF_LIST_ROWS];
+    bool eligible[DBF_LIST_ROWS];
+    int n;
+    if (s == NULL) return;
+    l = &s->list;
+    memset(l, 0, sizeof *l);
+    l->valid = true;
+    l->enabled = settings != NULL && settings->enabled;
+    l->chosen = -1;
+    n = logic_list_rows(v, settings, order, eligible);
+    for (int k = 0; k < n; k++) {
+        const DbfRow* row = &v->rows[order[k]];
+        ListRowView* out = &l->rows[k];
+        out->kind = row->kind;
+        dbf_kind_name_copy(row->kind, out->name, sizeof out->name);
+        out->code_len = row->code_len < DBF_CODE_CAPACITY ? row->code_len : DBF_CODE_CAPACITY;
+        memcpy(out->code, row->code, out->code_len);
+        out->eligible = eligible[order[k]];
+        logic_timer(row, &out->timer);
+        if (list != NULL && list->was_open && list->chosen == order[k]) l->chosen = k;
+    }
+    l->row_count = n;
+    if (job != NULL) {
+        l->entry_state = job->state;
+        l->entry_kind = job->kind;
+        l->entry_sent = job->sent;
+        l->entry_len = job->code.len;
+        if (job->state == ENTRY_RUNNING) dbf_kind_name_copy(job->kind, l->entry_name, sizeof l->entry_name);
+        snap_copy_text(l->entry_reason, sizeof l->entry_reason, job->reason);
+    }
+    bind_describe(settings != NULL ? &settings->bind[BIND_NEXT] : NULL, l->bind_next, sizeof l->bind_next);
+    bind_describe(settings != NULL ? &settings->bind[BIND_PREVIOUS] : NULL, l->bind_previous, sizeof l->bind_previous);
+    bind_describe(settings != NULL ? &settings->bind[BIND_CONFIRM] : NULL, l->bind_confirm, sizeof l->bind_confirm);
+    snap_copy_text(l->bind_status, sizeof l->bind_status, bind_status);
+    snap_copy_text(l->settings_file, sizeof l->settings_file, settings_file);
+    l->settings_problems = settings_problems > 0 ? settings_problems : 0;
 }
 
 bool ui_post(const UiEvent* e)

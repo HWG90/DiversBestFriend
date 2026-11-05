@@ -261,6 +261,66 @@ static bool parse_binding(Span v, Binding* out)
     return false;
 }
 
+/* The binding as a [bindings] value (settings.h). A value is at most "pad:dpad_right", 14 bytes. */
+void bind_describe(const Binding* b, char* out, size_t n)
+{
+    static const char HEX[] = "0123456789ABCDEF";
+    char text[24];
+    size_t at = 0;
+    const char* name = "none";
+    if (out == NULL || n == 0) return;
+    text[0] = '\0';
+    if (b != NULL) {
+        switch (b->kind) {
+        case BIND_WHEEL_UP: name = "wheel_up"; break;
+        case BIND_WHEEL_DOWN: name = "wheel_down"; break;
+        case BIND_MOUSE:
+            if (b->code < 1 || b->code > 5) break;
+            memcpy(text, "mouse", 5);
+            text[5] = (char)('0' + b->code);
+            text[6] = '\0';
+            name = text;
+            break;
+        case BIND_KEY:
+            if (b->code < 1 || b->code > 0xFE) break;
+            memcpy(text, "key:", 4);
+            at = 4;
+            if (b->code >= '0' && b->code <= '9') {
+                text[at++] = (char)b->code;
+            } else if (b->code >= 'A' && b->code <= 'Z') {
+                text[at++] = (char)(b->code + ('a' - 'A'));
+            } else if (b->code >= 0x70 && b->code <= 0x87) { /* VK_F1 .. VK_F24 */
+                int number = b->code - 0x70 + 1;
+                text[at++] = 'f';
+                if (number >= 10) text[at++] = (char)('0' + number / 10);
+                text[at++] = (char)('0' + number % 10);
+            } else {
+                text[at++] = '0';
+                text[at++] = 'x';
+                text[at++] = HEX[b->code >> 4];
+                text[at++] = HEX[b->code & 15];
+            }
+            text[at] = '\0';
+            name = text;
+            break;
+        case BIND_PAD:
+            for (size_t i = 0; i < sizeof k_pad_buttons / sizeof k_pad_buttons[0]; i++) {
+                if (k_pad_buttons[i].mask != b->code) continue;
+                memcpy(text, "pad:", 4);
+                memcpy(text + 4, k_pad_buttons[i].name, strlen(k_pad_buttons[i].name) + 1);
+                name = text;
+                break;
+            }
+            break;
+        default: break;
+        }
+    }
+    at = strlen(name);
+    if (at > n - 1) at = n - 1;
+    memcpy(out, name, at);
+    out[at] = '\0';
+}
+
 /* --- the lines ------------------------------------------------------------------------------------------------------- */
 
 typedef enum { SEC_NONE, SEC_DBF, SEC_BINDINGS, SEC_BLACKLIST, SEC_SKIP } Section;

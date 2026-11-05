@@ -24,7 +24,14 @@
  * whether a host window is open or look capture is on (the HUD panel's OvFrame.capturing), and the game thread reads it to
  * keep DBF's own keys quiet then (bindings.h's `allowed`). It lives under the snapshot's lock.
  *
- * Portable C11: standard headers, platform.h, admission.h and game.h only. */
+ * The list view (DbfSnapshot.list) is what the plain list and the Status tab's entry lines draw: the rows of the HUD list
+ * in list order with their names, codes, eligibility and timers, which one is chosen, the state of the code entry, the
+ * bindings and the settings file. snap_fill_list copies all of it on the game thread, as plain data (no pointer into
+ * game memory or into another unit's state, and text in fixed fields), so the render thread draws it without calling
+ * anything but the Overlay Host.
+ *
+ * Portable C11: standard headers, platform.h, admission.h, game.h, logic.h, entry.h, settings.h and ui_settings.h (the
+ * stratagem names) only. */
 #ifndef DBF_SNAPSHOT_H
 #define DBF_SNAPSHOT_H
 
@@ -32,10 +39,49 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "admission.h"
+#include "entry.h"
 #include "game.h"
+#include "logic.h"
+#include "settings.h"
 
 #define DBF_SNAP_REASON_SIZE 80 /* admit_reason and build_reason: a reason longer than 79 bytes is cut */
 #define UI_QUEUE_SLOTS 64
+
+#define DBF_LIST_ROWS 16        /* the cards of the HUD list (DBF_VAL_CARD_COUNT); logic_list_rows serves at most 16 */
+#define DBF_LIST_NAME_SIZE 48   /* a stratagem's name: the longest vanilla one is 38 bytes, "Stratagem 4294967295" 20 */
+#define DBF_LIST_BIND_SIZE 24   /* a binding as the settings file spells it ("pad:dpad_right" is the longest, 14 bytes) */
+#define DBF_LIST_STATUS_SIZE 64 /* bind_poll's status text */
+#define DBF_LIST_FILE_SIZE 32   /* the settings file's name */
+
+_Static_assert(DBF_LIST_ROWS <= DBF_VAL_CARD_COUNT, "the list view has no more rows than the game view");
+
+/* One row of the list. */
+typedef struct ListRowView {
+    uint32_t kind;
+    char name[DBF_LIST_NAME_SIZE];
+    uint8_t code[DBF_CODE_CAPACITY]; /* directions 1 up, 2 right, 3 down, 4 left, as DbfRow.code */
+    uint8_t code_len;                /* at most DBF_CODE_CAPACITY; 0: no code */
+    bool eligible;                   /* the row may be chosen (logic_list_rows) */
+    DbfTimer timer;                  /* logic_timer of the row's timer block */
+} ListRowView;
+
+/* What the list and the entry status draw (see the top). Filled by snap_fill_list; all zero before that. */
+typedef struct ListView {
+    bool valid;                      /* snap_fill_list ran for this snapshot; nothing below means anything without it */
+    bool enabled;                    /* the enabled setting: DBF is on */
+    int row_count;                   /* rows[0..row_count) are in list order, the top of the list first */
+    ListRowView rows[DBF_LIST_ROWS];
+    int chosen;                      /* the chosen row's place in rows[] (not its index in GameView.rows); -1: none */
+    EntryState entry_state;
+    uint32_t entry_kind;             /* the job's stratagem */
+    char entry_name[DBF_LIST_NAME_SIZE]; /* its name while the job runs, else "" */
+    uint8_t entry_sent, entry_len;   /* directions sent, and the code's length */
+    char entry_reason[DBF_REASON_SIZE];  /* why the job failed, "" otherwise */
+    char bind_next[DBF_LIST_BIND_SIZE], bind_previous[DBF_LIST_BIND_SIZE], bind_confirm[DBF_LIST_BIND_SIZE];
+    char bind_status[DBF_LIST_STATUS_SIZE]; /* bind_poll's status, "" when all is well */
+    char settings_file[DBF_LIST_FILE_SIZE]; /* the settings file's name ("settings.ini"), "" when none was read */
+    int settings_problems;           /* lines of the settings file that were not understood */
+} ListView;
 
 typedef struct DbfSnapshot {
     uint64_t tick;
@@ -45,6 +91,7 @@ typedef struct DbfSnapshot {
     bool build_ok;
     char build_reason[DBF_SNAP_REASON_SIZE];
     uint32_t host_version; /* the Overlay Host's OvApi.version; 0 when there is none */
+    ListView list; /* snap_fill_list fills it; until then it is all zero and not valid */
 } DbfSnapshot;
 
 typedef struct UiEvent {
@@ -73,6 +120,22 @@ uint32_t snap_skipped(void);
 /* Game thread: fills build_ok, build_reason, admit[] and admit_reason[] from admission (adm_build_ok, adm_feature), copying
  * every reason. Other fields are left alone. NULL is ignored. */
 void snap_fill_admission(DbfSnapshot* s);
+
+/* Game thread: fills s->list from this tick's view; other fields are left alone, and the whole list view is rewritten
+ * (nothing of an earlier fill stays). NULL `s` is ignored.
+ *   v                 the tick's GameView (NULL: no rows). The rows are logic_list_rows(v, settings): every row in list
+ *                     order, with its eligibility; at most DBF_LIST_ROWS.
+ *   settings          the player's settings (NULL: DBF is not on, nothing is bound, no row is blacklisted)
+ *   list              List Select's state after this tick's step; its choice shows only while it says the list is open
+ *                     (NULL: nothing chosen). ListState.chosen indexes v->rows; the view stores the place in list order.
+ *   job               the code entry's job (NULL: idle)
+ *   bind_status       bind_poll's status text (NULL: "")
+ *   settings_file     the settings file's name for the Status tab, with no path ("settings.ini"); NULL or "": no file was
+ *                     read and the defaults are in use
+ *   settings_problems settings_parse's count of lines that were not understood (a negative count is 0)
+ * Names come from dbf_kind_name_copy, never from the static text of dbf_kind_name, which the render thread uses. */
+void snap_fill_list(DbfSnapshot* s, const GameView* v, const DbfSettings* settings, const ListState* list,
+                    const EntryJob* job, const char* bind_status, const char* settings_file, int settings_problems);
 
 /* Copies `src` (NULL: empty) into dst[size] and always terminates it, cutting src at size - 1 bytes when it is longer; size
  * 0 or a NULL dst does nothing. Bytes, not characters: the texts are ASCII. */
