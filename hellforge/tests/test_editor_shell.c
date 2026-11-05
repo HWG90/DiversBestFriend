@@ -11,7 +11,7 @@ static DbfSnapshot snapshot;
 static OvFrame frame = {.width=1920, .height=1080, .scale=1, .capturing=1};
 static struct OvPanel { int open; } panel;
 static int pressed, control, children, child_calls, layer, layers, focus, closes;
-static int colors, disabled, blocked, ids, current_id, click_view = -1;
+static int colors, disabled, blocked, ids, id_stack[16], click_view = -1, edit_id = -1;
 static bool disable_flags[16];
 static int text_input, focused = 1;
 static float region_width=1000;
@@ -60,7 +60,8 @@ static int button(const char* label)
 }
 static int checkbox(const char* label, int* value)
 {
-    if (!edit || strcmp(edit,label)) return 0;
+    if (blocked || !edit || strcmp(edit,label)) return 0;
+    if (edit_id >= 0 && (!ids || id_stack[ids-1] != edit_id)) return 0;
     *value = !*value;
     return 1;
 }
@@ -76,8 +77,16 @@ static void rect(float* x0, float* y0, float* x1, float* y1)
     if (x1) *x1=1020;
     if (y1) *y1=670;
 }
-static void push_int(int id) { current_id=id; ++ids; }
-static void pop_id(void) { if (--ids < 0) invalid=true; }
+static void push_int(int id)
+{
+    if (ids == 16) invalid=true;
+    else id_stack[ids++]=id;
+}
+static void pop_id(void)
+{
+    if (ids == 0) invalid=true;
+    else --ids;
+}
 static void begin_disabled(int flag)
 {
     if (disabled >= 16) { invalid=true; return; }
@@ -92,7 +101,7 @@ static void end_disabled(void)
 static int selectable(const char* label, int selected) { return button(label); }
 static int selectable_ex(const char* label, int selected, float w, float h, int span)
 {
-    if (!strcmp(label,"##view")) return click_view == current_id;
+    if (!strcmp(label,"##view")) return ids && click_view == id_stack[ids-1];
     return selectable(label,selected);
 }
 static void line(float x0,float y0,float x1,float y1,uint32_t color,float thickness) {}
@@ -166,7 +175,7 @@ static void draw(const DbfSnapshot* data)
           !fake_ov_misuse() && !fake_ov_overflowed(), "balanced host scopes");
     CHECK(layer==OV_LAYER_BACKGROUND,"restored caller draw layer");
     pressed=control=0;
-    click_view=-1;
+    click_view=edit_id=-1;
     click=edit=binding=NULL;
 }
 
@@ -245,7 +254,7 @@ int main(void)
         keyboard(0x75,false);
         expect_tab(i%5);
         if (i==1) {
-            CHECK(fake_ov_count_prefix("text:Current binding:")>0,"Controls shows binding editor");
+            CHECK(fake_ov_count_prefix("text:Current binding:")>0,"Key Bindings shows the binding editor");
             click="Slot 2";
             draw(&snapshot);
             binding="key:q";
@@ -254,32 +263,45 @@ int main(void)
             UiEvent e;
             CHECK(ui_drain(&e,1)==1 && e.kind==UI_BINDING && e.a==BIND_SLOT2 &&
                   editor_apply(&snapshot.options,&e) && snapshot.options.bind[BIND_SLOT2].code=='Q',
-                  "Controls posts the selected slot binding");
+                  "Key Bindings posts the selected slot binding");
         }
         if (i==2) {
             edit="SOS Beacon";
             draw(&snapshot);
             UiEvent e;
-            CHECK(!ui_drain(&e,1),"Blacklist checkbox stays staged until Apply");
+            CHECK(!ui_drain(&e,1),"Exclusions checkbox stays staged until Apply");
             click="APPLY BLACKLIST";
             draw(&snapshot);
             CHECK(ui_drain(&e,1)==1 && e.kind==UI_BLACKLIST && editor_apply(&snapshot.options,&e) &&
-                  snapshot.options.hide_sos, "Blacklist applies the selected mission entry");
+                  snapshot.options.hide_sos, "Exclusions applies the selected mission entry");
         }
-        if (i==4) CHECK(fake_ov_find("text:Game build 25480438: OK",0)>=0,"Status shows build diagnostics");
+        if (i==4) CHECK(fake_ov_find("text:Game build 25480438: OK",0)>=0,"Diagnostics shows the game build");
     }
+    snapshot.options.cooldown_display=3;
     edit="Enabled";
+    edit_id=0; /* Enable Mod within SELECTION. Inline toggles share the widget label. */
     draw(&snapshot);
     UiEvent staged;
-    CHECK(ui_drain(&staged,1)==0 && snapshot.options.enabled,"a Browse edit stays staged until Apply");
+    CHECK(ui_drain(&staged,1)==0 && snapshot.options.enabled,"editing Settings leaves the live option and event queue untouched");
     keyboard('E',true);
     expect_tab(3);
-    CHECK(fake_ov_find("text_wrapped:Enable Mod",0)>=0,"Changes lists the staged setting");
+    int pending=fake_ov_find("table:##pending",0);
+    int enable_row=fake_ov_find("text_wrapped:Enable Mod",0);
+    int saved=fake_ov_find("table:##saved",0);
+    int cooldown_row=fake_ov_find("text_wrapped:Cooldown display style",0);
+    CHECK(pending>=0 && pending<enable_row && enable_row<saved && saved<cooldown_row &&
+          fake_ov_count_prefix("row")==2,
+          "Review separates the inline Enable Mod edit from the saved cooldown override");
     click="DISCARD";
     draw(&snapshot);
+    keyboard(0x78,false);
+    CHECK(fake_ov_find("table:##pending",0)<0 && fake_ov_count_prefix("row")==1 &&
+          fake_ov_find("text_wrapped:Cooldown display style",0)>=0 && ui_drain(&staged,1)==0 &&
+          snapshot.options.enabled && snapshot.options.cooldown_display==3,
+          "Discard removes only the draft and F9 posts no event");
     keyboard('F',true);
     expect_tab(0);
-    CHECK(focus==1 && !strncmp(focused_field,"##Search",8),"Ctrl+F focuses a Browse input in the same frame");
+    CHECK(focus==1 && !strncmp(focused_field,"##Search",8),"Ctrl+F focuses Settings search in the same frame");
     text_input=1;
     keyboard(0x75,false);
     expect_tab(0);
@@ -301,7 +323,6 @@ int main(void)
     draw(&snapshot);
 
     keyboard('F',true);
-    snapshot.options.cooldown_display=3;
     click="REVIEW CHANGES";
     draw(&snapshot);
     click="RESTORE DEFAULTS";
