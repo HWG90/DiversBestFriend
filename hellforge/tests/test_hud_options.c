@@ -71,7 +71,7 @@ static int slider(const char* label, int* value, int min, int max)
 }
 static int combo(const char* label, int* value, const char* const* choices, int count)
 {
-    if (strcmp(label, "Mode")) return 0;
+    if (strcmp(label, "Selection mode")) return 0;
     CHECK(*value == 0 && count == 3 && !strcmp(choices[1], "List Select"), "R50 mode choices use zero-based ImGui indices");
     *value = 1;
     return 1;
