@@ -97,3 +97,58 @@ assert(u32(read(actions+24,4),0)==0,'must retain unverified local trigger')
 ptr(base+0x3326d20,manager);input.end_release(job,true)
 assert(u32(read(actions+24,4),0)==2 and read(list_open,1)=='\0')
 print('Equipped modded slot, code changes, pulse restoration, reopen rollback and transient avatar cleanup passed')
+
+-- C can publish a newer row set after decorate and before wheel preparation.
+local definition=0x34000000
+bridge.dbf_hud_row=function() return definition end
+word(definition,kind)
+local view={open=true,rows={{entry=4,address=0x35000000}}}
+input.decorate(view)
+assert(view.rows[1].kind==kind)
+definition=0
+local ok,why=pcall(input.presentation,kind)
+assert(not ok and why:find('HUD row withdrawn',1,true))
+definition=0x34000000;word(definition,kind+1)
+ok,why=pcall(input.presentation,kind)
+assert(not ok and why:find('Invalid presentation definition',1,true),'wrong owner must fail admission')
+
+-- Exercise the real target adapter with fake native setters and sparse memory.
+local proxy=setmetatable({}, {__index=ffi})
+proxy.load=function() return {GetCurrentProcess=function() return 1 end} end
+local list=hud+0x395100+0x1040
+local card=list+0x110
+local writes=0
+proxy.cast=function(t,address)
+    if t=='void (*)(uintptr_t, NSR_vec2)' and address==base+0x1447ed0 then
+        return function(at,v)
+            assert(at==card and v.x==1 and v.y==0)
+            writes=writes+1
+        end
+    end
+    return ffi.cast(t,address)
+end
+local native_env=setmetatable({native_guards={},require=function() return proxy end},{__index=_G})
+local native=setfenv(assert(loadfile('hellforge/hud/wheel_native.lua')),native_env)()
+put(base,'MZ'..string.rep('\0',62));word(base+60,128)
+put(base+128,'PE\0\0'..string.rep('\0',28));word(base+136,1790161983)
+function bridge.dbf_hud_base() return base end
+function bridge.dbf_hud_read(at,out,n)
+    local bytes=read(at,n)
+    if not bytes then return 0 end
+    ffi.copy(out,bytes,n);return 1
+end
+local b=native.native_backend(bridge)
+b.valid=function(id) return id==hud end
+ptr(card+0xf0,list);put(hud+0x24e334,'\1')
+put(card+0x36f0,'\0');put(card+0x3728,'\1')
+put(card+20,ffi.string(ffi.new('float[2]',{1,1}),8))
+word(card,0x2000010);word(card+0xac,2)
+b.finish_removed(hud);assert(writes==0,'running tween owns stock scale')
+assert(b.set(card,'scale',{1,0})==false,'list emphasis must leave a live scale tween alone')
+m[card+0xac]=nil
+b.finish_removed(hud);assert(writes==0,'unreadable tween state is not a finished tween')
+word(card+0xac,0);word(card,0);b.finish_removed(hud);assert(writes==0,'hidden card')
+word(card,16);put(card+0x3728,'\0');b.finish_removed(hud);assert(writes==0,'reset card')
+put(card+0x3728,'\1');put(card+0x36f0,'\1');b.finish_removed(hud);assert(writes==0,'active card')
+put(card+0x36f0,'\0');b.finish_removed(hud);assert(writes==1,'cancelled leave tween collapsed')
+print('Row withdrawal, malformed definitions and stock-card leave tween checks passed')

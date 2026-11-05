@@ -149,7 +149,8 @@ local function input_backend(b,bridge)
     local function presentation(kind)
         assert(selectable_kind(kind),'Invalid presentation kind')
         local info=tonumber(bridge.dbf_hud_row(kind))
-        assert(info>=65536 and info<2^47 and num(info)==kind,'Invalid presentation definition')
+        assert(info~=0,'HUD row withdrawn')
+        assert(info>=65536 and info<2^47 and info%4==0 and num(info)==kind,'Invalid presentation definition')
         return {label=num(info+0x28),texture=read(info+0xb0,8),category=num(info+0xb8)}
     end
     local function idle_actions(c)

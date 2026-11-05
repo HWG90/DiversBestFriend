@@ -1,5 +1,5 @@
 -- Run from the repository root with luajit hellforge/tests/test_hud_runtime.lua.
-local scope=setmetatable({}, {__index=_G})
+local scope=setmetatable({native_guards={}}, {__index=_G})
 local function module(name)
     local f=assert(loadfile('hellforge/hud/'..name..'.lua'))
     setfenv(f,scope)
@@ -41,7 +41,7 @@ local function mutation() assert(token and granted,'mutation without lease') end
 local snapshot={identity=7,open=true,hud_visible=true,rows={{kind=154,address=300,entry=0}}}
 scope.native_guards={{name='wheel_constructor',rva=123,bytes='expected'}}
 scope.native_backend=function()
-    return {snapshot=function() return snapshot end,milliseconds=function() return now end}
+    return {finish_removed=noop,snapshot=function() return snapshot end,milliseconds=function() return now end}
 end
 scope.radial={list_controller=object,controller=object}
 scope.blacklist_list_visibility=object
@@ -69,6 +69,7 @@ scope.input_backend=function() return {
 } end
 scope.duplicate_cards=object
 scope.expanded_wheel=object
+local row_missing=false
 local transient_error=false
 local wheels=0
 scope.emote_wheel=function()
@@ -76,6 +77,7 @@ scope.emote_wheel=function()
     local w=object()
     w.prepare=function(s)
         mutation()
+        if row_missing then error('HUD row withdrawn') end
         if transient_error then error('Wheel HUD changed') end
         return s,false
     end
@@ -146,6 +148,14 @@ snapshot.open=false;tick(recovering,1000)
 assert(wheels==before+1 and not token,'manager disable permanently cancels recovery')
 print('Transient rebuild recovery released the lease and manager disable cancelled reinitialization')
 
+local row_owner=scope.dbf_hud_runtime(bridge)
+transient_error=false;row_missing=true;snapshot.open=true;mask=0
+tick(row_owner,20)
+assert(row_owner:ready() and token==row_owner.token and not captured)
+row_missing=false;tick(row_owner,20)
+assert(captured and row_owner:ready(),'row withdrawal must permit a fresh next frame')
+assert(row_owner:shutdown())
+
 -- A terminal can own the game's UI while the selector mask is blocked.
 local allow_terminal,restore_terminal,terminal_ticks=true,true,0
 local get=bridge.dbf_hud_option
@@ -170,3 +180,35 @@ assert(not terminal_owner:shutdown() and token==terminal_owner.token)
 restore_terminal=true
 assert(terminal_owner:shutdown() and not token)
 print('Independent terminal gate and pending-byte release passed')
+
+-- Release completion can take several ticks with the stock menu still open.
+-- Copied-card layout must never fall through to applying transforms to it.
+local old_get=bridge.dbf_hud_option
+bridge.dbf_hud_option=function(key)
+    if key=='selection_mode_ordered' or key=='experimental_layout' then return 1 end
+    if key=='auto_terminal_complete' then return 0 end
+    return old_get(key)
+end
+scope.duplicate_cards=function()
+    local d=object()
+    d.prepare=function(s)
+        return {identity=s.identity,open=true,rows={{address=999,kind=154,entry=0}}}
+    end
+    return d
+end
+local layouts=0
+scope.radial.controller=function()
+    local ctrl=object()
+    ctrl.step=function(_,s)
+        assert(s.rows[1].address==999,'copy controller attempted to move a stock card')
+        layouts=layouts+1
+    end
+    return ctrl
+end
+snapshot.open=true;mask=0
+local copied=scope.dbf_hud_runtime(bridge)
+tick(copied,20);assert(layouts==1)
+copied.release.job={finished=true,code={1},snapshot_identity=7,deadline=now+1000}
+tick(copied,20);assert(copied:ready() and layouts==1,'only prepared duplicate addresses can be laid out')
+assert(copied:shutdown())
+print('Open stock menu protected during copied-card release completion')

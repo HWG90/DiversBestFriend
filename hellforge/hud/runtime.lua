@@ -267,6 +267,7 @@ local function dbf_hud_runtime(bridge)
         end
         local snapshot=r.b.snapshot()
         local hud_visible=snapshot and snapshot.hud_visible
+        local list_identity=snapshot and snapshot.open and snapshot.identity
         if snapshot and not pcall(r.input.decorate,snapshot) then snapshot=nil end
         if not snapshot or not snapshot.open then
             r.cards.restore();r.list.restore();r.hidden.restore()
@@ -335,7 +336,7 @@ local function dbf_hud_runtime(bridge)
             r.block_release=true
             release.reset()
         end
-        local vector,paged
+        local vector,paged,prepared_copies
         local open=snapshot and snapshot.open and #snapshot.rows>0
         if open and mode~=2 and not (release.job and release.job.finished) then
             local ok,context=pcall(r.input.view_context)
@@ -344,6 +345,7 @@ local function dbf_hud_runtime(bridge)
                 local changed
                 if copied then
                     snapshot=r.dupes.prepare(original,context,dt)
+                    prepared_copies=true
                     -- The copied widgets have new addresses; eligibility still belongs to their source rows.
                     for i,row in ipairs(snapshot.rows) do
                         row.timer_kind=original.rows[i].timer_kind
@@ -389,7 +391,7 @@ local function dbf_hud_runtime(bridge)
         local address=release.job and release.job.address or selected.selected
         r.sound.step(s.selection_sounds and r.admit('sound',now) and buttons~=nil,snapshot,address,release.job or selected.job,now,mode==2,paged)
         radial.selected=address
-        if open and mode~=2 then
+        if open and mode~=2 and (not copied or prepared_copies) then
             r.wheel.draw(address,vector,snapshot.rows,mode==1)
             if mode==1 and not copied then r.wheel.caption(r.expanded.draw(address,snapshot.rows)) end
             local timer
@@ -398,8 +400,13 @@ local function dbf_hud_runtime(bridge)
         end
         local display=mode==2 and r.list or (copied and r.cards or (mode==1 and r.expanded or r.wheel))
         r.list_open=mode==2 and open
-        display.step(true,snapshot or {open=false})
+        if not copied or prepared_copies then display.step(true,snapshot or {open=false})
+        else r.cards.restore();r.dupes.hide() end
         r.hidden.step(mode==2 and snapshot or nil)
+        if list_identity and now>=(r.next_removed or 0) and r.admit('removed',now) then
+            r.next_removed=now+250
+            r.b.finish_removed(list_identity)
+        end
         if open then r.attempts=0 end
     end
     function r:update(dt)
@@ -461,7 +468,14 @@ local function dbf_hud_runtime(bridge)
         if not ok then
             local message=tostring(why)
             local reason=message:match('.*: (.*)$') or message
-            if self.initialized and transient[reason] and self.attempts<3 then
+            if self.initialized and reason=='HUD row withdrawn' then
+                -- The bridge published a new row set during prepare/draw.
+                -- Drop this frame and rebuild from the next snapshot.
+                local clean,problem=pcall(reset)
+                if clean then self.block_release=true;return end
+                report('HUD cleanup pending: '..tostring(problem))
+                self:shutdown()
+            elseif self.initialized and transient[reason] and self.attempts<3 then
                 self.attempts=self.attempts+1
                 self.recovery='cleanup'
                 report('HUD interrupted: '..reason)

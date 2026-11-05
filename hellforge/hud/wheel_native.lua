@@ -1,4 +1,8 @@
 -- Supported-build adapter. All drawing remains in the game's native HUD.
+-- 25480438: set_scale's cancellation slot and the card updater's removed
+-- flag, zero-height target and native tween call (18365EA..1836620).
+native_guards[#native_guards+1]={name='scale_tween_slot',rva=0x1447f8e,bytes='\xf7\x01\x00\x00\x00\x02\x74\x72\x48\x8b\x81\xa8\x00\x00\x00\x48\xc1\xe8\x21\x25\xff\x07\x00\x00\x74\x60\x8d\x68\xff\x4c\x89\x74'}
+native_guards[#native_guards+1]={name='card_leave_tween',rva=0x18365ea,bytes='\x48\xc7\x45\xc0\x00\x00\x80\x3f\x48\x8b\x55\xc0\xf3\x0f\x11\x44\x24\x20\x45\x89\xa7\x4c\x37\x00\x00\x66\x41\xc7\x87\xf0\x36\x00\x00\x00\x01\x41\xc6\x87\x28\x37\x00\x00\x01\x66\x0f\x7f\x4c\x24\x70\xe8\x60\xb8\xc1\xff'}
 -- Cache successful witnesses for this module lifetime. A zero from guard can
 -- mean an encrypted/not-yet-resident page. Retry that group before first use.
 local function wheel_admission(bridge)
@@ -11,6 +15,7 @@ local function wheel_admission(bridge)
     local groups={}
     local names={
         companion='scramble_query scramble_query_position scramble_match_shift scramble_match_call',
+        removed='card_leave_tween',
         cards='radial_card_constructor radial_card_update',
         wheel='radial_direction_reader radial_direction_owner radial_binding_query radial_input_flag_reset camera_radial_gate camera_radial_gate_secondary wheel_constructor wheel_static_mode wheel_static_content wheel_label wheel_rotation wheel_cursor wheel_label_definition cooldown_label cooldown_number cooldown_hint_type controller_active_binding controller_stick_binding',
         icons='wheel_texture wheel_icon_definition icon_material_get icon_material_parameter icon_material_source icon_channel_palette',
@@ -210,9 +215,38 @@ local function native_backend(bridge)
     function backend.get(address,property)
         return pair(read(address+specs[property].offset,8))
     end
+    local function tweening(card)
+        local flags=u32(read(card,4),0)
+        if not flags then return nil end
+        if math.floor(flags/0x2000000)%2==0 then return false end
+        local high=u32(read(card+0xac,4),0)
+        if high then return math.floor(high/2)%0x800~=0 end
+    end
+    local function stock_card(address)
+        local root=hud()
+        if not root then return false end
+        local list=root+0x395100+0x1040
+        local index=(address-list-0x110)/0x3760
+        return index>=0 and index<16 and index%1==0 and pointer(address+0xf0)==list
+    end
+    function backend.finish_removed(identity)
+        if not backend.valid(identity) then return end
+        local first=identity+0x395100+0x1150
+        for i=0,15 do
+            local card=first+i*0x3760
+            if read(card+0x36f0,1)=='\0' and read(card+0x3728,1)=='\1' then
+                local flags=u32(read(card,4),0)
+                if flags and math.floor(flags/16)%2==1 and tweening(card)==false then
+                    local scale=backend.get(card,'scale')
+                    if scale and scale[2]~=0 then backend.set(card,'scale',{scale[1],0}) end
+                end
+            end
+        end
+    end
     function backend.set(address,property,value)
         assert(value[1]==value[1] and value[2]==value[2]
             and math.abs(value[1])<=100000 and math.abs(value[2])<=100000,'Invalid vector')
+        if property=='scale' and stock_card(address) and tweening(address)~=false then return false end
         vector.x,vector.y=value[1],value[2]
         local spec=specs[property]
         if spec.call then
