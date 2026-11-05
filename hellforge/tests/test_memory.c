@@ -281,6 +281,46 @@ static void test_restore_all(void)
     CHECK(mem_restore_all() == 0, "the journal is empty afterwards");
 }
 
+/* An older owner restores while a newer owner's entries stay journaled: the compaction moves the entries after it down. */
+static void test_older_owner_restores_first(void)
+{
+    const uint8_t va[4] = { 0xA1, 0xA1, 0xA1, 0xA1 }, vb[4] = { 0xB2, 0xB2, 0xB2, 0xB2 }, vc[4] = { 0xC3, 0xC3, 0xC3, 0xC3 };
+    const uint8_t vd[4] = { 0xD4, 0xD4, 0xD4, 0xD4 };
+    uint8_t a[4], b[4], c[4], d[4];
+    reset();
+    memcpy(a, ram_at(RAM_BASE + 0xA00), 4);
+    memcpy(b, ram_at(RAM_BASE + 0xA10), 4);
+    memcpy(c, ram_at(RAM_BASE + 0xA20), 4);
+    CHECK(mem_swap(RAM_BASE + 0xA00, a, va, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "A swaps (LIST, oldest)");
+    CHECK(mem_swap(RAM_BASE + 0xA10, b, vb, 4, MEM_OWNER_CAMERA) == MEM_SWAPPED, "B swaps (CAMERA, middle)");
+    CHECK(mem_swap(RAM_BASE + 0xA20, c, vc, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "C swaps (LIST, newest)");
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0, "restoring LIST reports 0 while CAMERA stays journaled");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA00), a, 4) == 0 && memcmp(ram_at(RAM_BASE + 0xA20), c, 4) == 0, "A and C are back");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA10), vb, 4) == 0, "B is still swapped");
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(RAM_BASE + 0xA10), vb, 4) == 0, "LIST has nothing left and B stays swapped");
+    CHECK(mem_restore(MEM_OWNER_CAMERA) == 0, "restoring CAMERA reports 0 (B's entry survived the compaction intact)");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA10), b, 4) == 0, "B is back");
+
+    /* The oldest owner restores with three newer entries behind it, two of them from one owner. */
+    reset();
+    memcpy(a, ram_at(RAM_BASE + 0xA00), 4);
+    memcpy(b, ram_at(RAM_BASE + 0xA10), 4);
+    memcpy(c, ram_at(RAM_BASE + 0xA20), 4);
+    memcpy(d, ram_at(RAM_BASE + 0xA30), 4);
+    mem_swap(RAM_BASE + 0xA00, a, va, 4, MEM_OWNER_LIST);
+    mem_swap(RAM_BASE + 0xA10, b, vb, 4, MEM_OWNER_CAMERA);
+    mem_swap(RAM_BASE + 0xA20, c, vc, 4, MEM_OWNER_LATCH);
+    mem_swap(RAM_BASE + 0xA30, d, vd, 4, MEM_OWNER_CAMERA);
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(RAM_BASE + 0xA00), a, 4) == 0, "the oldest entry restores first");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA10), vb, 4) == 0 && memcmp(ram_at(RAM_BASE + 0xA20), vc, 4) == 0 &&
+          memcmp(ram_at(RAM_BASE + 0xA30), vd, 4) == 0, "the three newer entries are untouched");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(RAM_BASE + 0xA20), c, 4) == 0, "the middle owner restores from the middle");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA10), vb, 4) == 0 && memcmp(ram_at(RAM_BASE + 0xA30), vd, 4) == 0, "the two CAMERA entries are untouched");
+    CHECK(mem_restore(MEM_OWNER_CAMERA) == 0, "both CAMERA entries are still journaled and restore");
+    CHECK(memcmp(ram_at(RAM_BASE + 0xA10), b, 4) == 0 && memcmp(ram_at(RAM_BASE + 0xA30), d, 4) == 0, "B and D are back");
+    CHECK(mem_restore_all() == 0, "the journal is empty afterwards");
+}
+
 static void test_failing_writes(void)
 {
     const uint8_t value[4] = { 0x31, 0x32, 0x33, 0x34 };
@@ -331,6 +371,7 @@ int main(void)
     test_journal_full();
     test_same_address_twice();
     test_restore_all();
+    test_older_owner_restores_first();
     test_failing_writes();
     test_init_clears_the_journal();
     TEST_MAIN_END
