@@ -32,6 +32,15 @@
  * the local player's input component: see "The fake input component" below. syn_build gives that component a clean
  * count, matched and queued word and the local player's four direction action bytes idle (0).
  *
+ * The menu latch and the slot hotkeys (R46 menu_latch.lua:9-75, input.lua:283-364) read the controls object: its menu
+ * action byte (controls + 808 + 32 * 485, 0: not down) and that action's trigger type (+ 24 from it, 2: Hold), and the
+ * live binding map at controls + 686800: a pointer to 256 buckets of 328 bytes (u32 capacity 256 at map + 8), each a u32
+ * key, a u32 record count and up to 16 records of 20 bytes from + 8. Bucket 37 is Display Stratagem List's (key 0x50000)
+ * with SYN_MENU_RECORDS (a Hold, a Press and a LongHold record); bucket 12 (key 0x40000) holds SYN_OTHER_RECORD, another
+ * action's Hold; the others have keys 0x60000 + i and no records. The local player's menu action byte (actions + 0) is 0
+ * and its trigger type (actions + 24) 2; the local weapon block (avatar + 0x420) carries the local key and has slot 1
+ * requested (+ 4). Fakes of the game's open_input, close_input and request_slot act on them: see "The fake menu calls".
+ *
  * Portable C11 (standard headers, memory.h, admission.h and the generated header): Task 9 builds it for Windows too. */
 #ifndef DBF_SYNTHETIC_H
 #define DBF_SYNTHETIC_H
@@ -131,6 +140,31 @@ int syn_input_calls(void);     /* handler calls since syn_input_reset */
  * another component. */
 int syn_input_action(int call);
 
+/* The fake menu calls (R46 native.lua:300-306, 340; input.lua:319-339), for the local player only: a call with another
+ * component or weapon changes nothing and counts as stray. syn_open_input sets the panel's menu-open byte to 1 and the
+ * local avatar's menu-active bit (bit 9 of avatar + 0xfd8), and returns 1; syn_close_input clears both (it leaves the
+ * input component alone); syn_request_slot sets the u32 at weapon + 4 to the slot. syn_build does not reset them. */
+uint8_t syn_open_input(uintptr_t component);
+void syn_close_input(uintptr_t component);
+void syn_request_slot(uintptr_t weapon, uint32_t slot);
+/* Forgets the counts and the hook; open opens and returns 1, request takes. */
+void syn_menu_reset(void);
+/* What open returns, and whether it opens the menu (a nonzero answer that opens nothing, or 0: it never opens). */
+void syn_open_answers(uint8_t result, bool opens);
+/* true: request_slot counts the call and leaves the requested slot alone (the game rejected it). */
+void syn_request_ignored(bool ignored);
+/* Called at the end of every local open call, after the menu changed: a test changes the game there. NULL: none. */
+void syn_open_on_call(void (*hook)(void));
+int syn_open_calls(void);       /* local calls since syn_menu_reset */
+int syn_close_calls(void);
+int syn_request_calls(void);
+uint32_t syn_requested_slot(void); /* the slot of the last local request */
+int syn_menu_stray_calls(void); /* calls for another component or weapon */
+
+/* The binding records syn_build lays out (see the top): Display Stratagem List's three, and another action's Hold. */
+extern const uint8_t SYN_MENU_RECORDS[3][20];
+extern const uint8_t SYN_OTHER_RECORD[20];
+
 /* Changes to the built image. A poke makes the pages it needs; syn_unmap drops the page holding `address`, so its reads
  * fail. */
 bool syn_poke(uintptr_t address, const void* data, size_t size);
@@ -158,6 +192,15 @@ uintptr_t syn_definition(uint32_t kind); /* the definition (settings descriptor)
 uintptr_t syn_code_array(uint32_t kind);
 uintptr_t syn_ui(void);       /* the UI object: its obstruction word (+0x429c+20) is 0 */
 uintptr_t syn_controls(void); /* the controls object */
+uintptr_t syn_bindings(void); /* the binding map's bucket table ([controls + 686800]) */
+uintptr_t syn_binding_bucket(int index);           /* bucket `index` (0..255) */
+uintptr_t syn_binding_record(int bucket, int record); /* record `record` of bucket `bucket` */
+int syn_menu_bucket(void);    /* Display Stratagem List's bucket: 37 */
+int syn_other_bucket(void);   /* the other action's bucket: 12 */
+uintptr_t syn_controls_menu_action(void);  /* controls + 808 + 32 * 485: u8 */
+uintptr_t syn_controls_menu_trigger(void); /* + 24 from it: u32 */
+uintptr_t syn_local_menu_trigger(void);    /* actions + 24: u32 */
+uintptr_t syn_local_weapon(void);          /* avatar + 0x420 */
 /* The local player's code-entry context as R46's context() returns it (input.lua:114-137). */
 uintptr_t syn_local_component(void);
 uintptr_t syn_local_actions(void);

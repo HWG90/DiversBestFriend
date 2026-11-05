@@ -58,6 +58,7 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define AT_LOOKUPS ((uintptr_t)0x29000000000ull)
 #define AT_UI ((uintptr_t)0x2a000000000ull)
 #define AT_CONTROLS ((uintptr_t)0x2b000000000ull)
+#define AT_BINDINGS ((uintptr_t)0x2e000000000ull) /* the live binding map's bucket table */
 #define AT_POSITIONS ((uintptr_t)0x2f000000000ull)
 #define AT_POSITION_ENTRIES ((uintptr_t)0x2f100000000ull)
 
@@ -128,6 +129,27 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define ACTION_DOWN 4u
 #define ACTION_PRESSED 1u              /* input.lua:267: the byte a press sets (0 released, input.lua:271) */
 #define INPUT_CODE_MAX 12u             /* input.lua:166: a code has at most 12 directions */
+/* The menu latch (R46 menu_latch.lua:9-75, input.lua:283-340), spelled with R46's numbers. */
+#define BINDING_MAP 686800u            /* menu_latch.lua:11: the live binding map at controls + 686800 */
+#define BINDING_CAPACITY_AT 8u         /* menu_latch.lua:12: u32 map+8, the bucket count */
+#define BINDING_CAPACITY 256u          /* menu_latch.lua:12, 14 */
+#define BUCKET_STRIDE 328u             /* menu_latch.lua:15 */
+#define BUCKET_COUNT_AT 4u             /* menu_latch.lua:17: u32, the bucket's records (at most 16) */
+#define BUCKET_RECORDS 8u              /* menu_latch.lua:32, 64-65: record i at bucket + 8 + i * 20 */
+#define RECORD_SIZE 20u                /* menu_latch.lua:65 */
+#define MENU_KEY 0x50000u              /* menu_latch.lua:16: Display Stratagem List's bucket */
+#define MENU_BUCKET 37                 /* where this image puts it (not first, so a wrong stride misses it) */
+#define OTHER_BUCKET 12                /* another action's bucket, with a Hold record of its own */
+#define OTHER_KEY_BINDING 0x40000u
+#define FILLER_KEY 0x60000u            /* the other buckets' keys: 0x60000 + i */
+#define CONTROLS_MENU_ACTION (808u + 32u * (97u * 5u))       /* input.lua:314: u8, 0 or 1 */
+#define CONTROLS_MENU_TRIGGER (808u + 32u * (97u * 5u) + 24u) /* menu_latch.lua:38, 53: u32 trigger type */
+#define ACTION_TRIGGER 24u             /* input.lua:287, menu_latch.lua:53: u32 at actions + 24, the menu action's */
+#define MENU_DOWN 0u                   /* input.lua:289: the menu action's byte, at actions + 0 */
+#define WEAPON 0x420u                  /* input.lua:139: the weapon block at avatar + 0x420, its owner key at + 0 */
+#define WEAPON_SLOT 4u                 /* input.lua:332: u32, the requested slot */
+#define TRIGGER_HOLD 2u                /* menu_latch.lua:67 */
+#define START_SLOT 1u                  /* the slot this image's weapon has requested (a primary) */
 #define MISSION_STRIDE 0x1690u
 #define MISSION_PAYLOAD 0x38u
 #define MISSION_COUNT 0x2d200u
@@ -176,6 +198,19 @@ static SynScene g_scene;
 static uintptr_t g_block;               /* HellForge's moved block (syn_move_table); 0 when the table is not moved */
 static uintptr_t g_mod_row[HF_NEW];     /* rows of the mod stratagems added (by kind - 150); 0 when not added */
 static bool g_mod_tomb[HF_NEW];         /* tombstoned: stratagem_row says 0 */
+
+/* Display Stratagem List's records (menu_latch.lua:64-71): flags at + 0 (format nibble (flags / 16) % 16 == 4, trigger
+ * nibble (flags / 65536) % 16), a u32 the latch keeps, the trigger at + 8 (Hold 2, LongHold 9, Press 0) and eight more
+ * bytes it keeps. A keyboard Hold, a Press record and a controller LongHold. */
+const uint8_t SYN_MENU_RECORDS[3][20] = {
+    { 0x43, 0x00, 0x12, 0x00, 0x4b, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00 },
+    { 0x41, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33, 0x00, 0x00, 0x00, 0x44, 0x00, 0x00, 0x00 },
+    { 0x47, 0x00, 0x39, 0x00, 0x02, 0x20, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x55, 0x00, 0x00, 0x00, 0x66, 0x00, 0x00, 0x00 },
+};
+/* Another action's Hold record, in its own bucket: the latch never touches it. */
+const uint8_t SYN_OTHER_RECORD[20] = {
+    0x43, 0x00, 0x12, 0x00, 0x4c, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x77, 0x00, 0x00, 0x00, 0x88, 0x00, 0x00, 0x00,
+};
 
 /* --- pages ----------------------------------------------------------------------------------------------------- */
 
@@ -344,6 +379,18 @@ uintptr_t syn_definition(uint32_t kind) { return AT_SETTINGS + (uintptr_t)kind *
 uintptr_t syn_code_array(uint32_t kind) { return AT_SETTINGS + CODES_AT + (uintptr_t)kind * CODE_STRIDE + (kind & 1u ? 0u : 4u); }
 uintptr_t syn_ui(void) { return AT_UI; }
 uintptr_t syn_controls(void) { return AT_CONTROLS; }
+uintptr_t syn_bindings(void) { return AT_BINDINGS; }
+uintptr_t syn_binding_bucket(int index) { return AT_BINDINGS + (uintptr_t)index * BUCKET_STRIDE; }
+uintptr_t syn_binding_record(int bucket, int record)
+{
+    return syn_binding_bucket(bucket) + BUCKET_RECORDS + (uintptr_t)record * RECORD_SIZE;
+}
+int syn_menu_bucket(void) { return MENU_BUCKET; }
+int syn_other_bucket(void) { return OTHER_BUCKET; }
+uintptr_t syn_controls_menu_action(void) { return AT_CONTROLS + CONTROLS_MENU_ACTION; }
+uintptr_t syn_controls_menu_trigger(void) { return AT_CONTROLS + CONTROLS_MENU_TRIGGER; }
+uintptr_t syn_local_menu_trigger(void) { return syn_local_actions() + ACTION_TRIGGER; }
+uintptr_t syn_local_weapon(void) { return syn_local_avatar() + WEAPON; }
 uintptr_t syn_local_component(void) { return syn_local_avatar() + AVATAR_COMPONENT; }
 uintptr_t syn_local_actions(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + ACTIONS; }
 uintptr_t syn_local_input_owner(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + INPUT_OWNER; }
@@ -560,6 +607,25 @@ bool syn_build(const SynScene* s)
     put64(&b, SYN_GAME_BASE + RVA_CONTROLS, AT_CONTROLS);
     put32(&b, AT_CONTROLS, 0);
 
+    /* The menu latch's inputs (menu_latch.lua:9-75, input.lua:283-340): the controls' menu action (not down) and its
+     * Hold trigger, the live binding map with Display Stratagem List's bucket, the local menu action's byte and trigger,
+     * and the local weapon block (its owner key, slot 1 requested). */
+    put8(&b, AT_CONTROLS + CONTROLS_MENU_ACTION, 0);
+    put32(&b, AT_CONTROLS + CONTROLS_MENU_TRIGGER, TRIGGER_HOLD);
+    put64(&b, AT_CONTROLS + BINDING_MAP, AT_BINDINGS);
+    put32(&b, AT_CONTROLS + BINDING_MAP + BINDING_CAPACITY_AT, BINDING_CAPACITY);
+    for (uint32_t i = 0; i < BINDING_CAPACITY; i++) {
+        uintptr_t bucket = syn_binding_bucket((int)i);
+        put32(&b, bucket, i == MENU_BUCKET ? MENU_KEY : i == OTHER_BUCKET ? OTHER_KEY_BINDING : FILLER_KEY + i);
+        put32(&b, bucket + BUCKET_COUNT_AT, i == MENU_BUCKET ? 3u : i == OTHER_BUCKET ? 1u : 0u);
+    }
+    for (int r = 0; r < 3; r++) put(&b, syn_binding_record(MENU_BUCKET, r), SYN_MENU_RECORDS[r], RECORD_SIZE);
+    put(&b, syn_binding_record(OTHER_BUCKET, 0), SYN_OTHER_RECORD, RECORD_SIZE);
+    put8(&b, syn_local_actions() + MENU_DOWN, 0);
+    put32(&b, syn_local_actions() + ACTION_TRIGGER, TRIGGER_HOLD);
+    put32(&b, syn_local_weapon(), LOCAL_KEY);
+    put32(&b, syn_local_weapon() + WEAPON_SLOT, START_SLOT);
+
     /* The mission: one entry per peer; the local one carries the scene's stratagems, the others two of their own. */
     put32(&b, AT_MISSION + MISSION_COUNT, (uint32_t)s->mission_peers);
     for (int i = 0; i < s->mission_peers; i++) {
@@ -761,6 +827,78 @@ void syn_input_handler(uintptr_t component)
             syn_poke_u32(component + COMPONENT_MATCHED, g_input.kind);
     }
     if (g_input.hook) g_input.hook(call);
+}
+
+/* --- the fake menu calls (R46 native.lua:300-306, input.lua:319-339) ------------------------------------------- */
+
+static struct {
+    int open_calls, close_calls, request_calls, stray;
+    bool open_fails_to_open, request_ignored;
+    uint8_t open_result;
+    uint32_t requested;
+    void (*open_hook)(void);
+} g_menu = { 0, 0, 0, 0, false, false, 1, 0, NULL };
+
+void syn_menu_reset(void)
+{
+    memset(&g_menu, 0, sizeof g_menu);
+    g_menu.open_result = 1;
+}
+
+void syn_open_answers(uint8_t result, bool opens)
+{
+    g_menu.open_result = result;
+    g_menu.open_fails_to_open = !opens;
+}
+
+void syn_request_ignored(bool ignored) { g_menu.request_ignored = ignored; }
+void syn_open_on_call(void (*hook)(void)) { g_menu.open_hook = hook; }
+int syn_open_calls(void) { return g_menu.open_calls; }
+int syn_close_calls(void) { return g_menu.close_calls; }
+int syn_request_calls(void) { return g_menu.request_calls; }
+uint32_t syn_requested_slot(void) { return g_menu.requested; }
+int syn_menu_stray_calls(void) { return g_menu.stray; }
+
+/* The menu-open byte of the panel and the menu-active bit of the local avatar, both set or both cleared. */
+static void set_menu(bool open)
+{
+    uint32_t word = 0;
+    syn_poke_u8(syn_panel() + PANEL_OPEN, open ? 1 : 0);
+    syn_read(syn_local_avatar() + AVATAR_MENU, &word, sizeof word);
+    syn_poke_u32(syn_local_avatar() + AVATAR_MENU, open ? word | MENU_ACTIVE_BIT : word & ~MENU_ACTIVE_BIT);
+}
+
+uint8_t syn_open_input(uintptr_t component)
+{
+    if (component != syn_local_component()) {
+        g_menu.stray++;
+        return 0;
+    }
+    g_menu.open_calls++;
+    if (g_menu.open_result != 0 && !g_menu.open_fails_to_open) set_menu(true);
+    if (g_menu.open_hook) g_menu.open_hook();
+    return g_menu.open_result;
+}
+
+void syn_close_input(uintptr_t component)
+{
+    if (component != syn_local_component()) {
+        g_menu.stray++;
+        return;
+    }
+    g_menu.close_calls++;
+    set_menu(false);
+}
+
+void syn_request_slot(uintptr_t weapon, uint32_t slot)
+{
+    if (weapon != syn_local_weapon()) {
+        g_menu.stray++;
+        return;
+    }
+    g_menu.request_calls++;
+    g_menu.requested = slot;
+    if (!g_menu.request_ignored) syn_poke_u32(weapon + WEAPON_SLOT, slot);
 }
 
 uintptr_t syn_positions(void) { return AT_POSITIONS; }
