@@ -1819,6 +1819,7 @@ static void run_shortcut_blocked(void)
     CHECK(g_calls[FN_CLOSE] == 1 && checkpoints(), "the menu DBF opened is closed");
     s_set_capturing(0); /* The HUD was hidden while capturing. It never draws the release frame. */
     entry_tick();
+    CHECK(syn_poke_u32(syn_local_component(), 0), "the game clears the cancelled direction when its menu closes");
     press_slot1(1);
     key(KEY_SLOT1, false);
     end_keys();
