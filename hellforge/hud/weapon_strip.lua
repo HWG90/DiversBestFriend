@@ -88,15 +88,19 @@ local function new_renderer(b,scope)
   local width,height=math.abs(bx-ax),math.abs(by-ay)
   local unit=math.abs(bx-ax)/(x1-x0)
   local function add(kind,id)if id~=nil and id~=false then panel.ids[#panel.ids+1]={kind,id}end end
-  local function color(name)
+  local function color(name,alpha_scale)
    local c=style.tokens.colors[name]
-   return sr.Color(c[4],c[1],c[2],c[3])
+   return sr.Color(math.floor(c[4]*(alpha_scale or 1)+0.5),c[1],c[2],c[3])
   end
+  local frosted=false
   if panel.blur_material then
-   local ok,value=pcall(G.bitmap,gui,panel.blur_material,sr.Vector3(left,bottom,0x21f),sr.Vector2(width,height),color('text'))
-   if ok then add('bitmap',value)end
+   local ok,value=pcall(G.bitmap,gui,panel.blur_material,sr.Vector3(left,bottom,0x21f),sr.Vector2(width,height),color('text',210/255))
+   if ok and value then add('bitmap',value);frosted=true end
   end
-  add('rect',G.rect(gui,sr.Vector3(left,bottom,0x220),sr.Vector2(width,height),color('hud_plate')))
+  -- Match the Lua weapon panel and cooldown panel: a frosted backing needs
+  -- less tint to keep the native sprite underneath readable.
+  local plate_alpha=(frosted and 95 or 155)/204
+  add('rect',G.rect(gui,sr.Vector3(left,bottom,0x220),sr.Vector2(width,height),color('hud_plate',plate_alpha)))
   local edge=math.max(1,unit*.65)
   -- Butted against the native box, the left edge is a seam marked by a vertical
   -- separator inset from top and bottom. No corner trims (they read as clutter
