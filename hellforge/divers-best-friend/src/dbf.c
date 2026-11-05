@@ -358,9 +358,8 @@ static int pending_changes(void)
     return mem_journal_count(MEM_OWNER_ENTRY) + mem_journal_count(MEM_OWNER_LATCH);
 }
 
-/* Why DBF's keys may not fire this tick, or NULL: bind_poll's `allowed` (DBF on, no host window capturing, the local
- * player there with the UI unobstructed); bind_poll checks that the game's window is in front itself. */
-static const char* input_blocked(const GameView* v)
+/* Shared by terminal and selector input. Only selection needs the HUD unobstructed. */
+static const char* common_input_blocker(const GameView* v)
 {
     if (!g_settings.enabled) return "DBF is off in its settings";
     if (g_ov != NULL) {
@@ -369,8 +368,14 @@ static const char* input_blocked(const GameView* v)
         if (g_ov->input_captured()) return "an Overlay Host window is open";
     }
     if (!v->local_ok) return "local player unavailable";
-    if (!v->local.unobstructed) return "UI obstructed";
     return NULL;
+}
+
+static const char* input_blocked(const GameView* v)
+{
+    const char* reason = common_input_blocker(v);
+    if (reason) return reason;
+    return v->local.unobstructed ? NULL : "UI obstructed";
 }
 
 /* Why the running job (List or slot hotkey) must stop this tick before anything is sent, or NULL: the mission ended, the
@@ -598,6 +603,7 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
     static bool yielding;
     bool requested = hud_bridge_requested();
     int buttons = -1;
+    bool terminal_allowed = false;
     if (requested != yielding) {
         bind_init(&g_bind_port, g_settings.bind);
         memset(&g_list, 0, sizeof g_list);
@@ -610,7 +616,9 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
         retry_restores(&s->game);
         watch_job();
         bool levels[BIND_COUNT];
-        bool allowed = g_front && input_blocked(&s->game) == NULL;
+        bool active = g_front && common_input_blocker(&s->game) == NULL;
+        bool allowed = active && s->game.local.unobstructed;
+        terminal_allowed = active && s->game.in_gameplay;
         bind_poll(levels, allowed, g_bind_status, sizeof g_bind_status);
         if (allowed) {
             buttons = 0;
@@ -623,7 +631,7 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
         native_list_update(&s->game, g_settings.enabled && !shortcut_active() ? g_list.chosen : -1);
     }
     bool ready = requested && !job_active() && !native_list_pending() && !pending_changes();
-    hud_bridge_publish(&s->game, &g_settings, buttons, s->build_ok, ready);
+    hud_bridge_publish(&s->game, &g_settings, buttons, terminal_allowed, s->build_ok, ready);
     s->hud_owned = hud_bridge_owned();
     hud_bridge_status(s->hud_status, sizeof s->hud_status);
 }

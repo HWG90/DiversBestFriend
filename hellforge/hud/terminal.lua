@@ -10,10 +10,10 @@ local ARROW_STAGE,ARROW_LENGTH=12,0xd4
 local MAX_INSTANCES,MAX_STAGES,MAX_CODE=64,16,62
 local ZERO8=string.rep('\0',8)
 
-local function terminal_controller(b,arrow_update)
+local function terminal_controller(b,bridge,arrow_update)
     local ffi=require('ffi')
     local self={status='waiting_native'}
-    local checked
+    local checked,pulse
     local clock,next_poll=0,0
     local misses,given_up=0,nil
     -- 989750(manager, stage state, definition+0xD4, entity, dt, local interactor),
@@ -109,12 +109,12 @@ local function terminal_controller(b,arrow_update)
     end
     -- Code pages can stay unreadable until the game first runs them, so the
     -- witnesses are checked when an arrow stage is actually live.
-    local function guards_ready(base)
+    local function guards_ready()
         if checked then return true end
         for _,guard in ipairs(terminal_guards_25480438) do
-            local bytes=b.read(base+guard.rva,#guard.bytes)
-            if bytes==nil then return false,guard.name end
-            if bytes~=guard.bytes then self.disabled='Terminal code changed: '..guard.name;error(self.disabled) end
+            if bridge.dbf_hud_guard(guard.rva,guard.bytes,#guard.bytes)~=1 then
+                return false,guard.name
+            end
         end
         checked=true;return true
     end
@@ -126,11 +126,28 @@ local function terminal_controller(b,arrow_update)
         if stage_delay.key~=stage_key then stage_delay={key=stage_key,ms=math.random(70,240)} end
         return stage_delay.ms/1000
     end
+    -- A failed write can have taken effect. Keep the receipt until readback
+    -- confirms release, and never restore through a replaced controls pointer.
+    function self.retry_cleanup()
+        if not pulse then return true end
+        local ok,why=pcall(function()
+            assert(ptr(b.base+CONTROLS)==pulse.controls,'Terminal controls changed during restoration')
+            local byte=u8(pulse.address)
+            if byte==0 then return end
+            assert(byte==1,'Terminal arrow byte changed during restoration')
+            b.pulse_byte(pulse.address,0)
+            assert(u8(pulse.address)==0,'Terminal arrow release did not take')
+        end)
+        if not ok then return false,tostring(why) end
+        pulse=nil
+        return true
+    end
     -- Enter the next arrow: set the controls byte 98987D..9898F2 read, run the
     -- stage update once, restore the byte (always, as input.lua does), then
     -- check that progress moved. Never while the player holds an arrow.
     local function enter_arrow(base,manager,entity,stage_def,state,progress,length,label,stage_key,host)
-        local inputs=ptr(base+CONTROLS)+ARROW_INPUT
+        local controls=ptr(base+CONTROLS)
+        local inputs=controls+ARROW_INPUT
         for action=1,4 do
             if u8(inputs+32*action)~=0 then self.status='Arrow key held; waiting';return end
         end
@@ -140,17 +157,15 @@ local function terminal_controller(b,arrow_update)
             arrow_update=ffi.cast('void (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, float, uint8_t)',base+ARROW_UPDATE)
         end
         -- Terminal witnesses passed in complete(); writes are verified.
+        pulse={controls=controls,address=address}
         local ok,why=pcall(function()
             b.pulse_byte(address,1)
             assert(u8(address)==1,'Terminal arrow press failed')
             arrow_update(manager,state,stage_def+ARROW_LENGTH,entity,0,1)
         end)
-        local restored,restore_error=pcall(b.pulse_byte,address,0)
-        if not restored or b.read(address,1)~='\0' then
-            self.disabled='Arrow restoration failed: '..tostring(restore_error)
-        elseif not ok then
-            self.disabled='Terminal arrow call failed: '..tostring(why)
-        end
+        if not ok then self.disabled='Terminal arrow call failed: '..tostring(why) end
+        local restored,restore_error=self.retry_cleanup()
+        assert(restored,restore_error)
         if self.disabled then error(self.disabled) end
         self.injecting,self.pace=true,pace(stage_key)
         local now=u32(state)
@@ -182,7 +197,7 @@ local function terminal_controller(b,arrow_update)
         local def=assert(definition(base,manager,entity),'Terminal definition unavailable')
         local stage_def=def+stage*STAGE_SIZE
         if u32(stage_def)~=ARROW_STAGE then self.status='Terminal stage '..(stage+1)..'/'..stages..' is not an arrow code';return end
-        local ready,page=guards_ready(base)
+        local ready,page=guards_ready()
         if not ready then self.status='Waiting for terminal code page '..page;return end
         local length=u32(stage_def+ARROW_LENGTH)
         assert(length>=1 and length<=MAX_CODE,'Invalid terminal code length')
@@ -236,6 +251,8 @@ local function terminal_controller(b,arrow_update)
         self.status='Waiting for a terminal'
     end
     function self.update(dt,settings)
+        local restored,why=self.retry_cleanup()
+        if not restored then self.status='Terminal arrow release pending';self.reason=why;return end
         clock=clock+(type(dt)=='number'and math.max(0,math.min(dt,1))or 1/60)
         if clock<next_poll then return end;next_poll=clock+.1
         local enabled=settings and settings.enabled~=false and settings.auto_terminal_complete==true

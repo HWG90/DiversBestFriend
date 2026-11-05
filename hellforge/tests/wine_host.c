@@ -1376,12 +1376,37 @@ static void check_hud_handoff(HMODULE dll, const SynStratagem* st)
     uint64_t (*row)(unsigned) = (void*)need(dll, "dbf_hud_row");
     int (*option)(const char*) = (void*)need(dll, "dbf_hud_option");
     int (*buttons)(void) = (void*)need(dll, "dbf_hud_buttons");
-    if (!acquire || !release || !code || !row || !option || !buttons) return;
+    int (*terminal)(const void*) = (void*)need(dll, "dbf_hud_terminal_active");
+    if (!acquire || !release || !code || !row || !option || !buttons || !terminal) return;
     char first = 0, second = 0;
     uint8_t directions[DBF_VAL_CODE_MAX];
-    CHECK(!acquire(&first), "Lua waits for C to restore its native HUD before taking ownership");
+    CHECK(!acquire(&first) && !terminal(&first), "Lua waits for C to restore its native HUD before taking ownership");
     entry_tick();
     CHECK(acquire(&first) && !acquire(&second) && native_chosen(-1), "only the claimant owns the restored HUD");
+    CHECK(terminal(&first) && !terminal(&second) && !terminal(NULL), "terminal gate requires the exact granted token");
+    uintptr_t obstruction = syn_ui() + DBF_OFF_UI_OBSTRUCTION_OFFSET + DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET;
+    CHECK(syn_poke_u32(obstruction, 1), "set selector obstruction");
+    entry_tick();
+    CHECK(buttons() == -1 && terminal(&first), "obstruction blocks selection but allows terminal polling");
+    s_set_capturing(1);
+    entry_tick();
+    CHECK(!terminal(&first), "overlay capture blocks terminal polling");
+    s_set_capturing(0);
+    CHECK(syn_poke_u32(obstruction, 0), "clear selector obstruction");
+    entry_tick();
+    uintptr_t state = 0, pm = 0;
+    CHECK(syn_read(SYN_GAME_BASE + DBF_RVA_GAME_STATE, &state, sizeof state) == 0 &&
+          syn_poke_u32(state + DBF_OFF_GAME_MODE_OFFSET, 3), "leave gameplay with the lease held");
+    entry_tick();
+    CHECK(!terminal(&first), "terminal gate rejects non-gameplay");
+    CHECK(syn_poke_u32(state + DBF_OFF_GAME_MODE_OFFSET, 4) &&
+          syn_read(SYN_GAME_BASE + DBF_RVA_PLAYERS, &pm, sizeof pm) == 0 &&
+          syn_poke_u32(pm + DBF_OFF_PLAYERS_COUNT_OFFSET, 0), "return to gameplay without a local player");
+    entry_tick();
+    CHECK(!terminal(&first), "terminal gate requires a local player");
+    CHECK(syn_poke_u32(pm + DBF_OFF_PLAYERS_COUNT_OFFSET, 1), "restore local player");
+    entry_tick();
+    CHECK(terminal(&first), "terminal eligibility recovers on the same lease");
     release(&second);
     CHECK(acquire(&first) && option("selection_mode_ordered") == 1, "a stale claimant cannot release the current HUD");
     CHECK(row(st->kind) && code(st->kind, directions, sizeof directions) == st->code_len &&
@@ -1393,7 +1418,7 @@ static void check_hud_handoff(HMODULE dll, const SynStratagem* st)
     key(KEY_NEXT, false);
     entry_tick();
     release(&first);
-    CHECK(!row(st->kind) && buttons() == -1, "release invalidates the HUD frame");
+    CHECK(!terminal(&first) && !row(st->kind) && buttons() == -1, "release invalidates the HUD frame");
     entry_tick();
     CHECK(native_chosen(0), "fallback selection resumes on its first ready card");
 }

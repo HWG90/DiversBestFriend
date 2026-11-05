@@ -14,7 +14,7 @@ static SRWLOCK lock = SRWLOCK_INIT;
 static uintptr_t image;
 static size_t image_size;
 static HudBridgePort port;
-static bool verified, granted;
+static bool verified, granted, terminal_active;
 static const void* claimant;
 static DbfSettings options;
 static int levels = -1;
@@ -84,6 +84,7 @@ HUD_EXPORT void dbf_hud_release(const void* token)
         granted = false;
         claimant = NULL;
         levels = -1;
+        terminal_active = false;
         row_count = 0;
     }
     ReleaseSRWLockExclusive(&lock);
@@ -105,7 +106,8 @@ bool hud_bridge_owned(void)
     return result;
 }
 
-void hud_bridge_publish(const GameView* v, const DbfSettings* s, int buttons, bool build_ok, bool can_grant)
+void hud_bridge_publish(const GameView* v, const DbfSettings* s, int buttons, bool terminal_allowed,
+                        bool build_ok, bool can_grant)
 {
     HudRow current[DBF_VAL_CARD_COUNT];
     unsigned count = 0;
@@ -126,6 +128,7 @@ void hud_bridge_publish(const GameView* v, const DbfSettings* s, int buttons, bo
     row_count = count;
     memcpy(rows, current, count * sizeof *current);
     levels = buttons;
+    terminal_active = terminal_allowed;
     if (claimant && can_grant && verified) granted = true;
     ReleaseSRWLockExclusive(&lock);
 }
@@ -153,6 +156,14 @@ HUD_EXPORT int dbf_hud_bound(unsigned action)
     int value = granted && action < BIND_COUNT ? options.bind[action].kind != BIND_NONE : -1;
     ReleaseSRWLockShared(&lock);
     return value;
+}
+
+HUD_EXPORT int dbf_hud_terminal_active(const void* token)
+{
+    AcquireSRWLockShared(&lock);
+    int active = token && claimant == token && granted && verified && terminal_active;
+    ReleaseSRWLockShared(&lock);
+    return active;
 }
 
 HUD_EXPORT int dbf_hud_buttons(void)

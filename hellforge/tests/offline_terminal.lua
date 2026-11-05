@@ -110,7 +110,10 @@ local api={enabled=true,auto_terminal_complete=true}
 local scope={terminal_guards_25480438=guards}
 setmetatable(scope,{__index=_G})
 local T=setfenv(assert(loadfile(here..'/../hud/terminal.lua')),scope)()
-local function controller() return T.terminal_controller(backend,scope.terminal_arrow_update) end
+local bridge={dbf_hud_guard=function(rva,expected,size)
+    return read(image+rva,size)==expected and 1 or 0
+end}
+local function controller() return T.terminal_controller(backend,bridge,scope.terminal_arrow_update) end
 
 local failures=0
 local function case(name,setup,check)
@@ -250,12 +253,42 @@ end,function(t)
     assert(progress(A,2)==0 and t.status:match('Waiting for terminal code page'))
     missing=nil;t.update(1,api);assert(progress(A,2)==6)
 end)
-case('changed code witness disables the feature',function()
+case('encrypted witness blocks mutations until admitted',function()
         terminal(A,2,6,3,CODE);put(image+guard.rva,'uint8_t',0xcc)end,
     function(t)
+        assert(progress(A,2)==3 and t.status:find(guard.name,1,true))
+        t.update(1,api);assert(progress(A,2)==3)
         ffi.copy(ffi.cast('void *',image+guard.rva),guard.bytes,#guard.bytes)
-        assert(progress(A,2)==3);assert(t.disabled and t.disabled:find(guard.name,1,true))
-        t.update(1,api);assert(progress(A,2)==3,'stays disabled')end)
+        t.update(1,api);assert(progress(A,2)==6)end)
+local pulse_byte=backend.pulse_byte
+arrow_case('failed press and release retain cleanup without repeating native input',2,0,true,function()
+    terminal(A,2,6,0,CODE)
+    backend.pulse_byte=function(p,v)
+        if v==1 then pulse_byte(p,v) end -- ambiguous failure after writing the byte
+        error('write failed')
+    end
+end,2,function(t,seen)
+    assert(#calls==0 and seen[2]==0 and #pressed()==1)
+    local ok,why=t.retry_cleanup();assert(not ok and why:find('write failed',1,true))
+    backend.pulse_byte=pulse_byte
+    put(image+0x347cf18,'uint64_t',controls+8)
+    assert(not t.retry_cleanup() and #pressed()==1,'do not write through a different owner')
+    put(image+0x347cf18,'uint64_t',controls)
+    assert(t.retry_cleanup() and #pressed()==0)
+    t.update(1,api);assert(#calls==0 and t.status=='refused')
+end)
+arrow_case('successful arrow is not replayed during release retries',2,0,true,function()
+    terminal(A,2,6,0,CODE)
+    backend.pulse_byte=function(p,v)
+        if v==0 then error('release pending') end
+        pulse_byte(p,v)
+    end
+end,2,function(t,seen)
+    assert(#calls==1 and seen[2]==1 and #pressed()==1)
+    assert(not t.retry_cleanup())
+    backend.pulse_byte=pulse_byte
+    assert(t.retry_cleanup() and t.retry_cleanup() and #pressed()==0 and #calls==1)
+end)
 assert(storage and image_storage) -- keep the synthetic address ranges alive
 print(failures==0 and 'PASS terminal' or ('FAIL terminal: '..failures))
 os.exit(failures==0 and 0 or 1)
