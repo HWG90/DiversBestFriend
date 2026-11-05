@@ -16,6 +16,9 @@ bool editor_shell_available(const OvApi* ov)
            ov->cursor_screen_pos && ov->set_cursor_screen_pos && ov->content_region_avail && ov->draw_layer &&
            ov->draw_rect_filled && ov->draw_text && ov->text_size && ov->begin_child && ov->end_child &&
            ov->key_pressed && ov->key_down && ov->want_text_input && ov->input_text && ov->set_open &&
+           ov->is_item_active && ov->begin_table && ov->end_table && ov->table_next_column &&
+           ov->table_setup_column && ov->table_headers_row && ov->table_next_row &&
+           ov->push_color && ov->pop_color && ov->text && ov->text_disabled && ov->separator &&
            ov->draw_line && ov->theme && ov->set_keyboard_focus_here &&
            ov->small_button && ov->button && ov->checkbox && ov->combo && ov->slider_int &&
            ov->selectable && ov->begin_disabled && ov->end_disabled && ov->same_line &&
@@ -86,12 +89,15 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     bool stacked = w < 845*k;
     bool search = false;
     bool editing = ov->want_text_input() != 0 || editor_capturing();
-    if (!editing && (!ov->is_focused || ov->is_focused())) {
+    bool focused = !ov->is_focused || ov->is_focused();
+    bool escape = focused && !editor_capturing() && ov->key_pressed(0x1b);
+    if (escape && view==BROWSE && editor_browse_escape()) escape=false;
+    if (!editing && focused) {
         if (ov->key_pressed(0x75) || (ov->key_down(0x10) && ov->key_pressed(0x09))) view = (enum View)((view+1)%VIEW_COUNT);
         if (ov->key_down(0x11) && ov->key_pressed('F')) { view=BROWSE; search=true; }
         if (ov->key_down(0x11) && ov->key_pressed('E')) view=CHANGES;
         if (s && (view==BROWSE || view==CHANGES) && ov->key_pressed(0x78)) editor_apply_changes(ov,s);
-        if (panel && ov->key_pressed(0x1b)) { ov->set_open(panel,0); return; }
+        if (panel && escape) { ov->set_open(panel,0); return; }
     }
     ov->draw_layer(OV_LAYER_WINDOW);
     header(ov, panel, x, y, w, k, stacked);
@@ -127,7 +133,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
         if (w >= 710*k) { ov->same_line(); ov->key_cap("Ctrl+F"); ov->same_line(); ov->text_disabled("Search"); }
         if (s && (view==BROWSE || view==CHANGES)) {
             if (w >= 710*k) {
-                float button_width = width_of(ov,ov->bold_font(),16*k,"APPLY  F9DISCARDRESET TO DEFAULTS") + 100*k;
+                float button_width = width_of(ov,ov->bold_font(),16*k,"APPLY  F9DISCARDRESET TO DEFAULTS") + 132*k;
                 ov->set_cursor_screen_pos(x+w-button_width,status_y+39*k);
             }
             ov->begin_disabled(editor_change_count(s)==0);
