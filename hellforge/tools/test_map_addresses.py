@@ -6,7 +6,8 @@ Run from the repository root:
 The synthetic tests always run. The tests on the real inputs need DBF_R46_DIR (R46's HellForge native-selection-poc
 folder) and HellForge's game copy and SDK (HF_INSTALL, default HellForge 0.4's Linux install,
 ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge); without them they are skipped and
-say why. The compile tests also need HellForge's Zig (HF_ZIG).
+say why. The compile tests also need HellForge's Zig: HF_ZIG, else $HF_INSTALL/tools/zig-linux/zig, as build.sh
+finds it.
 """
 import json
 import os
@@ -31,13 +32,17 @@ HF_INSTALL = os.environ.get("HF_INSTALL", os.path.expanduser(
     "~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge"))
 GAME_DLL = os.path.join(HF_INSTALL, "game", "data", "game", "game.dll")
 CONTENT_H = os.path.join(os.environ.get("HF_SDK", os.path.join(HF_INSTALL, "app", "sdk")), "hellforge_content.h")
-ZIG = os.environ.get("HF_ZIG", os.path.join(HF_INSTALL, "migration", "toolchain", "zig-x86_64-linux-0.17.0", "zig"))
+# The same default chain as build.sh: HF_ZIG, else the installation's tools/zig-linux/zig.
+ZIG = os.environ.get("HF_ZIG", os.path.join(HF_INSTALL, "tools", "zig-linux", "zig"))
 R46 = os.environ.get("DBF_R46_DIR", "")
 
 HAVE_REAL = bool(R46) and os.path.isfile(os.path.join(R46, "guards.lua")) and os.path.isfile(GAME_DLL) \
     and os.path.isfile(CONTENT_H)
 WHY_NO_REAL = "set DBF_R46_DIR to R46's native-selection-poc folder and HF_INSTALL to a HellForge 25480438 install"
 HAVE_ZIG = os.path.isfile(ZIG) and os.access(ZIG, os.X_OK)
+WHY_NO_ZIG = "no Zig at %s (set HF_ZIG, or HF_INSTALL to a HellForge installation with tools/zig-linux/zig)" % ZIG
+if not HAVE_ZIG:  # a skip reason shows only with -v, so say it once here as well
+    print("test_map_addresses: the compile tests will be skipped: " + WHY_NO_ZIG, file=sys.stderr)
 
 FEATURE_ORDER = ["STATE", "STRATAGEMS", "HUD_READ", "LIST_OPACITY", "ENTRY", "SCRAMBLE", "POINTING", "CAMERA",
                  "LATCH", "SOUND", "DOCK", "WEAPON", "TERMINAL"]
@@ -377,7 +382,7 @@ class SyntheticTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("HUD_ROOT", err)
 
-    @unittest.skipUnless(HAVE_ZIG, "HellForge's Zig is not installed (HF_ZIG)")
+    @unittest.skipUnless(HAVE_ZIG, WHY_NO_ZIG)
     def test_synthetic_headers_compile(self):
         code, err = self.fx.run()
         self.assertEqual(code, 0, err)
@@ -473,7 +478,7 @@ class RealInputTests(unittest.TestCase):
         for part in (os.path.expanduser("~"), R46, HF_INSTALL):
             self.assertNotIn(part, text)
 
-    @unittest.skipUnless(HAVE_ZIG, "HellForge's Zig is not installed (HF_ZIG)")
+    @unittest.skipUnless(HAVE_ZIG, WHY_NO_ZIG)
     def test_headers_compile_for_linux_and_windows(self):
         self.assertEqual(self.code, 0, self.err)
         define = ('#define DBF_ADDRESSES_DEFINE\n#include "addresses_25480438.h"\n#include "kind_names_25480438.h"\n'

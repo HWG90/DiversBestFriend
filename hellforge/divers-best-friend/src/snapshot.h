@@ -15,9 +15,10 @@
  * The queue is a ring of UI_QUEUE_SLOTS events with one producer (the render thread) and one consumer (the game thread),
  * under a lock: simple and obviously correct rather than lock-free. A full queue refuses the post and counts it.
  *
- * Call snap_init() once, from the game thread, before the render thread can call anything here. It also resets the
- * queue and both counters; calling it again while a thread is inside any other call here is not allowed. Before it, every
- * call is harmless and does nothing (acquire returns NULL, ui_post refuses, ui_drain returns 0).
+ * Call snap_init() once, from hellforge_mod_init (the loader's thread), before any tick or panel exists and so before the
+ * game or render thread can call anything here. It also resets the queue and both counters; calling it again while a
+ * thread is inside any other call here is not allowed. Before it, every call is harmless and does nothing (acquire
+ * returns NULL, ui_post refuses, ui_drain returns 0).
  *
  * Portable C11: standard headers, platform.h, admission.h and game.h only. */
 #ifndef DBF_SNAPSHOT_H

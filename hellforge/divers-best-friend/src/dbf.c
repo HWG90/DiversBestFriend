@@ -13,7 +13,8 @@
  *                                             (hf->module_base, hf->read_code, hellforge_lua_rewrites) and the readers
  *                                             (game.dll); every tick runs admission, reads the game, publishes a snapshot
  *                                             and drains the UI queue.
- *   Draw (the render thread)                  draws the newest snapshot; it never touches the game, admission or memory.
+ *   Draw (the render thread)                  draws the newest snapshot; it reads only the snapshot and constant names
+ *                                             (adm_feature_name), never game memory or admission state.
  * The ports go straight to HellForge's functions: their signatures are the SDK's. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
