@@ -13,15 +13,17 @@ R46 (the last Lua DBF built for 25480438, its HellForge native-selection-poc fol
 in its Lua. tools/addresses_25480438.json names the ones the C port uses, each with the R46 line it comes from, and
 assigns every R46 witness (guards.lua) the features it gates, or drops it. This script checks all of that and writes:
 
-- the address header: DBF_FEATURE_*, DBF_RVA_* and DBF_OFF_* defines, and the witness table (DbfWitness), defined in
-  the one translation unit that defines DBF_ADDRESSES_DEFINE;
+- the address header: DBF_FEATURE_*, DBF_RVA_* and DBF_OFF_* defines (addresses), DBF_VAL_* defines (the constants R46
+  compares with or bounds its reads by: kind "value"), and the witness table (DbfWitness), defined in the one
+  translation unit that defines DBF_ADDRESSES_DEFINE;
 - the kind-name header: the name of each vanilla stratagem type, from HellForge's hellforge_content.h;
 - the receipt: SHA-256 of game.dll and of every input, and for every address and witness its value, source and
   check result. It records inputs by file name only.
 
 Checks, all of which must pass before anything is written:
 - game.dll is build 25480438 (PE TimeDateStamp 0x6AB3B43F);
-- every address and bound function's cited R46 line holds its value (or its expression, for a computed offset);
+- every address, value and bound function's cited R46 line holds it (or its expression, for a computed offset): an RVA
+  as a hex literal, an offset or a value as a hex or a decimal literal (R46 writes small offsets and counts in decimal);
 - every guards.lua witness has exactly one assignment, and a witness lying within 0x4000 above a bound function the
   port uses carries that function's features (R46's deferred-witness rule: it belongs to that function's body);
 - every emitted witness's bytes match game.dll ("file"), or lie where the file has no raw data ("unreadable"), or are
@@ -230,6 +232,8 @@ def c_comment(text):
 
 _NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _HEX = re.compile(r"^0x[0-9a-f]+$")
+_DECIMAL = re.compile(r"^(?:0|[1-9][0-9]*)$")
+KINDS = {"rva": "DBF_RVA_", "offset": "DBF_OFF_", "value": "DBF_VAL_"}
 _SOURCE_PART = re.compile(r"^([A-Za-z0-9_]+\.lua):(\d+)$")
 
 
@@ -265,8 +269,17 @@ class R46Files:
         return lines[number - 1] if 0 < number <= len(lines) else None
 
 
-def _check_source(what, entry, value, r46, problems):
-    """The source names R46 lines; each must hold the value as a hex literal, or the entry's expression."""
+def _parse_value(text, where, problems):
+    """A value is written as R46 writes it: decimal ("4", "65536") or lower-case hex ("0x7fff")."""
+    if not isinstance(text, str) or not (_DECIMAL.match(text) or _HEX.match(text)):
+        problems.append("%s: value %r is neither a decimal nor a lower-case 0x… hex string" % (where, text))
+        return None
+    return int(text, 0)
+
+
+def _check_source(what, entry, value, r46, problems, decimal=False):
+    """The source names R46 lines; each must hold the value as a hex literal (or, when `decimal`, a decimal literal),
+    or the entry's expression."""
     source = entry.get("source")
     if not isinstance(source, str) or not source.startswith("R46 "):
         problems.append("%s: source %r does not start with 'R46 '" % (what, source))
@@ -281,7 +294,10 @@ def _check_source(what, entry, value, r46, problems):
             problems.append("%s: expr %s is 0x%x, not %s" % (what, expr, sum(int(t, 16) for t in terms),
                                                               _hex(value)))
             return
-    literal = re.compile(r"(?<![0-9A-Za-z_])0x0*%x(?![0-9A-Fa-f])" % value, re.I)
+    literal = r"(?<![0-9A-Za-z_])0x0*%x(?![0-9A-Fa-f])" % value
+    if decimal:
+        literal += r"|(?<![0-9A-Za-z_.])%d(?![0-9A-Za-z_.])" % value
+    literal = re.compile(literal, re.I)
     for part in source[4:].split(", "):
         m = _SOURCE_PART.match(part)
         if not m:
@@ -295,8 +311,9 @@ def _check_source(what, entry, value, r46, problems):
         if text is None:
             problems.append("%s: R46 %s has no line %s" % (what, m.group(1), m.group(2)))
         elif not literal.search(text) and not (expr and expr in re.sub(r"\s+", "", text)):
-            problems.append("%s: R46 %s does not hold %s%s" % (what, part, _hex(value),
-                                                                 " or " + expr if expr else ""))
+            problems.append("%s: R46 %s does not hold %s%s%s" % (what, part, _hex(value),
+                                                                   " (%d)" % value if decimal else "",
+                                                                   " or " + expr if expr else ""))
 
 
 def _features(what, entry, problems):
@@ -365,23 +382,26 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
             continue
         names.add(name)
         kind = entry.get("kind")
-        if kind not in ("rva", "offset"):
-            problems.append("%s: kind %r is neither \"rva\" nor \"offset\"" % (what, kind))
+        if kind not in KINDS:
+            problems.append("%s: kind %r is not \"rva\", \"offset\" or \"value\"" % (what, kind))
             continue
-        value = _parse_hex(entry.get("value"), what, problems)
+        if kind == "value":
+            value = _parse_value(entry.get("value"), what, problems)
+        else:
+            value = _parse_hex(entry.get("value"), what, problems)
         if value is None:
             continue
         if value >= 1 << 32:
             problems.append("%s: %s does not fit 32 bits" % (what, _hex(value)))
         if kind == "rva" and (value >= pe.image_size or pe.section_of(value) is None):
             problems.append("%s: RVA %s is outside game.dll's sections" % (what, _hex(value)))
-        _check_source(what, entry, value, r46, problems)
-        row = {"name": name, "kind": kind, "value": _hex(value),
-               "define": ("DBF_RVA_" if kind == "rva" else "DBF_OFF_") + name, "source": entry.get("source")}
+        _check_source(what, entry, value, r46, problems, decimal=kind != "rva")
+        row = {"name": name, "kind": kind, "value": entry["value"] if kind == "value" else _hex(value),
+               "define": KINDS[kind] + name, "source": entry.get("source")}
         if "expr" in entry:
             row["expr"] = entry["expr"]
         addresses.append(row)
-    if not addresses:
+    if not any(a["kind"] != "value" for a in addresses):
         problems.append("the table has no addresses")
 
     # Bound functions: the game functions R46 calls (base+0x… cast to a function), and whether the port calls them.
@@ -500,9 +520,14 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
     header += ["#define DBF_FEATURE_%s %d" % (f, i) for i, f in enumerate(FEATURES)]
     header += ["#define DBF_FEATURE_COUNT %d" % len(FEATURES), "",
                "/* Globals (RVAs in game.dll) and offsets, from R46. */"]
-    for a in addresses:
+    def define(a):
         note = ("%s; " % a["expr"] if "expr" in a else "") + a["source"]
-        header.append("#define %s %su /* %s */" % (a["define"], a["value"], c_comment(note)))
+        return "#define %s %su /* %s */" % (a["define"], a["value"], c_comment(note))
+    header += [define(a) for a in addresses if a["kind"] != "value"]
+    values = [a for a in addresses if a["kind"] == "value"]
+    if values:
+        header += ["", "/* Values R46 compares with or bounds its reads by (not addresses), from R46. */"]
+        header += [define(a) for a in values]
     header += [
         "",
         "typedef struct {",
@@ -584,7 +609,8 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
             "emitted_checks": dict(sorted(checks.items())),
             "dropped_checks": dict(sorted(dropped_checks.items())),
             "emitted_per_feature": per_feature,
-            "addresses": len(addresses),
+            "addresses": len(addresses) - len(values),
+            "values": len(values),
             "kind_names": len(kind_names),
         },
         "sections": sections,
@@ -624,8 +650,8 @@ def main(argv=None):
         print("map_addresses: %s" % e, file=sys.stderr)
         return 1
     tally = receipt["tally"]
-    print("Wrote %s, %s and %s: %d addresses, %d witnesses emitted (%s), %d dropped, %d kind names." % (
-        args.out_h, kind_names, args.receipt, tally["addresses"], tally["emitted"],
+    print("Wrote %s, %s and %s: %d addresses, %d values, %d witnesses emitted (%s), %d dropped, %d kind names." % (
+        args.out_h, kind_names, args.receipt, tally["addresses"], tally["values"], tally["emitted"],
         ", ".join("%d %s" % (n, c) for c, n in tally["emitted_checks"].items()), tally["dropped"],
         tally["kind_names"]))
     return 0

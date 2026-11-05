@@ -9,7 +9,7 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "19c18eacc17c3c7b837c60e6155e96bc1fa2ba54037bd164b252a409980453d2",
+    "addresses_25480438.json": "632c457f2bdf12f1c19e34d22fc5fc469d790f2e23f198df8ac8a2c6834dc513",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
     "duplicate.lua": "9e4a0b555f8dd37632b5d28e1f0b26edc264d07a77eda2e059b3a22811919452",
@@ -23,7 +23,7 @@
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "a05feca6f99398723499c81e931705754448686141fd573426de5d5da743c4a6",
+    "addresses_25480438.h": "3f5ed3486e5ea70b3f68028c13413683f1759f6453df3d8fe4b017a71832ef8c",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
@@ -53,7 +53,8 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 37,
+    "addresses": 69,
+    "values": 25,
     "kind_names": 149
   },
   "sections": [
@@ -418,6 +419,405 @@
       "define": "DBF_OFF_STAMINA_OFFSET",
       "source": "R46 native.lua:244",
       "expr": "0x24e340+0x5778"
+    },
+    {
+      "name": "HUD_CONTAINER_OFFSET",
+      "kind": "offset",
+      "value": "0x820",
+      "define": "DBF_OFF_HUD_CONTAINER_OFFSET",
+      "source": "R46 native.lua:89, native.lua:90"
+    },
+    {
+      "name": "HUD_VIEWPORT_OFFSET",
+      "kind": "offset",
+      "value": "0x258",
+      "define": "DBF_OFF_HUD_VIEWPORT_OFFSET",
+      "source": "R46 native.lua:90"
+    },
+    {
+      "name": "PANEL_FADE_OFFSET",
+      "kind": "offset",
+      "value": "0x110",
+      "define": "DBF_OFF_PANEL_FADE_OFFSET",
+      "source": "R46 native.lua:91, native.lua:92"
+    },
+    {
+      "name": "PANEL_CONTENT_OFFSET",
+      "kind": "offset",
+      "value": "0x220",
+      "define": "DBF_OFF_PANEL_CONTENT_OFFSET",
+      "source": "R46 native.lua:92"
+    },
+    {
+      "name": "LOOKUP_CAPACITY_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_LOOKUP_CAPACITY_OFFSET",
+      "source": "R46 input.lua:75"
+    },
+    {
+      "name": "LOOKUP_EMPTY_OFFSET",
+      "kind": "offset",
+      "value": "0xc",
+      "define": "DBF_OFF_LOOKUP_EMPTY_OFFSET",
+      "source": "R46 input.lua:79"
+    },
+    {
+      "name": "LOOKUP_SEED_OFFSET",
+      "kind": "offset",
+      "value": "0x10",
+      "define": "DBF_OFF_LOOKUP_SEED_OFFSET",
+      "source": "R46 input.lua:79"
+    },
+    {
+      "name": "LOOKUP_SLOT_SIZE",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_LOOKUP_SLOT_SIZE",
+      "source": "R46 input.lua:85"
+    },
+    {
+      "name": "LOOKUP_SLOT_INDEX_OFFSET",
+      "kind": "offset",
+      "value": "0x4",
+      "define": "DBF_OFF_LOOKUP_SLOT_INDEX_OFFSET",
+      "source": "R46 input.lua:88"
+    },
+    {
+      "name": "PLAYERS_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x88",
+      "define": "DBF_OFF_PLAYERS_COUNT_OFFSET",
+      "source": "R46 input.lua:103"
+    },
+    {
+      "name": "PLAYERS_NETWORK_OFFSET",
+      "kind": "offset",
+      "value": "0x3a8",
+      "define": "DBF_OFF_PLAYERS_NETWORK_OFFSET",
+      "source": "R46 input.lua:104"
+    },
+    {
+      "name": "REGISTRY_KEY_STRIDE",
+      "kind": "offset",
+      "value": "0x18",
+      "define": "DBF_OFF_REGISTRY_KEY_STRIDE",
+      "source": "R46 input.lua:107"
+    },
+    {
+      "name": "AVATARS_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x70",
+      "define": "DBF_OFF_AVATARS_COUNT_OFFSET",
+      "source": "R46 input.lua:109"
+    },
+    {
+      "name": "AVATARS_LOOKUP_OFFSET",
+      "kind": "offset",
+      "value": "0xf8",
+      "define": "DBF_OFF_AVATARS_LOOKUP_OFFSET",
+      "source": "R46 input.lua:111"
+    },
+    {
+      "name": "AVATARS_UNITS_OFFSET",
+      "kind": "offset",
+      "value": "0x110",
+      "define": "DBF_OFF_AVATARS_UNITS_OFFSET",
+      "source": "R46 input.lua:112"
+    },
+    {
+      "name": "AVATARS_UNIT_STRIDE",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_AVATARS_UNIT_STRIDE",
+      "source": "R46 input.lua:112"
+    },
+    {
+      "name": "UNIT_KEY_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_UNIT_KEY_OFFSET",
+      "source": "R46 input.lua:113"
+    },
+    {
+      "name": "AVATAR_COMPONENT_OFFSET",
+      "kind": "offset",
+      "value": "0x8d0",
+      "define": "DBF_OFF_AVATAR_COMPONENT_OFFSET",
+      "source": "R46 input.lua:115"
+    },
+    {
+      "name": "COMPONENT_OWNER_OFFSET",
+      "kind": "offset",
+      "value": "0x28",
+      "define": "DBF_OFF_COMPONENT_OWNER_OFFSET",
+      "source": "R46 input.lua:116"
+    },
+    {
+      "name": "AVATAR_CONTEXT_OFFSET",
+      "kind": "offset",
+      "value": "0x110c",
+      "define": "DBF_OFF_AVATAR_CONTEXT_OFFSET",
+      "source": "R46 input.lua:120"
+    },
+    {
+      "name": "PLAYERS_LOOKUP_OFFSET",
+      "kind": "offset",
+      "value": "0xd0",
+      "define": "DBF_OFF_PLAYERS_LOOKUP_OFFSET",
+      "source": "R46 input.lua:123"
+    },
+    {
+      "name": "PLAYERS_PEER_OFFSET",
+      "kind": "offset",
+      "value": "0x2c8",
+      "define": "DBF_OFF_PLAYERS_PEER_OFFSET",
+      "source": "R46 input.lua:124"
+    },
+    {
+      "name": "PLAYERS_PEER_STRIDE",
+      "kind": "offset",
+      "value": "0x38",
+      "define": "DBF_OFF_PLAYERS_PEER_STRIDE",
+      "source": "R46 input.lua:124"
+    },
+    {
+      "name": "PAYLOAD_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x788",
+      "define": "DBF_OFF_PAYLOAD_COUNT_OFFSET",
+      "source": "R46 input.lua:230"
+    },
+    {
+      "name": "PAYLOAD_KINDS_OFFSET",
+      "kind": "offset",
+      "value": "0x188",
+      "define": "DBF_OFF_PAYLOAD_KINDS_OFFSET",
+      "source": "R46 input.lua:234"
+    },
+    {
+      "name": "PAYLOAD_ENTRY_STRIDE",
+      "kind": "offset",
+      "value": "0x30",
+      "define": "DBF_OFF_PAYLOAD_ENTRY_STRIDE",
+      "source": "R46 input.lua:234"
+    },
+    {
+      "name": "DEFINITION_STRIDE",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_DEFINITION_STRIDE",
+      "source": "R46 native.lua:55, input.lua:163"
+    },
+    {
+      "name": "DEFINITION_SIZE",
+      "kind": "offset",
+      "value": "0x190",
+      "define": "DBF_OFF_DEFINITION_SIZE",
+      "source": "R46 input.lua:164"
+    },
+    {
+      "name": "SETTINGS_SIZE",
+      "kind": "offset",
+      "value": "0x13998",
+      "define": "DBF_OFF_SETTINGS_SIZE",
+      "source": "R46 input.lua:164"
+    },
+    {
+      "name": "DEFINITION_CODE_OFFSET",
+      "kind": "offset",
+      "value": "0x40",
+      "define": "DBF_OFF_DEFINITION_CODE_OFFSET",
+      "source": "R46 input.lua:165"
+    },
+    {
+      "name": "DEFINITION_CODE_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x48",
+      "define": "DBF_OFF_DEFINITION_CODE_COUNT_OFFSET",
+      "source": "R46 input.lua:165"
+    },
+    {
+      "name": "CODE_STRIDE",
+      "kind": "offset",
+      "value": "0x4",
+      "define": "DBF_OFF_CODE_STRIDE",
+      "source": "R46 input.lua:171"
+    },
+    {
+      "name": "GAMEPLAY_MODE",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_GAMEPLAY_MODE",
+      "source": "R46 native.lua:82, input.lua:97"
+    },
+    {
+      "name": "HUD_READY",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_HUD_READY",
+      "source": "R46 native.lua:78"
+    },
+    {
+      "name": "MENU_OPEN",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_MENU_OPEN",
+      "source": "R46 native.lua:216"
+    },
+    {
+      "name": "MENU_CLOSED",
+      "kind": "value",
+      "value": "0",
+      "define": "DBF_VAL_MENU_CLOSED",
+      "source": "R46 native.lua:215, native.lua:216"
+    },
+    {
+      "name": "CARD_COUNT",
+      "kind": "value",
+      "value": "16",
+      "define": "DBF_VAL_CARD_COUNT",
+      "source": "R46 native.lua:193"
+    },
+    {
+      "name": "CARD_ACTIVE",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_CARD_ACTIVE",
+      "source": "R46 native.lua:268, native.lua:269"
+    },
+    {
+      "name": "CARD_INACTIVE",
+      "kind": "value",
+      "value": "0",
+      "define": "DBF_VAL_CARD_INACTIVE",
+      "source": "R46 native.lua:268"
+    },
+    {
+      "name": "LOOKUP_MAX_CAPACITY",
+      "kind": "value",
+      "value": "65536",
+      "define": "DBF_VAL_LOOKUP_MAX_CAPACITY",
+      "source": "R46 input.lua:76"
+    },
+    {
+      "name": "LOOKUP_ALIGN",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_LOOKUP_ALIGN",
+      "source": "R46 input.lua:83"
+    },
+    {
+      "name": "NETWORK_LIMIT",
+      "kind": "value",
+      "value": "0x7fff",
+      "define": "DBF_VAL_NETWORK_LIMIT",
+      "source": "R46 input.lua:105"
+    },
+    {
+      "name": "REGISTRY_INDEX_LIMIT",
+      "kind": "value",
+      "value": "65536",
+      "define": "DBF_VAL_REGISTRY_INDEX_LIMIT",
+      "source": "R46 input.lua:107"
+    },
+    {
+      "name": "AVATAR_MAX",
+      "kind": "value",
+      "value": "8",
+      "define": "DBF_VAL_AVATAR_MAX",
+      "source": "R46 input.lua:110"
+    },
+    {
+      "name": "PLAYER_INDEX_LIMIT",
+      "kind": "value",
+      "value": "32",
+      "define": "DBF_VAL_PLAYER_INDEX_LIMIT",
+      "source": "R46 input.lua:123"
+    },
+    {
+      "name": "MISSION_PEER_MAX",
+      "kind": "value",
+      "value": "32",
+      "define": "DBF_VAL_MISSION_PEER_MAX",
+      "source": "R46 input.lua:129"
+    },
+    {
+      "name": "PAYLOAD_ENTRY_MAX",
+      "kind": "value",
+      "value": "32",
+      "define": "DBF_VAL_PAYLOAD_ENTRY_MAX",
+      "source": "R46 input.lua:230"
+    },
+    {
+      "name": "KIND_LIMIT",
+      "kind": "value",
+      "value": "150",
+      "define": "DBF_VAL_KIND_LIMIT",
+      "source": "R46 input.lua:5"
+    },
+    {
+      "name": "VANILLA_KINDS",
+      "kind": "value",
+      "value": "149",
+      "define": "DBF_VAL_VANILLA_KINDS",
+      "source": "R46 native.lua:55"
+    },
+    {
+      "name": "DEFINITION_TABLE_ALIGN",
+      "kind": "value",
+      "value": "8",
+      "define": "DBF_VAL_DEFINITION_TABLE_ALIGN",
+      "source": "R46 native.lua:52"
+    },
+    {
+      "name": "DEFINITION_RELOCATION_SPAN",
+      "kind": "value",
+      "value": "0x400000",
+      "define": "DBF_VAL_DEFINITION_RELOCATION_SPAN",
+      "source": "R46 native.lua:52"
+    },
+    {
+      "name": "DEFINITION_ALIGN",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_DEFINITION_ALIGN",
+      "source": "R46 input.lua:147, input.lua:163"
+    },
+    {
+      "name": "CODE_ALIGN",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_CODE_ALIGN",
+      "source": "R46 input.lua:165"
+    },
+    {
+      "name": "CODE_MIN",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_CODE_MIN",
+      "source": "R46 input.lua:166"
+    },
+    {
+      "name": "CODE_MAX",
+      "kind": "value",
+      "value": "12",
+      "define": "DBF_VAL_CODE_MAX",
+      "source": "R46 input.lua:166"
+    },
+    {
+      "name": "DIRECTION_MIN",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_DIRECTION_MIN",
+      "source": "R46 input.lua:171"
+    },
+    {
+      "name": "DIRECTION_MAX",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_DIRECTION_MAX",
+      "source": "R46 input.lua:171"
     }
   ],
   "bound_functions": [

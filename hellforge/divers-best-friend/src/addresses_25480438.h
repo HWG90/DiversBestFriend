@@ -62,6 +62,65 @@
 #define DBF_RVA_CAMERA_OWNER 0x346d560u /* R46 camera.lua:7, camera.lua:13 */
 #define DBF_RVA_AUDIO 0x3326318u /* R46 native.lua:328 */
 #define DBF_OFF_STAMINA_OFFSET 0x253ab8u /* 0x24e340+0x5778; R46 native.lua:244 */
+#define DBF_OFF_HUD_CONTAINER_OFFSET 0x820u /* R46 native.lua:89, native.lua:90 */
+#define DBF_OFF_HUD_VIEWPORT_OFFSET 0x258u /* R46 native.lua:90 */
+#define DBF_OFF_PANEL_FADE_OFFSET 0x110u /* R46 native.lua:91, native.lua:92 */
+#define DBF_OFF_PANEL_CONTENT_OFFSET 0x220u /* R46 native.lua:92 */
+#define DBF_OFF_LOOKUP_CAPACITY_OFFSET 0x8u /* R46 input.lua:75 */
+#define DBF_OFF_LOOKUP_EMPTY_OFFSET 0xcu /* R46 input.lua:79 */
+#define DBF_OFF_LOOKUP_SEED_OFFSET 0x10u /* R46 input.lua:79 */
+#define DBF_OFF_LOOKUP_SLOT_SIZE 0x8u /* R46 input.lua:85 */
+#define DBF_OFF_LOOKUP_SLOT_INDEX_OFFSET 0x4u /* R46 input.lua:88 */
+#define DBF_OFF_PLAYERS_COUNT_OFFSET 0x88u /* R46 input.lua:103 */
+#define DBF_OFF_PLAYERS_NETWORK_OFFSET 0x3a8u /* R46 input.lua:104 */
+#define DBF_OFF_REGISTRY_KEY_STRIDE 0x18u /* R46 input.lua:107 */
+#define DBF_OFF_AVATARS_COUNT_OFFSET 0x70u /* R46 input.lua:109 */
+#define DBF_OFF_AVATARS_LOOKUP_OFFSET 0xf8u /* R46 input.lua:111 */
+#define DBF_OFF_AVATARS_UNITS_OFFSET 0x110u /* R46 input.lua:112 */
+#define DBF_OFF_AVATARS_UNIT_STRIDE 0x8u /* R46 input.lua:112 */
+#define DBF_OFF_UNIT_KEY_OFFSET 0x8u /* R46 input.lua:113 */
+#define DBF_OFF_AVATAR_COMPONENT_OFFSET 0x8d0u /* R46 input.lua:115 */
+#define DBF_OFF_COMPONENT_OWNER_OFFSET 0x28u /* R46 input.lua:116 */
+#define DBF_OFF_AVATAR_CONTEXT_OFFSET 0x110cu /* R46 input.lua:120 */
+#define DBF_OFF_PLAYERS_LOOKUP_OFFSET 0xd0u /* R46 input.lua:123 */
+#define DBF_OFF_PLAYERS_PEER_OFFSET 0x2c8u /* R46 input.lua:124 */
+#define DBF_OFF_PLAYERS_PEER_STRIDE 0x38u /* R46 input.lua:124 */
+#define DBF_OFF_PAYLOAD_COUNT_OFFSET 0x788u /* R46 input.lua:230 */
+#define DBF_OFF_PAYLOAD_KINDS_OFFSET 0x188u /* R46 input.lua:234 */
+#define DBF_OFF_PAYLOAD_ENTRY_STRIDE 0x30u /* R46 input.lua:234 */
+#define DBF_OFF_DEFINITION_STRIDE 0x8u /* R46 native.lua:55, input.lua:163 */
+#define DBF_OFF_DEFINITION_SIZE 0x190u /* R46 input.lua:164 */
+#define DBF_OFF_SETTINGS_SIZE 0x13998u /* R46 input.lua:164 */
+#define DBF_OFF_DEFINITION_CODE_OFFSET 0x40u /* R46 input.lua:165 */
+#define DBF_OFF_DEFINITION_CODE_COUNT_OFFSET 0x48u /* R46 input.lua:165 */
+#define DBF_OFF_CODE_STRIDE 0x4u /* R46 input.lua:171 */
+
+/* Values R46 compares with or bounds its reads by (not addresses), from R46. */
+#define DBF_VAL_GAMEPLAY_MODE 4u /* R46 native.lua:82, input.lua:97 */
+#define DBF_VAL_HUD_READY 1u /* R46 native.lua:78 */
+#define DBF_VAL_MENU_OPEN 1u /* R46 native.lua:216 */
+#define DBF_VAL_MENU_CLOSED 0u /* R46 native.lua:215, native.lua:216 */
+#define DBF_VAL_CARD_COUNT 16u /* R46 native.lua:193 */
+#define DBF_VAL_CARD_ACTIVE 1u /* R46 native.lua:268, native.lua:269 */
+#define DBF_VAL_CARD_INACTIVE 0u /* R46 native.lua:268 */
+#define DBF_VAL_LOOKUP_MAX_CAPACITY 65536u /* R46 input.lua:76 */
+#define DBF_VAL_LOOKUP_ALIGN 4u /* R46 input.lua:83 */
+#define DBF_VAL_NETWORK_LIMIT 0x7fffu /* R46 input.lua:105 */
+#define DBF_VAL_REGISTRY_INDEX_LIMIT 65536u /* R46 input.lua:107 */
+#define DBF_VAL_AVATAR_MAX 8u /* R46 input.lua:110 */
+#define DBF_VAL_PLAYER_INDEX_LIMIT 32u /* R46 input.lua:123 */
+#define DBF_VAL_MISSION_PEER_MAX 32u /* R46 input.lua:129 */
+#define DBF_VAL_PAYLOAD_ENTRY_MAX 32u /* R46 input.lua:230 */
+#define DBF_VAL_KIND_LIMIT 150u /* R46 input.lua:5 */
+#define DBF_VAL_VANILLA_KINDS 149u /* R46 native.lua:55 */
+#define DBF_VAL_DEFINITION_TABLE_ALIGN 8u /* R46 native.lua:52 */
+#define DBF_VAL_DEFINITION_RELOCATION_SPAN 0x400000u /* R46 native.lua:52 */
+#define DBF_VAL_DEFINITION_ALIGN 4u /* R46 input.lua:147, input.lua:163 */
+#define DBF_VAL_CODE_ALIGN 4u /* R46 input.lua:165 */
+#define DBF_VAL_CODE_MIN 1u /* R46 input.lua:166 */
+#define DBF_VAL_CODE_MAX 12u /* R46 input.lua:166 */
+#define DBF_VAL_DIRECTION_MIN 1u /* R46 input.lua:171 */
+#define DBF_VAL_DIRECTION_MAX 4u /* R46 input.lua:171 */
 
 typedef struct {
     const char* name;

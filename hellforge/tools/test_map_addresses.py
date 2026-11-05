@@ -291,6 +291,90 @@ class SyntheticTests(unittest.TestCase):
         self.assertEqual([w["name"] for w in dropped], ["unused"])
         self.assertEqual(dropped[0]["reason"], "guards code the port never calls")
 
+    def add_value_lines(self):
+        """native.lua:5-8, lines holding constants as R46 writes them (decimal and hex)."""
+        self.fx.native += ["if u32(read(state+0xac21c,4),0)~=4 then return nil end",
+                           "local key=num(registry+0xf32f20+24*lookup(registry,0xf22ec8,network,65536))",
+                           "assert(network<0x7fff,'Local network index unavailable')",
+                           "local at=base+141312"]
+
+    def test_value_kind_emits_val_defines_after_the_addresses(self):
+        self.add_value_lines()
+        self.fx.entries["addresses"] += [
+            {"name": "GAMEPLAY_MODE", "kind": "value", "value": "4", "source": "R46 native.lua:5"},
+            {"name": "LOOKUP_LIMIT", "kind": "value", "value": "65536", "source": "R46 native.lua:6"},
+            {"name": "NETWORK_LIMIT", "kind": "value", "value": "0x7fff", "source": "R46 native.lua:7"},
+            {"name": "MENU_CLOSED", "kind": "value", "value": "0", "source": "R46 native.lua:5"},
+        ]
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertIn("#define DBF_VAL_GAMEPLAY_MODE 4u /* R46 native.lua:5 */", header)
+        self.assertIn("#define DBF_VAL_LOOKUP_LIMIT 65536u /* R46 native.lua:6 */", header)
+        self.assertIn("#define DBF_VAL_NETWORK_LIMIT 0x7fffu /* R46 native.lua:7 */", header)
+        self.assertIn("#define DBF_VAL_MENU_CLOSED 0u /* R46 native.lua:5 */", header)
+        self.assertLess(header.index("DBF_OFF_HUD_PANEL_OFFSET"), header.index("DBF_VAL_GAMEPLAY_MODE"),
+                        "values follow the addresses")
+        self.assertNotIn("DBF_RVA_GAMEPLAY_MODE", header)
+        self.assertNotIn("DBF_OFF_GAMEPLAY_MODE", header)
+        with open(self.fx.receipt, encoding="utf-8") as f:
+            receipt = json.load(f)
+        rows = {a["name"]: a for a in receipt["addresses"]}
+        self.assertEqual(rows["GAMEPLAY_MODE"]["kind"], "value")
+        self.assertEqual(rows["GAMEPLAY_MODE"]["value"], "4")
+        self.assertEqual(rows["GAMEPLAY_MODE"]["define"], "DBF_VAL_GAMEPLAY_MODE")
+        self.assertEqual(rows["NETWORK_LIMIT"]["value"], "0x7fff")
+        self.assertEqual(receipt["tally"]["addresses"], 2)
+        self.assertEqual(receipt["tally"]["values"], 4)
+
+    def test_value_must_appear_on_its_line_as_a_whole_literal(self):
+        self.add_value_lines()
+        for value, line in (("5", 5), ("4", 2), ("6", 6), ("553", 6), ("0x7ff", 7), ("141313", 8)):
+            with self.subTest(value=value, line=line):
+                self.fx.entries["addresses"] = self.fx.entries["addresses"][:2] + [
+                    {"name": "PROBE", "kind": "value", "value": value, "source": "R46 native.lua:%d" % line}]
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, "%s is not a literal of native.lua:%d" % (value, line))
+                self.assertIn("PROBE", err)
+                self.assertFalse(os.path.exists(self.fx.out_h))
+
+    def test_value_format(self):
+        self.add_value_lines()
+        for value in ("4.0", "-4", "0X7fff", "04", "", "0x", 4, "4294967296"):
+            with self.subTest(value=value):
+                self.fx.entries["addresses"] = self.fx.entries["addresses"][:2] + [
+                    {"name": "PROBE", "kind": "value", "value": value, "source": "R46 native.lua:5"}]
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, repr(value))
+                self.assertIn("PROBE", err)
+
+    def test_offsets_may_be_written_in_decimal_but_rvas_may_not(self):
+        self.add_value_lines()
+        self.fx.entries["addresses"].append(
+            {"name": "REGISTRY_KEY_STRIDE", "kind": "offset", "value": "0x18", "source": "R46 native.lua:6"})
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            self.assertIn("#define DBF_OFF_REGISTRY_KEY_STRIDE 0x18u /* R46 native.lua:6 */", f.read())
+        self.fx.entries["addresses"][-1]["value"] = "0x19"
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("REGISTRY_KEY_STRIDE", err)
+        self.fx.entries["addresses"][-1] = {"name": "HUD_ROOT_DECIMAL", "kind": "rva", "value": "0x22800",
+                                           "source": "R46 native.lua:8"}
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0, "an RVA must appear in hex")
+        self.assertIn("HUD_ROOT_DECIMAL", err)
+
+    def test_value_names_share_the_address_namespace(self):
+        self.add_value_lines()
+        self.fx.entries["addresses"].append({"name": "HUD_ROOT", "kind": "value", "value": "4",
+                                             "source": "R46 native.lua:5"})
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("HUD_ROOT", err)
+
     @unittest.skipUnless(HAVE_ZIG, "HellForge's Zig is not installed (HF_ZIG)")
     def test_synthetic_headers_compile(self):
         code, err = self.fx.run()
@@ -361,6 +445,14 @@ class RealInputTests(unittest.TestCase):
     def test_header_has_the_hud_root(self):
         self.assertEqual(self.code, 0, self.err)
         self.assertIn("#define DBF_RVA_HUD_ROOT 0x346d538", self.read(self.header))
+
+    def test_header_has_the_reader_values(self):
+        self.assertEqual(self.code, 0, self.err)
+        header = self.read(self.header)
+        for define in ("#define DBF_VAL_GAMEPLAY_MODE 4u", "#define DBF_VAL_HUD_READY 1u",
+                       "#define DBF_VAL_CARD_COUNT 16u", "#define DBF_VAL_LOOKUP_MAX_CAPACITY 65536u",
+                       "#define DBF_VAL_VANILLA_KINDS 149u", "#define DBF_VAL_DEFINITION_RELOCATION_SPAN 0x400000u"):
+            self.assertIn(define, header)
 
     def test_kind_names(self):
         self.assertEqual(self.code, 0, self.err)
