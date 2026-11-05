@@ -10,18 +10,16 @@
  *                                             event from inside hf->on, and what that logs follows it).
  *   OnGameLoaded (the loader's watch thread)  reads %LOCALAPPDATA%\DBF\HellForge\settings.ini once (settings.h; the
  *                                             defaults when there is none), connects to the Overlay Host (API 4 or later,
- *                                             else no window and no list), registers the tick (through the host's shared
- *                                             slot when it has one, register_tick), then the Status window and the HUD
- *                                             list. A second event is ignored, with one line in the log.
+ *                                             else no settings window), registers the tick (through the host's shared
+ *                                             slot when it has one, register_tick), then the Status window. A second event is ignored, with one line in the log.
  *   Tick (the game thread)                    until hf->module_base finds game.dll it only publishes a snapshot saying
  *                                             "game.dll not loaded yet". On the first tick that finds it, memory,
  *                                             admission, native (the game functions at game.dll + DBF_FN_*), codes, the
  *                                             readers, the latch and the sounds start together, so admission's grace
  *                                             period counts from the real module. Every tick after that runs `run` (the
  *                                             order is written there), publishes a snapshot and drains the UI queue.
- *   Draw, DrawList (the render thread)        draw the newest snapshot; they read only the snapshot and constant names,
- *                                             never game memory, admission or entry state. DrawList also stores the
- *                                             frame's capturing flag, which the tick reads to keep DBF's keys quiet.
+ *   Draw (the render thread)                  draws the Status window from the snapshot. The game renders its own
+ *                                             stratagem HUD and the tick updates its native selection styling.
  * Every game read, write and call happens on the game thread. Nothing is restored from DllMain (there is none): no game
  * write runs under the loader lock. HellForge has no unload event, so a change the tick has not put back when the game
  * exits stays in the exiting game.
@@ -55,13 +53,12 @@
 #include "snapshot.h"
 #include "sound.h"
 #include "text.h"
-#include "ui_list.h"
+#include "native_list.h"
 #include "ui_settings.h"
 
-#define DBF_VERSION "R50-hellforge.2"
+#define DBF_VERSION "R50-hellforge.3"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
-#define DBF_LIST_ID DBF_PANEL_ID "/list"
 #define DBF_TITLE "Diver's Best Friend"
 /* The Overlay Host API the window needs (Overlay Host 0.2.0). DBF asks the host for this version, not for
  * OV_API_VERSION as ov_connect does: a 0.2.x host serves 4 and refuses 5. A newer host serves 4 as well. */
@@ -93,7 +90,7 @@ typedef __typeof__(hellforge_lua_rewrites)* RewritesFn;
 static const HfApi* g_hf;
 static HfMod* g_mod;
 /* Set in OnGameLoaded before the tick and the panels are registered, and never again: the game thread (Tick) and the
- * render thread (Draw, DrawList) only read it. NULL: no window and no list. */
+ * render thread (Draw) only read it. NULL: no settings window. */
 static const OvApi* g_ov;
 static bool g_loaded;        /* OnGameLoaded ran */
 static bool g_loaded_again;  /* a repeated event was seen and logged */
@@ -339,14 +336,11 @@ static int pending_changes(void)
 static const char* input_blocked(const GameView* v)
 {
     if (!g_settings.enabled) return "DBF is off in its settings";
-    /* Hidden HUD panels receive no DrawList callbacks. API 8 reports the host's live state from this thread. */
-    bool capturing;
-    if (g_ov && g_ov->version >= 8 && g_ov->size >= offsetof(OvApi, input_captured) + sizeof g_ov->input_captured
-        && g_ov->input_captured)
-        capturing = g_ov->input_captured() != 0;
-    else
-        capturing = snap_capturing();
-    if (capturing) return "an Overlay Host window is open";
+    if (g_ov != NULL) {
+        if (g_ov->version < 8 || g_ov->size < offsetof(OvApi, input_captured) + sizeof g_ov->input_captured
+            || !g_ov->input_captured) return "Overlay Host 0.6.0 required for input";
+        if (g_ov->input_captured()) return "an Overlay Host window is open";
+    }
     if (!v->local_ok) return "local player unavailable";
     if (!v->local.unobstructed) return "UI obstructed";
     return NULL;
@@ -593,6 +587,7 @@ static void Tick(HfMod* mod, float dt, void* user)
         game_read(&s.game);
         snap_fill_admission(&s);
         run(&s.game, now);
+        native_list_update(&s.game, g_settings.enabled && !shortcut_active() ? g_list.chosen : -1);
     } else {
         fill_waiting(&s);
         run_waiting();
@@ -627,19 +622,6 @@ static void Draw(const OvFrame* frame, void* user)
     snap_release();
 }
 
-/* The HUD list (ui_list.h). The host draws HUD panels every frame, so this is where the capturing flag comes from: a host
- * window open (OvFrame.capturing) or look capture on (API 3) keeps DBF's keys quiet. */
-static void DrawList(const OvFrame* frame, void* user)
-{
-    const DbfSnapshot* s;
-    bool capturing = frame != NULL && frame->capturing != 0;
-    if (g_ov->look_capture != NULL && g_ov->look_capture()) capturing = true;
-    snap_set_capturing(capturing);
-    s = snap_acquire();
-    ui_list_draw(g_ov, frame, s);
-    snap_release();
-}
-
 static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
 {
     const OvApi* ov;
@@ -652,7 +634,7 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     load_settings();
     ov = connect_overlay();
     if (ov == NULL)
-        g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a window or list on screen; key and controller "
+        g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a settings window; key and controller "
                          "bindings still work, wheel bindings do nothing");
     g_ov = ov;
     if (!register_tick()) {
@@ -661,15 +643,11 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     }
     if (ov != NULL) {
         OvPanelDef panel = { sizeof panel, DBF_PANEL_ID, DBF_TITLE, OV_PANEL_WINDOW, 0 };
-        OvPanelDef list = { sizeof list, DBF_LIST_ID, DBF_TITLE " list", OV_PANEL_HUD, 0 };
         panel.width = 640.0f;
         panel.height = 520.0f;
         panel.draw = Draw;
         if (ov->register_panel(&panel) == NULL)
             g_hf->log(g_mod, "The Overlay Host did not take the " DBF_TITLE " window (its log says why)");
-        list.draw = DrawList;
-        if (ov->register_panel(&list) == NULL)
-            g_hf->log(g_mod, "The Overlay Host did not take the " DBF_TITLE " list (its log says why)");
     }
 }
 
