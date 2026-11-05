@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "text.h"
+#include "editor_catalog_icons.h"
 #include "hud_options.h"
 #include "settings_editor.h"
 #include "ui_settings.h"
@@ -55,7 +56,19 @@ static void draw_stratagems(const OvApi* ov, const GameView* g)
         DbfLine code;
         ov->table_next_row();
         ov->table_next_column();
-        ov->text(dbf_kind_name(g->rows[i].kind));
+        const char* name = dbf_kind_name(g->rows[i].kind);
+        if (ov->version >= 3 && ov->size >= offsetof(OvApi, draw_image_uv) + sizeof ov->draw_image_uv &&
+            ov->draw_image_uv && ov->load_image && ov->draw_layer && ov->text_line_height &&
+            ov->cursor_screen_pos && ov->dummy && ov->same_line) {
+            float x, y;
+            float size = ov->text_line_height();
+            ov->cursor_screen_pos(&x, &y);
+            ov->draw_layer(OV_LAYER_WINDOW);
+            editor_stratagem_icon(ov, name, x, y, size);
+            ov->dummy(size, size);
+            ov->same_line();
+        }
+        ov->text(name);
         ov->table_next_column();
         code_text(&code, &g->rows[i]);
         ov->text(code.text);
