@@ -90,7 +90,11 @@ typedef struct DbfSnapshot {
     char build_reason[DBF_SNAP_REASON_SIZE];
     uint32_t host_version; /* the Overlay Host's OvApi.version; 0 when there is none */
     ListView list; /* snap_fill_list fills it; until then it is all zero and not valid */
+    DbfSettings options; /* game-thread copy of the currently applied preferences */
+    bool hud_owned;      /* native HUD bridge currently owns the display */
 } DbfSnapshot;
+
+enum { UI_HUD_OPTION = 1 }; /* a: hud_option_descriptor index, b: requested value */
 
 typedef struct UiEvent {
     uint32_t kind;

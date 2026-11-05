@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "text.h"
+#include "hud_options.h"
 #include "ui_settings.h"
 
 /* "^ > v <" for the row's code (1 up, 2 right, 3 down, 4 left, anything else "?"), "no code" when it has none. */
@@ -22,7 +23,7 @@ static void draw_feature(const OvApi* ov, const DbfSnapshot* s, Feature f)
 {
     DbfLine l;
     const char* reason = s->admit_reason[f];
-    dbf_line_begin(&l, adm_feature_name(f));
+    dbf_line_begin(&l, f == FEAT_WEAPON ? "C weapon reader" : adm_feature_name(f));
     switch (s->admit[f]) {
     case ADMIT_OK:
         dbf_line_add(&l, ": OK");
@@ -129,6 +130,8 @@ static void draw_status(const OvApi* ov, const DbfSnapshot* s)
     dbf_line_add_uint(&l, s->host_version);
     ov->text(l.text);
 
+    ov->text(s->hud_owned ? "Native HUD archive: connected" : "Native HUD archive: waiting");
+
     in_mission = s->game.in_gameplay && s->game.hud_ready;
     if (in_mission) {
         ov->text("In a mission: yes");
@@ -152,12 +155,67 @@ static void draw_status(const OvApi* ov, const DbfSnapshot* s)
     if (in_mission) draw_stratagems(ov, &s->game);
 }
 
+static void draw_option(const OvApi* ov, DbfSettings* draft, unsigned i)
+{
+    const HudOption* d = hud_option_descriptor(i);
+    bool available = hud_option_available(draft, i);
+    int original = hud_option_get(draft, d->key);
+    int value = original;
+    int changed;
+    ov->begin_disabled(!available);
+    switch (d->widget) {
+    case HUD_TOGGLE:
+        changed = ov->checkbox(d->label, &value);
+        break;
+    case HUD_CHOICE:
+        --value; /* ImGui combo indices start at zero. */
+        changed = ov->combo(d->label, &value, d->choices, d->max);
+        ++value;
+        break;
+    default:
+        changed = ov->slider_int(d->label, &value, d->min, d->max);
+        if (changed && value >= d->min && value <= d->max) value = d->min + ((value - d->min + d->step / 2) / d->step) * d->step;
+        break;
+    }
+    ov->end_disabled();
+    if (available && changed && value >= d->min && value <= d->max && value != original) {
+        UiEvent e = { .kind = UI_HUD_OPTION, .a = (int)i, .b = value };
+        if (ui_post(&e)) hud_option_set(draft, i, value);
+    }
+}
+
+static void draw_options(const OvApi* ov, const DbfSnapshot* s)
+{
+    if (!s) {
+        ov->text_disabled("Waiting for the first update from the game");
+        return;
+    }
+    DbfSettings draft = s->options;
+    const char* group = "";
+    for (unsigned i = 0; i < hud_option_count(); ++i) {
+        const HudOption* d = hud_option_descriptor(i);
+        if (strcmp(group, d->group) != 0) {
+            group = d->group;
+            if (ov->version >= 6 && ov->size >= offsetof(OvApi, heading) + sizeof ov->heading && ov->heading)
+                ov->heading(group);
+            else
+                ov->text_colored(ov->theme(OV_THEME_ACCENT), group);
+        }
+        draw_option(ov, &draft, i);
+    }
+}
+
 void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s)
 {
     if (ov == NULL) return;
     if (!ov->begin_tab_bar("dbf-tabs")) return;
     if (ov->begin_tab_item("Status")) {
         draw_status(ov, s);
+        ov->end_tab_item();
+    }
+    if (ov->checkbox && ov->combo && ov->slider_int && ov->begin_disabled && ov->end_disabled &&
+        ov->begin_tab_item("SETTINGS")) {
+        draw_options(ov, s);
         ov->end_tab_item();
     }
     ov->end_tab_bar();

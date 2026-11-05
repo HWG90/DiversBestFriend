@@ -2,6 +2,7 @@
 #include <string.h>
 #include "addresses_25480438.h" /* the extern declaration of dbf_blacklist_kinds; admission.c holds its one definition */
 #include "settings.h"
+#include "hud_options.h"
 
 /* --- text helpers: a Span is a piece of the caller's text, never terminated ----------------------------------------- */
 
@@ -157,9 +158,8 @@ void settings_defaults(DbfSettings* s)
 {
     if (s == NULL) return;
     memset(s, 0, sizeof *s);
-    s->enabled = true;
-    s->selection_sounds = true;
-    s->input_interval_ms = DBF_INTERVAL_DEFAULT_MS;
+    for (unsigned i = 0; i < hud_option_count(); ++i)
+        hud_option_set(s, i, hud_option_descriptor(i)->initial);
     for (int i = 0; i < dbf_blacklist_kind_count; i++) {
         uint32_t kind = dbf_blacklist_kinds[i].kind;
         if (kind < DBF_BLACKLIST_SLOTS) s->blacklist_kind[kind] = dbf_blacklist_kinds[i].default_on;
@@ -332,10 +332,11 @@ void bind_describe(const Binding* b, char* out, size_t n)
 
 /* --- the lines ------------------------------------------------------------------------------------------------------- */
 
-typedef enum { SEC_NONE, SEC_DBF, SEC_BINDINGS, SEC_BLACKLIST, SEC_SKIP } Section;
+typedef enum { SEC_NONE, SEC_DBF, SEC_BINDINGS, SEC_BLACKLIST, SEC_HUD, SEC_SKIP } Section;
 
 static const char* section_name(Section s)
 {
+    if (s == SEC_HUD) return "hud";
     return s == SEC_DBF ? "dbf" : s == SEC_BINDINGS ? "bindings" : "blacklist";
 }
 
@@ -404,6 +405,35 @@ static void do_dbf(DbfSettings* s, Problems* p, int line, Span key, Span value)
     }
 }
 
+static void do_hud(int edits[HUD_OPTION_COUNT], Problems* p, int line, Span key, Span value)
+{
+    for (unsigned i = 0; i < hud_option_count(); ++i) {
+        const HudOption* d = hud_option_descriptor(i);
+        if (!is(key, d->key)) continue;
+        int n;
+        if (d->widget == HUD_TOGGLE) {
+            if (is(value, "true") || is(value, "1")) n = 1;
+            else if (is(value, "false") || is(value, "0")) n = 0;
+            else {
+                bad_value(p, line, key, value, "use true or false");
+                return;
+            }
+        } else {
+            Span digits = value;
+            bool negative = starts(value, "-", &digits);
+            if (!parse_decimal(digits, &n)) {
+                bad_value(p, line, key, value, "use a whole number");
+                return;
+            }
+            if (negative) n = -n;
+        }
+        if (n >= d->min && n <= d->max) edits[i] = n;
+        else bad_value(p, line, key, value, "outside the option range");
+        return;
+    }
+    unknown_key(p, line, SEC_HUD, key);
+}
+
 static void do_bindings(DbfSettings* s, Problems* p, int line, Span key, Span value)
 {
     for (int a = 0; a < BIND_COUNT; a++) {
@@ -442,6 +472,7 @@ static Section do_header(Problems* p, int line, Span t)
         return SEC_SKIP;
     }
     name = trim(t.p + 1, t.p + t.n - 1);
+    if (is(name, "hud")) return SEC_HUD;
     if (is(name, "dbf")) return SEC_DBF;
     if (is(name, "bindings")) return SEC_BINDINGS;
     if (is(name, "blacklist")) return SEC_BLACKLIST;
@@ -455,6 +486,9 @@ static Section do_header(Problems* p, int line, Span t)
 int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems, size_t n)
 {
     Problems p;
+    /* The preferences writer owns [hud]; older [dbf] values are fallbacks independent of section order. */
+    int hud_edits[HUD_OPTION_COUNT];
+    for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i) hud_edits[i] = INT_MIN;
     Section sec = SEC_NONE;
     size_t at = 0;
     int line = 0;
@@ -506,8 +540,11 @@ int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems,
             continue;
         }
         if (sec == SEC_DBF) do_dbf(s, &p, line, key, value);
+        else if (sec == SEC_HUD) do_hud(hud_edits, &p, line, key, value);
         else if (sec == SEC_BINDINGS) do_bindings(s, &p, line, key, value);
         else do_blacklist(s, &p, line, key, value);
     }
+    for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i)
+        if (hud_edits[i] != INT_MIN) hud_option_set(s, i, hud_edits[i]);
     return p.count;
 }

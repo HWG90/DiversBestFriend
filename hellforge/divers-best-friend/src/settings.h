@@ -1,11 +1,12 @@
 /* settings: DBF's options and key bindings, read from the settings file's text.
  *
- * The file is an INI file with three sections. This unit only turns text into a DbfSettings (reading the file from disk is
- * dbf.c's job; writing it comes with the Controls tab):
+ * The parser reads four INI sections. File I/O belongs to the game thread.
  *
  *   [dbf]        enabled, selection_sounds, randomize_input_delay, instant_stratagems, hide_sos, hide_eagle_rearm
  *                (true or false, also 1 or 0) and input_interval_ms (whole milliseconds, 0 to 250; 0 sends one direction
  *                per frame)
+ *   [hud]        R50 HUD preferences (hud_options.h), including the weapon status strip. Valid [hud] entries
+ *                override legacy [dbf] entries for the same preference in any section order.
  *   [bindings]   next, previous, confirm, slot1, slot2, slot3, slot4, each one of
  *                  none | wheel_up | wheel_down | mouse1 .. mouse5 | key:0xNN (a virtual-key code in hex) |
  *                  key:<letter or digit> | key:f1 .. key:f24 |
@@ -24,7 +25,7 @@
  * earlier line or the default had it; for input_interval_ms (a whole number from 0 to 250) the problem says which value is
  * kept.
  *
- * Defaults are R46's: enabled and selection_sounds true; input_interval_ms 70; randomize_input_delay, instant_stratagems,
+ * Legacy defaults: enabled and selection_sounds true; input_interval_ms 70; randomize_input_delay, instant_stratagems,
  * hide_sos and hide_eagle_rearm false; every blacklist kind at the default_on of dbf_blacklist_kinds; next = wheel_down,
  * previous = wheel_up, confirm = mouse1, the slot hotkeys unbound.
  *
@@ -49,6 +50,32 @@ typedef struct DbfSettings {
     int input_interval_ms;                   /* 0..250 */
     bool blacklist_kind[DBF_BLACKLIST_SLOTS]; /* by kind; true: hidden */
     Binding bind[BIND_COUNT];
+    int selection_mode_ordered;
+    int experimental_layout;
+    int appearance_preset;
+    int wheel_size;
+    int icon_size;
+    int label_size;
+    int native_opacity;
+    int wedge_darkness;
+    int wedge_opacity;
+    bool cooldown_timers;
+    int cooldown_timer;
+    int short_timer_style;
+    bool dim_unselected;
+    bool hide_blacklisted_list;
+    bool hide_cooldown_list;
+    int brief_timer_limit;
+    bool hide_closed_status;
+    int dock_gap;
+    bool cooldown_icons;
+    int cooldown_display;
+    int short_status_placement;
+    bool track_unavailable;
+    bool balance_separated_dock;
+    int release_selection_mode;
+    int vertical_offset;
+    bool weapon_status_strip;
 } DbfSettings;
 
 /* Every field at its default (see above). */

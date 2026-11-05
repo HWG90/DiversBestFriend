@@ -138,7 +138,7 @@ static void test_status_in_mission(void)
     CHECK(has("text:Selection state: OK"), "an admitted feature: OK");
     CHECK(has("text:Stratagems: OK"), "another");
     CHECK(has("text:HUD reads: Waiting (witness charlie not readable yet)"), "a pending feature: Waiting, with its reason");
-    CHECK(has("text:Weapon strip: Off (not mapped yet)"), "a refused feature: Off, with its reason");
+    CHECK(has("text:C weapon reader: Off (not mapped yet)"), "a refused feature: Off, with its reason");
     CHECK(has("text:Overlay Host API 4"), "the host's API version");
     CHECK(has("text:In a mission: yes"), "in a mission");
     CHECK(has("text:Stratagem menu: open"), "the menu is open");
@@ -184,7 +184,7 @@ static void test_every_feature_line(void)
     draw(&g_snap);
     for (int f = 0; f < FEAT_COUNT; f++) {
         char prefix[96];
-        snprintf(prefix, sizeof prefix, "text:%s: ", adm_feature_name((Feature)f));
+        snprintf(prefix, sizeof prefix, "text:%s: ", f == FEAT_WEAPON ? "C weapon reader" : adm_feature_name((Feature)f));
         if (fake_ov_count_prefix(prefix) == 1) names++;
         else printf("  feature line for \"%s\" appears %d times\n", prefix, fake_ov_count_prefix(prefix));
     }
@@ -317,7 +317,7 @@ static void test_waiting_and_off_without_reason(void)
     g_snap.admit_reason[FEAT_WEAPON][0] = '\0';
     draw(&g_snap);
     CHECK(has("text:HUD reads: Waiting"), "Waiting with no reason has no brackets");
-    CHECK(has("text:Weapon strip: Off"), "nor does Off");
+    CHECK(has("text:C weapon reader: Off"), "nor does Off");
 }
 
 static void test_arrows(void)
