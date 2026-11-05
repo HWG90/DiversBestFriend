@@ -92,6 +92,7 @@ typedef struct DbfSnapshot {
     ListView list; /* snap_fill_list fills it; until then it is all zero and not valid */
     uint16_t editor_pad; /* current controller buttons for binding capture */
     bool settings_save_failed;
+    bool mcm_registered;
     DbfSettings options; /* game-thread copy of the currently applied preferences */
     char hud_status[192]; /* last engine-side HUD diagnostic */
     bool hud_owned;      /* native HUD bridge currently owns the display */

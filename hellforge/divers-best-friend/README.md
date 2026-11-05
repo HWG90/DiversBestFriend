@@ -6,6 +6,8 @@ Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the 
 
 In **Key bindings**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Exclusions**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
 
+With DBF-MCM enabled, press **Delete** and select **Diver’s Best Friend** to edit settings, bindings, or stratagem exclusions. Both menus share DBF’s settings file.
+
 With the default bindings, scroll down for Next, scroll up for Previous and press the left mouse button to confirm. Slot shortcuts start unbound. To use Select on Release, choose a Hold menu binding in the game. Point at the centre before releasing to cancel.
 
 ## In-mission verification

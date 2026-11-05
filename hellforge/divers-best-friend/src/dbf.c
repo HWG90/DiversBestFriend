@@ -56,6 +56,7 @@
 #include "native_list.h"
 #include "ui_settings.h"
 #include "editor_shell.h"
+#include "dbf_mcm.h"
 #include "hud_bridge.h"
 #include "settings_editor.h"
 #include "hud_prefs.h"
@@ -364,6 +365,7 @@ static int pending_changes(void)
 static const char* common_input_blocker(const GameView* v)
 {
     if (!g_settings.enabled) return "DBF is off in its settings";
+    if (dbf_mcm_open()) return "the Mod Configuration Menu is open";
     if (g_ov != NULL) {
         if (g_ov->version < 8 || g_ov->size < offsetof(OvApi, input_captured) + sizeof g_ov->input_captured
             || !g_ov->input_captured) return "Overlay Host 0.6.0 required for input";
@@ -640,6 +642,23 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
 
 static bool settings_save_failed;
 
+static bool persist_settings(const DbfSettings* updated)
+{
+    settings_save_failed = !g_settings_path[0] || !hud_prefs_apply(g_settings_path, &g_settings, updated);
+    if (settings_save_failed) {
+        log_line("Could not save settings to settings.ini; retained the previous settings");
+        return false;
+    }
+    bool rebind = false;
+    for (int i = 0; i < BIND_COUNT; ++i)
+        if (g_settings.bind[i].kind != updated->bind[i].kind || g_settings.bind[i].code != updated->bind[i].code)
+            rebind = true;
+    g_settings = *updated;
+    g_settings_read = true;
+    if (rebind && g_bind_ready) bind_init(&g_bind_port, g_settings.bind);
+    return true;
+}
+
 static void apply_settings(void)
 {
     UiEvent events[UI_QUEUE_SLOTS];
@@ -650,25 +669,14 @@ static void apply_settings(void)
     for (int i = 0; i < count; ++i) {
         if (editor_apply(&updated, &events[i])) changed = true;
     }
-    if (!changed) return;
-    settings_save_failed = !g_settings_path[0] || !hud_prefs_apply(g_settings_path, &g_settings, &updated);
-    if (settings_save_failed) {
-        log_line("Could not save settings to settings.ini; retained the previous settings");
-        return;
-    }
-    bool rebind = false;
-    for (int i = 0; i < BIND_COUNT; ++i)
-        if (g_settings.bind[i].kind != updated.bind[i].kind || g_settings.bind[i].code != updated.bind[i].code)
-            rebind = true;
-    g_settings = updated;
-    g_settings_read = true;
-    if (rebind && g_bind_ready) bind_init(&g_bind_port, g_settings.bind);
+    if (changed) persist_settings(&updated);
 }
 
 static void Tick(HfMod* mod, float dt, void* user)
 {
     static DbfSnapshot s; /* the game thread's only: snap_publish copies it */
     apply_settings();
+    dbf_mcm_tick(&g_settings, persist_settings, NULL);
     uint64_t now = GetTickCount64();
     if (!g_bind_ready) { /* the bindings need nothing of game.dll: from the first tick (platform_win.h: game thread) */
         g_bind_port = *dbf_bind_port(g_ov);
@@ -696,6 +704,7 @@ static void Tick(HfMod* mod, float dt, void* user)
                    g_settings_problems);
     s.options = g_settings;
     s.settings_save_failed = settings_save_failed;
+    s.mcm_registered = dbf_mcm_registered();
     if (g_front && g_bind_port.pad_buttons && g_ov && g_ov->version >= 8 &&
         g_ov->size >= offsetof(OvApi, input_captured) + sizeof g_ov->input_captured &&
         g_ov->input_captured && g_ov->input_captured())
