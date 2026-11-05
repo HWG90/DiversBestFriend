@@ -686,7 +686,7 @@ class RealInputTests(unittest.TestCase):
         for w in emitted:
             self.assertIn(w["check"], ("file", "unreadable", "expect_differs"), w["name"])
         self.assertNotIn("differs", [w["check"] for w in self.receipt["witnesses"]])
-        self.assertEqual(len(self.receipt["witnesses"]), 92)
+        self.assertEqual(len(self.receipt["witnesses"]), 93)
 
     def test_header_has_the_hud_root(self):
         self.assertEqual(self.code, 0, self.err)
@@ -704,6 +704,8 @@ class RealInputTests(unittest.TestCase):
         self.assertEqual(self.code, 0, self.err)
         header = self.read(self.header)
         expected = {
+            "WIDGET_SCALE": ("0x1447ed0", ["scale", "scale_tween_slot"]),
+            "TEXT_COLOUR": ("0x1448690", ["expanded_sprite_color", "list_text_colour"]),
             "INPUT_HANDLER": ("0xa900d0", ["input_handler", "append_and_match"]),
             "OPEN_INPUT": ("0xa8e850", ["release_guarded_open", "release_hold_test", "release_match_survives",
                                         "release_opener_slot_guard", "release_opener_slot_call"]),

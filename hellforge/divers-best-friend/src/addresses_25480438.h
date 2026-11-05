@@ -34,6 +34,14 @@
 #define DBF_OFF_LIST_OFFSET 0x1040u /* R46 native.lua:88 */
 #define DBF_OFF_OPEN_BYTE_OFFSET 0x38769u /* R46 native.lua:214, input.lua:100 */
 #define DBF_OFF_NODE_PARENT_OFFSET 0xf0u /* R46 native.lua:95, native.lua:98 */
+#define DBF_OFF_WIDGET_SCALE 0x14u /* R46 native.lua:58 */
+#define DBF_OFF_WIDGET_STYLE 0x44u /* R46 native.lua:139 */
+#define DBF_OFF_NAME_CONTAINER 0x1f18u /* R46 native.lua:108 */
+#define DBF_OFF_STATUS_CONTAINER 0x24a8u /* R46 native.lua:108 */
+#define DBF_OFF_ARROW_CONTAINER 0x2870u /* R46 native.lua:108 */
+#define DBF_OFF_NAME_CHILD 0x2028u /* R46 native.lua:119 */
+#define DBF_OFF_STATUS_CHILD 0x25b8u /* R46 native.lua:119 */
+#define DBF_OFF_ARROW_CHILD 0x2980u /* R46 native.lua:120 */
 #define DBF_OFF_CARD_FIRST 0x110u /* R46 native.lua:98, native.lua:266 */
 #define DBF_OFF_CARD_STRIDE 0x3760u /* R46 native.lua:98, native.lua:266 */
 #define DBF_OFF_CARD_ACTIVE_OFFSET 0x36f0u /* R46 native.lua:267 */
@@ -214,6 +222,10 @@
 #define DBF_FN_REQUEST_SLOT 0xa93e90u
 /* UI_SOUND: R46 native.lua:302; guarded by ui_sound */
 #define DBF_FN_UI_SOUND 0x1327f50u
+/* WIDGET_SCALE: R46 native.lua:58; guarded by scale, scale_tween_slot */
+#define DBF_FN_WIDGET_SCALE 0x1447ed0u
+/* TEXT_COLOUR: R46 native.lua:136; guarded by expanded_sprite_color, list_text_colour */
+#define DBF_FN_TEXT_COLOUR 0x1448690u
 
 typedef struct {
     const char* name;
@@ -259,8 +271,7 @@ static const uint8_t dbf_w_size[32] = {
     0x48, 0x89, 0x5c, 0x24, 0x18, 0x48, 0x89, 0x6c, 0x24, 0x20, 0x48, 0x89, 0x54, 0x24, 0x10, 0x56,
     0x57, 0x41, 0x57, 0x48, 0x83, 0xec, 0x20, 0xf3, 0x0f, 0x10, 0x41, 0x0c, 0x48, 0x8b, 0xda, 0x0f,
 };
-/* scale: guards.lua:7, unreadable; scale setter; its body reads node +20, the field the HUD reads use (the port never
-   calls it) */
+/* scale: guards.lua:7, unreadable; scale setter used for the selected native row */
 static const uint8_t dbf_w_scale[32] = {
     0x48, 0x89, 0x5c, 0x24, 0x18, 0x48, 0x89, 0x6c, 0x24, 0x20, 0x48, 0x89, 0x54, 0x24, 0x10, 0x56,
     0x57, 0x41, 0x57, 0x48, 0x83, 0xec, 0x20, 0xf3, 0x0f, 0x10, 0x41, 0x14, 0x48, 0x8b, 0xda, 0x0f,
@@ -555,6 +566,11 @@ static const uint8_t dbf_w_wheel_label_definition[4] = {
 static const uint8_t dbf_w_wheel_label_definition_tail[8] = {
     0x48, 0x89, 0x7c, 0x24, 0x28, 0x8b, 0x78, 0x28,
 };
+/* expanded_sprite_color: guards.lua:82, unreadable; native RGB setter for list text containers */
+static const uint8_t dbf_w_expanded_sprite_color[32] = {
+    0x48, 0x89, 0x5c, 0x24, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x18, 0x56, 0x57, 0x41, 0x57, 0x48, 0x83,
+    0xec, 0x20, 0xf3, 0x0f, 0x10, 0x41, 0x48, 0x48, 0x8b, 0xf2, 0x0f, 0x2e, 0x02, 0x48, 0x8b, 0xf9,
+};
 /* expanded_parent_transform: guards.lua:83, unreadable; node transform composing the parent's matrix (parent +0xf0,
    matrix at +0x64), the matrix the HUD geometry reads (native.lua:226) */
 static const uint8_t dbf_w_expanded_parent_transform[64] = {
@@ -649,13 +665,24 @@ static const uint8_t dbf_w_dock_charge_count[19] = {
     0x44, 0x8b, 0x86, 0xbc, 0x14, 0x00, 0x00, 0x48, 0x8d, 0x8e, 0xe0, 0x0c, 0x00, 0x00, 0xba, 0x35,
     0x7b, 0x2a, 0xab,
 };
+/* list_text_colour: guards.lua:121, unreadable; R46 list text colour setter entry */
+static const uint8_t dbf_w_list_text_colour[23] = {
+    0x48, 0x89, 0x5c, 0x24, 0x10, 0x48, 0x89, 0x6c, 0x24, 0x18, 0x56, 0x57, 0x41, 0x57, 0x48, 0x83,
+    0xec, 0x20, 0xf3, 0x0f, 0x10, 0x41, 0x48,
+};
+/* scale_tween_slot: hob-game-6AB3B43F.bin SHA-256 642b0aac0b4f577054993a965054827455ef143ced9895b2dfd09d1ecd433a37,
+   unreadable; set_scale tests flag 0x02000000 and (+0xa8 >> 33) & 0x7ff before cancelling a tween */
+static const uint8_t dbf_w_scale_tween_slot[28] = {
+    0xf7, 0x01, 0x00, 0x00, 0x00, 0x02, 0x74, 0x72, 0x48, 0x8b, 0x81, 0xa8, 0x00, 0x00, 0x00, 0x48,
+    0xc1, 0xe8, 0x21, 0x25, 0xff, 0x07, 0x00, 0x00, 0x74, 0x60, 0x8d, 0x68,
+};
 
 const DbfWitness dbf_witnesses[] = {
     { "dock_charge_group_layout", 0x1839b15u, 7, (1u << DBF_FEATURE_DOCK), dbf_w_dock_charge_group_layout },
     { "dock_charge_text_layout", 0x1839c8eu, 7, (1u << DBF_FEATURE_DOCK), dbf_w_dock_charge_text_layout },
     { "position", 0x14476a0u, 32, (1u << DBF_FEATURE_HUD_READ), dbf_w_position },
     { "size", 0x1447160u, 32, (1u << DBF_FEATURE_HUD_READ), dbf_w_size },
-    { "scale", 0x1447ed0u, 32, (1u << DBF_FEATURE_HUD_READ), dbf_w_scale },
+    { "scale", 0x1447ed0u, 32, (1u << DBF_FEATURE_HUD_READ) | (1u << DBF_FEATURE_LIST_OPACITY), dbf_w_scale },
     { "anchor", 0x144f160u, 32, (1u << DBF_FEATURE_HUD_READ), dbf_w_anchor },
     { "pivot", 0x144f0d0u, 32, (1u << DBF_FEATURE_HUD_READ), dbf_w_pivot },
     { "hud_root", 0xad9d8eu, 32, (1u << DBF_FEATURE_STATE) | (1u << DBF_FEATURE_HUD_READ), dbf_w_hud_root },
@@ -698,6 +725,7 @@ const DbfWitness dbf_witnesses[] = {
     { "wheel_icon_definition", 0x183a1e5u, 22, (1u << DBF_FEATURE_STRATAGEMS), dbf_w_wheel_icon_definition },
     { "wheel_label_definition", 0x66d54cu, 4, (1u << DBF_FEATURE_STRATAGEMS), dbf_w_wheel_label_definition },
     { "wheel_label_definition_tail", 0x66d554u, 8, (1u << DBF_FEATURE_STRATAGEMS), dbf_w_wheel_label_definition_tail },
+    { "expanded_sprite_color", 0x1448690u, 32, (1u << DBF_FEATURE_LIST_OPACITY), dbf_w_expanded_sprite_color },
     { "expanded_parent_transform", 0x144a5e9u, 64, (1u << DBF_FEATURE_HUD_READ), dbf_w_expanded_parent_transform },
     { "icon_channel_palette", 0x183a1fbu, 104, (1u << DBF_FEATURE_STRATAGEMS), dbf_w_icon_channel_palette },
     { "cooldown_field", 0x1836beau, 23, (1u << DBF_FEATURE_STRATAGEMS) | (1u << DBF_FEATURE_DOCK), dbf_w_cooldown_field },
@@ -712,6 +740,8 @@ const DbfWitness dbf_witnesses[] = {
     { "controller_active_binding", 0x12f95d2u, 20, (1u << DBF_FEATURE_POINTING), dbf_w_controller_active_binding },
     { "controller_stick_binding", 0x182b6ceu, 71, (1u << DBF_FEATURE_POINTING), dbf_w_controller_stick_binding },
     { "dock_charge_count", 0x183aef1u, 19, (1u << DBF_FEATURE_DOCK), dbf_w_dock_charge_count },
+    { "list_text_colour", 0x1448690u, 23, (1u << DBF_FEATURE_LIST_OPACITY), dbf_w_list_text_colour },
+    { "scale_tween_slot", 0x1447f8eu, 28, (1u << DBF_FEATURE_LIST_OPACITY), dbf_w_scale_tween_slot },
 };
 const int dbf_witness_count = (int)(sizeof dbf_witnesses / sizeof dbf_witnesses[0]);
 

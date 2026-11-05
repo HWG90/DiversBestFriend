@@ -9,7 +9,7 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "9a2c3ef31784ce073755d7f56c96194a6823e276e6c954c1d13df96d999649e4",
+    "addresses_25480438.json": "a2db457595df23e1fc00098039429410f2d860e3e8aec4be387c32325905d1f9",
     "blacklist.lua": "9ba6ac940b0264403ffa0dcaed58e6268e38d1a6c1e227a7845c7e5c0a47b599",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
@@ -26,26 +26,26 @@
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "10034c7e20fb61974858d120cabb7b8c75b078d012f5be508c05e676605cea53",
+    "addresses_25480438.h": "13bbd68f475cb999a90d064b8e2c96a967cfbe75ce3a6538b81defeb0ae9c590",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
-    "witnesses": 92,
-    "emitted": 61,
-    "dropped": 31,
+    "witnesses": 93,
+    "emitted": 64,
+    "dropped": 29,
     "emitted_checks": {
       "expect_differs": 6,
-      "unreadable": 55
+      "unreadable": 58
     },
     "dropped_checks": {
       "empty": 2,
-      "unreadable": 29
+      "unreadable": 27
     },
     "emitted_per_feature": {
       "STATE": 9,
       "STRATAGEMS": 12,
       "HUD_READ": 17,
-      "LIST_OPACITY": 1,
+      "LIST_OPACITY": 5,
       "ENTRY": 11,
       "SCRAMBLE": 4,
       "POINTING": 8,
@@ -56,9 +56,9 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 105,
+    "addresses": 113,
     "values": 65,
-    "functions": 6,
+    "functions": 8,
     "blacklist_kinds": 37,
     "kind_names": 149
   },
@@ -220,6 +220,62 @@
       "value": "0xf0",
       "define": "DBF_OFF_NODE_PARENT_OFFSET",
       "source": "R46 native.lua:95, native.lua:98"
+    },
+    {
+      "name": "WIDGET_SCALE",
+      "kind": "offset",
+      "value": "0x14",
+      "define": "DBF_OFF_WIDGET_SCALE",
+      "source": "R46 native.lua:58"
+    },
+    {
+      "name": "WIDGET_STYLE",
+      "kind": "offset",
+      "value": "0x44",
+      "define": "DBF_OFF_WIDGET_STYLE",
+      "source": "R46 native.lua:139"
+    },
+    {
+      "name": "NAME_CONTAINER",
+      "kind": "offset",
+      "value": "0x1f18",
+      "define": "DBF_OFF_NAME_CONTAINER",
+      "source": "R46 native.lua:108"
+    },
+    {
+      "name": "STATUS_CONTAINER",
+      "kind": "offset",
+      "value": "0x24a8",
+      "define": "DBF_OFF_STATUS_CONTAINER",
+      "source": "R46 native.lua:108"
+    },
+    {
+      "name": "ARROW_CONTAINER",
+      "kind": "offset",
+      "value": "0x2870",
+      "define": "DBF_OFF_ARROW_CONTAINER",
+      "source": "R46 native.lua:108"
+    },
+    {
+      "name": "NAME_CHILD",
+      "kind": "offset",
+      "value": "0x2028",
+      "define": "DBF_OFF_NAME_CHILD",
+      "source": "R46 native.lua:119"
+    },
+    {
+      "name": "STATUS_CHILD",
+      "kind": "offset",
+      "value": "0x25b8",
+      "define": "DBF_OFF_STATUS_CHILD",
+      "source": "R46 native.lua:119"
+    },
+    {
+      "name": "ARROW_CHILD",
+      "kind": "offset",
+      "value": "0x2980",
+      "define": "DBF_OFF_ARROW_CHILD",
+      "source": "R46 native.lua:120"
     },
     {
       "name": "CARD_FIRST",
@@ -1526,7 +1582,12 @@
       "name": "scale",
       "rva": "0x1447ed0",
       "features": [
-        "HUD_READ"
+        "LIST_OPACITY"
+      ],
+      "define": "DBF_FN_WIDGET_SCALE",
+      "guarded_by": [
+        "scale",
+        "scale_tween_slot"
       ],
       "source": "R46 native.lua:58"
     },
@@ -1540,8 +1601,14 @@
     {
       "name": "colour",
       "rva": "0x1448690",
-      "dropped": true,
-      "reason": "the port does not recolour the game's list text",
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "define": "DBF_FN_TEXT_COLOUR",
+      "guarded_by": [
+        "expanded_sprite_color",
+        "list_text_colour"
+      ],
       "source": "R46 native.lua:136"
     },
     {
@@ -1761,9 +1828,10 @@
       "size": 32,
       "guards_line": 7,
       "features": [
-        "HUD_READ"
+        "HUD_READ",
+        "LIST_OPACITY"
       ],
-      "reason": "scale setter; its body reads node +20, the field the HUD reads use (the port never calls it)",
+      "reason": "scale setter used for the selected native row",
       "nearest_bound_function": {
         "name": "scale",
         "rva": "0x1447ed0",
@@ -2780,8 +2848,10 @@
       "rva": "0x1448690",
       "size": 32,
       "guards_line": 82,
-      "dropped": true,
-      "reason": "colour setter 0x1448690; the port does not recolour game widgets",
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "reason": "native RGB setter for list text containers",
       "nearest_bound_function": {
         "name": "colour",
         "rva": "0x1448690",
@@ -3217,12 +3287,33 @@
       "rva": "0x1448690",
       "size": 23,
       "guards_line": 121,
-      "dropped": true,
-      "reason": "colour setter 0x1448690 (the list text colour); the port does not recolour the list",
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "reason": "R46 list text colour setter entry",
       "nearest_bound_function": {
         "name": "colour",
         "rva": "0x1448690",
         "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "scale_tween_slot",
+      "rva": "0x1447f8e",
+      "size": 28,
+      "source": "hob-game-6AB3B43F.bin SHA-256 642b0aac0b4f577054993a965054827455ef143ced9895b2dfd09d1ecd433a37",
+      "bytes": "f701000000027472488b81a800000048c1e82125ff07000074608d68",
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "reason": "set_scale tests flag 0x02000000 and (+0xa8 >> 33) & 0x7ff before cancelling a tween",
+      "nearest_bound_function": {
+        "name": "scale",
+        "rva": "0x1447ed0",
+        "distance": "0xbe"
       },
       "section": "#1",
       "file_offset": null,

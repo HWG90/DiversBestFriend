@@ -429,6 +429,14 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
     r46 = R46Files(r46_dir)
     problems = []
 
+    # Additional instruction spans from a captured virtual image. Keep its provenance
+    # separate from the R46 Lua line numbers; admission compares the bytes at runtime.
+    captures = {w["name"]: w for w in table.get("capture_witnesses", [])}
+    for name, span in captures.items():
+        if any(g.name == name for g in guards):
+            raise GeneratorError("duplicate captured witness: " + name)
+        guards.append(Guard(name, int(span["rva"], 0), bytes.fromhex(span["bytes"]), 0))
+
     # Addresses.
     addresses, names = [], set()
     for i, entry in enumerate(table.get("addresses", [])):
@@ -556,6 +564,10 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
                            "expected %s, the file has %s" % (g.name, g.rva, len(g.data), g.line, offset,
                                                               g.data.hex(), dll[offset:offset + len(g.data)].hex()))
         row = {"name": g.name, "rva": _hex(g.rva), "size": len(g.data), "guards_line": g.line}
+        if g.name in captures:
+            del row["guards_line"]
+            row["source"] = captures[g.name]["source"]
+            row["bytes"] = g.data.hex()
         if dropped:
             row["dropped"] = True
         else:
@@ -694,7 +706,8 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
         "#ifdef DBF_ADDRESSES_DEFINE",
     ]
     for g, row in emitted:
-        comment = "/* %s: guards.lua:%d, %s; %s */" % (g.name, g.line, row["check"], c_comment(row["reason"]))
+        source = row.get("source", "guards.lua:%d" % g.line)
+        comment = "/* %s: %s, %s; %s */" % (g.name, source, row["check"], c_comment(row["reason"]))
         header += textwrap.wrap(comment, 120, subsequent_indent="   ", break_long_words=False, break_on_hyphens=False)
         header.append("static const uint8_t dbf_w_%s[%d] = {" % (g.name, len(g.data)))
         for i in range(0, len(g.data), 16):
