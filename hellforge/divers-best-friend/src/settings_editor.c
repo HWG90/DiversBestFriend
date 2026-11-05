@@ -1,4 +1,6 @@
+#include <ctype.h>
 #include <string.h>
+#include "text.h"
 #include "addresses_25480438.h"
 #include "hud_options.h"
 #include "settings_editor.h"
@@ -76,7 +78,7 @@ static void capture(const OvApi* ov, uint16_t pad)
     editor.capturing = false;
 }
 
-static void bindings(const OvApi* ov, const DbfSnapshot* snap)
+static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo)
 {
     if (editor.capturing) {
         ov->text_disabled(editor.armed ? "Press a key, mouse button or controller button, or scroll. Esc cancels."
@@ -84,7 +86,7 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap)
         capture(ov, snap->editor_pad);
         return;
     }
-    if (ov->combo("Action", &editor.action, actions, BIND_COUNT)) editor.initialized = false;
+    if (combo && ov->combo("Action", &editor.action, actions, BIND_COUNT)) editor.initialized = false;
     Binding current = snap->options.bind[editor.action];
     if (!editor.initialized || current.kind != editor.saved.kind || current.code != editor.saved.code) {
         bind_describe(&current, editor.text, sizeof editor.text);
@@ -110,9 +112,52 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap)
     ov->end_disabled();
 }
 
-static void blacklist(const OvApi* ov, const DbfSettings* settings)
+/* The Editor browser at d8a8b46 keeps object selection beside its fields. */
+static void binding_page(const OvApi* ov, const DbfSnapshot* s)
+{
+    if (!ov->selectable || !ov->begin_table || !ov->end_table || !ov->table_next_column) {
+        if (ov->combo) bindings(ov, s, true);
+        return;
+    }
+    if (!ov->begin_table("dbf-binding-editor", 2)) return;
+    ov->table_next_column();
+    for (int i = 0; i < BIND_COUNT; ++i) {
+        if (ov->selectable(actions[i], editor.action == i) && i != editor.action) {
+            editor.action = i;
+            editor.initialized = editor.capturing = false;
+        }
+    }
+    ov->table_next_column();
+    ov->text(actions[editor.action]);
+    bindings(ov, s, false);
+    ov->end_table();
+}
+
+static bool matches(const char* label, unsigned kind, const char* search)
+{
+    if (!*search) return true;
+    DbfLine id;
+    dbf_line_begin(&id, NULL);
+    dbf_line_add_uint(&id, kind);
+    if (!strcmp(id.text, search)) return true;
+    for (; *label; ++label) {
+        size_t i = 0;
+        while (search[i] && label[i] && tolower((unsigned char)label[i]) == tolower((unsigned char)search[i])) ++i;
+        if (!search[i]) return true;
+    }
+    return false;
+}
+
+static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searchable)
 {
     if (dbf_blacklist_kind_count > 64) { ov->text("Blacklist table exceeds editor capacity."); return; }
+    static char search[48];
+    bool visible = false;
+    if (searchable && ov->input_text) {
+        if (ov->set_keyboard_focus_here && ov->key_down && ov->key_pressed &&
+            ov->key_down(0x11) && ov->key_pressed('F')) ov->set_keyboard_focus_here();
+        ov->input_text("Search by name or kind", search, sizeof search);
+    }
     ov->text_disabled("Checked stratagems are excluded from selection.");
     for (int i = 0; i < dbf_blacklist_kind_count; ++i) {
         unsigned kind = dbf_blacklist_kinds[i].kind;
@@ -123,10 +168,12 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings)
          * acknowledges the edit and clears its draft bit. */
         if (((hidden_rows & bit) != 0) == saved) changed_rows &= ~bit;
         int hidden = changed_rows & bit ? (hidden_rows & bit) != 0 : saved;
-        ov->push_id_int((int)kind);
         const char* label = dbf_blacklist_kinds[i].name;
         if (kind == 71) label = "Cargo container (71)";
         if (kind == 138) label = "Cargo container (138)";
+        if (searchable && ov->input_text && !matches(label, kind, search)) continue;
+        visible = true;
+        ov->push_id_int((int)kind);
         if (ov->checkbox(label, &hidden)) {
             if (hidden) hidden_rows |= bit;
             else hidden_rows &= ~bit;
@@ -135,6 +182,7 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings)
         }
         ov->pop_id();
     }
+    if (!visible) ov->text_disabled("No matching stratagems.");
     ov->begin_disabled(!changed_rows);
     if (apply_button(ov) && changed_rows) {
         UiEvent e = {.kind = UI_BLACKLIST, .changed_rows = changed_rows, .hidden_rows = hidden_rows};
@@ -145,15 +193,24 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings)
     ov->end_disabled();
 }
 
+void editor_page(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page)
+{
+    if (!s || blacklist_page) editor.capturing = false;
+    if (!ov || !s || !ov->button || !ov->same_line || !ov->begin_disabled || !ov->end_disabled) return;
+    if (blacklist_page) {
+        if (ov->checkbox && ov->push_id_int && ov->pop_id) blacklist(ov, &s->options, true);
+    } else if (ov->input_text && ov->key_down) binding_page(ov, s);
+}
+
 void editor_tabs(const OvApi* ov, const DbfSnapshot* s)
 {
     if (!s || !ov->button || !ov->begin_disabled || !ov->end_disabled) return;
     if (ov->combo && ov->input_text && ov->key_down && ov->same_line && ov->begin_tab_item("CONTROLS")) {
-        bindings(ov, s);
+        bindings(ov, s, true);
         ov->end_tab_item();
     } else editor.capturing = false;
     if (ov->checkbox && ov->push_id_int && ov->pop_id && ov->same_line && ov->begin_tab_item("BLACKLIST")) {
-        blacklist(ov, &s->options);
+        blacklist(ov, &s->options, false);
         ov->end_tab_item();
     }
 }

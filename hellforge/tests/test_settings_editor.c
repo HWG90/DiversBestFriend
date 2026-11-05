@@ -10,8 +10,14 @@ static OvApi ov;
 static const char *tab = "CONTROLS", *button, *typed, *row;
 static int vk, action, pushed_id, edited_kind, mouse = -1;
 static float wheel;
-static bool focused = true, disabled;
-static int tab_item(const char* label) { return !strcmp(tab,label); }
+static bool focused = true, disabled, direct;
+static const char* selected_action;
+static int visible_rows, tabs_opened;
+static int select_action(const char* label, int selected)
+{
+    return selected_action && !strcmp(label, selected_action);
+}
+static int tab_item(const char* label) { ++tabs_opened; return !strcmp(tab,label); }
 static void nothing(void) {}
 static void push(int id) { pushed_id = id; }
 static void disable(int flag) { disabled = flag; }
@@ -35,6 +41,7 @@ static float scroll(void) { return wheel; }
 static int focus(void) { return focused; }
 static int toggle(const char* label, int* value)
 {
+    ++visible_rows;
     if (!row || strcmp(label,row) || edited_kind != pushed_id) return 0;
     *value = !*value;
     return 1;
@@ -42,7 +49,9 @@ static int toggle(const char* label, int* value)
 static void frame(const char* clicked)
 {
     button = clicked;
-    editor_tabs(&ov, &snap);
+    visible_rows = 0;
+    if (direct) editor_page(&ov, &snap, !strcmp(tab, "BLACKLIST"));
+    else editor_tabs(&ov, &snap);
     typed = row = NULL;
 }
 static bool commit_one(void)
@@ -120,5 +129,33 @@ int main(void)
     CHECK(!editor_apply(&snap.options,&e), "out of range mouse binding refused");
     CHECK(hud_option_get(&snap.options,"auto_terminal_complete") == 1 && hud_option_get(&snap.options,"terminal_input") == 1,
           "R50 terminal defaults are available to runtime");
+    direct = true;
+    int prior_tabs = tabs_opened;
+    ov.selectable = select_action;
+    tab = "CONTROLS";
+    selected_action = "Slot 4";
+    typed = "pad:lb";
+    frame("APPLY");
+    CHECK(commit_one() && snap.options.bind[BIND_SLOT4].code == BIND_PAD_LB,
+          "editor action list edits the selected binding");
+    selected_action = NULL;
+    action = BIND_SLOT4;
+    check_capture('T', -1, 0, 0, BIND_KEY, 'T');
+    capture_start();
+    tab = "BLACKLIST";
+    typed = "cArGo"; frame(NULL);
+    CHECK(visible_rows == 2, "name filter is case-insensitive and includes both cargo kinds");
+    row = "Cargo container (71)"; edited_kind = 71; frame(NULL);
+    typed = "145"; frame(NULL);
+    CHECK(visible_rows == 1, "exact numeric search selects the kind");
+    row = "SOS Beacon"; edited_kind = 145; frame(NULL);
+    typed = "unmatched"; frame("APPLY");
+    CHECK(!visible_rows && commit_one() && snap.options.blacklist_kind[71] && snap.options.hide_sos,
+          "Apply includes drafts hidden by a subsequent search");
+    tab = "CONTROLS"; frame("APPLY");
+    CHECK(!ui_drain(&e,1), "switching pages cancels capture");
+    CHECK(tabs_opened == prior_tabs, "direct pages leave navigation to the caller");
+    direct = false; tab = "BLACKLIST"; frame(NULL);
+    CHECK(visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
     TEST_MAIN_END
 }
