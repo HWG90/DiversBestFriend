@@ -12,7 +12,14 @@ static int vk, action, pushed_id, edited_kind, mouse = -1;
 static float wheel;
 static bool focused = true, disabled, direct;
 static const char* selected_action;
-static int visible_rows, tabs_opened;
+static int visible_rows, icon_slots, tabs_opened;
+static void cursor(float* x, float* y) { *x = 12; *y = 20; }
+static float line_height(void) { return 16; }
+static void reserve_icon(float w, float h)
+{
+    CHECK(w == 16 && h == 16, "blacklist icon fits its row");
+    ++icon_slots;
+}
 static int select_action(const char* label, int selected)
 {
     return selected_action && !strcmp(label, selected_action);
@@ -49,7 +56,7 @@ static int toggle(const char* label, int* value)
 static void frame(const char* clicked)
 {
     button = clicked;
-    visible_rows = 0;
+    visible_rows = icon_slots = 0;
     if (direct) editor_page(&ov, &snap, !strcmp(tab, "BLACKLIST"));
     else editor_tabs(&ov, &snap);
     typed = row = NULL;
@@ -73,7 +80,7 @@ static void check_capture(int key, int mouse_button, float delta, uint16_t pad, 
     vk = key; mouse = mouse_button; wheel = delta; snap.editor_pad = pad;
     frame(NULL);
     vk = 0; mouse = -1; wheel = 0; snap.editor_pad = 0;
-    frame("APPLY");
+    frame(direct ? "APPLY BINDING" : "APPLY");
     CHECK(commit_one() && snap.options.bind[action].kind == kind && snap.options.bind[action].code == code,
           "capture submits the intended physical input after release");
 }
@@ -135,27 +142,41 @@ int main(void)
     tab = "CONTROLS";
     selected_action = "Slot 4";
     typed = "pad:lb";
-    frame("APPLY");
+    frame("APPLY BINDING");
     CHECK(commit_one() && snap.options.bind[BIND_SLOT4].code == BIND_PAD_LB,
           "editor action list edits the selected binding");
     selected_action = NULL;
     action = BIND_SLOT4;
-    check_capture('T', -1, 0, 0, BIND_KEY, 'T');
+    check_capture(0x75, -1, 0, 0, BIND_KEY, 0x75); /* F6 normally cycles shell pages. */
+    check_capture(0x78, -1, 0, 0, BIND_KEY, 0x78); /* F9 normally applies shell settings. */
+    typed = "key:t"; frame(NULL);
+    capture_start();
+    CHECK(editor_capturing(), "shell shortcuts yield to capture");
+    editor_page(&ov, NULL, false);
+    CHECK(!editor_capturing() && !ui_drain(&e, 1), "leaving Controls cancels capture without posting");
+    frame("APPLY BINDING");
+    CHECK(commit_one() && snap.options.bind[action].code == 'T', "binding draft survives navigation away");
+    typed = "key:u"; frame(NULL);
     capture_start();
     tab = "BLACKLIST";
+    ov.cursor_screen_pos = cursor; ov.text_line_height = line_height; ov.dummy = reserve_icon;
     typed = "cArGo"; frame(NULL);
-    CHECK(visible_rows == 2, "name filter is case-insensitive and includes both cargo kinds");
+    CHECK(visible_rows == 2 && icon_slots == 2, "name filter is case-insensitive and includes both cargo kinds");
     row = "Cargo container (71)"; edited_kind = 71; frame(NULL);
+    editor_page(&ov, NULL, false);
     typed = "145"; frame(NULL);
     CHECK(visible_rows == 1, "exact numeric search selects the kind");
     row = "SOS Beacon"; edited_kind = 145; frame(NULL);
-    typed = "unmatched"; frame("APPLY");
-    CHECK(!visible_rows && commit_one() && snap.options.blacklist_kind[71] && snap.options.hide_sos,
+    typed = "unmatched"; frame("APPLY BLACKLIST");
+    CHECK(!visible_rows && !icon_slots && commit_one() && snap.options.blacklist_kind[71] && snap.options.hide_sos,
           "Apply includes drafts hidden by a subsequent search");
-    tab = "CONTROLS"; frame("APPLY");
-    CHECK(!ui_drain(&e,1), "switching pages cancels capture");
+    CHECK(!editor_capturing() && snap.options.bind[action].code == 'T',
+          "applying Blacklist leaves the binding draft local");
+    tab = "CONTROLS"; frame("APPLY BINDING");
+    CHECK(commit_one() && snap.options.bind[action].code == 'U',
+          "Controls can submit its own draft after Blacklist applies");
     CHECK(tabs_opened == prior_tabs, "direct pages leave navigation to the caller");
     direct = false; tab = "BLACKLIST"; frame(NULL);
-    CHECK(visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
+    CHECK(!icon_slots && visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
     TEST_MAIN_END
 }

@@ -4,6 +4,7 @@
 #include "addresses_25480438.h"
 #include "hud_options.h"
 #include "settings_editor.h"
+#include "editor_catalog_icons.h"
 
 static const char* const actions[] = {"Next stratagem", "Previous stratagem", "Confirm", "Slot 1", "Slot 2", "Slot 3", "Slot 4"};
 _Static_assert(sizeof actions / sizeof actions[0] == BIND_COUNT, "all actions have editor labels");
@@ -37,11 +38,11 @@ bool editor_apply(DbfSettings* s, const UiEvent* e)
     return true;
 }
 
-static int apply_button(const OvApi* ov)
+static int apply_button(const OvApi* ov, const char* label)
 {
     if (ov->version >= 6 && ov->size >= offsetof(OvApi, button_primary) + sizeof ov->button_primary && ov->button_primary)
-        return ov->button_primary("APPLY");
-    return ov->button("APPLY");
+        return ov->button_primary(label);
+    return ov->button(label);
 }
 
 static void capture(const OvApi* ov, uint16_t pad)
@@ -78,7 +79,7 @@ static void capture(const OvApi* ov, uint16_t pad)
     editor.capturing = false;
 }
 
-static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo)
+static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const char* apply_label)
 {
     if (editor.capturing) {
         ov->text_disabled(editor.armed ? "Press a key, mouse button or controller button, or scroll. Esc cancels."
@@ -105,7 +106,7 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo)
     bool valid = settings_parse_binding(editor.text, &b);
     if (!valid) ov->text_disabled("Enter a valid binding or use Capture.");
     ov->begin_disabled(!valid || (b.kind == current.kind && b.code == current.code));
-    if (apply_button(ov) && valid) {
+    if (apply_button(ov, apply_label) && valid) {
         UiEvent e = {.kind = UI_BINDING, .a = editor.action, .b = b.kind * 65536 + b.code};
         if (!ui_post(&e)) ov->text("Input queue full. Apply again.");
     }
@@ -116,7 +117,7 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo)
 static void binding_page(const OvApi* ov, const DbfSnapshot* s)
 {
     if (!ov->selectable || !ov->begin_table || !ov->end_table || !ov->table_next_column) {
-        if (ov->combo) bindings(ov, s, true);
+        if (ov->combo) bindings(ov, s, true, "APPLY BINDING");
         return;
     }
     if (!ov->begin_table("dbf-binding-editor", 2)) return;
@@ -129,7 +130,7 @@ static void binding_page(const OvApi* ov, const DbfSnapshot* s)
     }
     ov->table_next_column();
     ov->text(actions[editor.action]);
-    bindings(ov, s, false);
+    bindings(ov, s, false, "APPLY BINDING");
     ov->end_table();
 }
 
@@ -173,6 +174,14 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searcha
         if (kind == 138) label = "Cargo container (138)";
         if (searchable && ov->input_text && !matches(label, kind, search)) continue;
         visible = true;
+        if (searchable && ov->cursor_screen_pos && ov->dummy && ov->text_line_height) {
+            float x, y;
+            float size = ov->text_line_height();
+            ov->cursor_screen_pos(&x, &y);
+            editor_stratagem_icon(ov, dbf_kind_name(kind), x, y, size);
+            ov->dummy(size, size); /* Same gutter for mission-only rows without artwork. */
+            ov->same_line();
+        }
         ov->push_id_int((int)kind);
         if (ov->checkbox(label, &hidden)) {
             if (hidden) hidden_rows |= bit;
@@ -184,13 +193,18 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searcha
     }
     if (!visible) ov->text_disabled("No matching stratagems.");
     ov->begin_disabled(!changed_rows);
-    if (apply_button(ov) && changed_rows) {
+    if (apply_button(ov, searchable ? "APPLY BLACKLIST" : "APPLY") && changed_rows) {
         UiEvent e = {.kind = UI_BLACKLIST, .changed_rows = changed_rows, .hidden_rows = hidden_rows};
         if (!ui_post(&e)) ov->text("Input queue full. Apply again.");
     }
     ov->same_line();
     if (ov->button("DISCARD")) changed_rows = 0;
     ov->end_disabled();
+}
+
+bool editor_capturing(void)
+{
+    return editor.capturing;
 }
 
 void editor_page(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page)
@@ -206,7 +220,7 @@ void editor_tabs(const OvApi* ov, const DbfSnapshot* s)
 {
     if (!s || !ov->button || !ov->begin_disabled || !ov->end_disabled) return;
     if (ov->combo && ov->input_text && ov->key_down && ov->same_line && ov->begin_tab_item("CONTROLS")) {
-        bindings(ov, s, true);
+        bindings(ov, s, true, "APPLY");
         ov->end_tab_item();
     } else editor.capturing = false;
     if (ov->checkbox && ov->push_id_int && ov->pop_id && ov->same_line && ov->begin_tab_item("BLACKLIST")) {
