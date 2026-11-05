@@ -1,4 +1,4 @@
-/* Goose Overlay Host, API version 4: a shared in-game UI for HellForge code mods.
+/* Goose Overlay Host, API version 5: a shared in-game UI for HellForge code mods.
  *
  * The host (mods/overlay-host, goose_overlay.dll) draws over the game with Dear ImGui, on the game's own Direct3D 12
  * queue (or Direct3D 11 with --use-d3d11), and owns the game window's input while one of its windows is open. Other
@@ -29,6 +29,9 @@
  * with the SDK's on_game_thread instead). Everything else here (register_panel, set_open, load_font, log) works from any
  * thread.
  *
+ * The game thread: ov->on_game_thread (or ov_on_game_thread at the end of this header) runs a mod's per-update
+ * callback through the host's own HellForge slot, so mods that use it take one of HellForge's 16 between them.
+ *
  * Text is UTF-8. Colours are 0xAABBGGRR (OV_RGBA). Widget labels follow ImGui's rules: "Label##id" shows "Label" and
  * keeps "id" apart from another "Label"; labels must be unique within a panel (or under push_id).
  *
@@ -43,7 +46,7 @@
 extern "C" {
 #endif
 
-#define OV_API_VERSION 4
+#define OV_API_VERSION 5
 #define OV_HOST_DLL "goose_overlay.dll"
 
 #define OV_RGBA(r, g, b, a) ((uint32_t)(r) | ((uint32_t)(g) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(a) << 24))
@@ -79,6 +82,9 @@ typedef struct OvFrame
 typedef void (*OvDrawFn)(const OvFrame* frame, void* user);
 /* capture_frame's completion (a worker thread): status 0 written, else a Win32 error code or -1. */
 typedef void (*OvCaptureFn)(int status, const char* png_path, void* user);
+/* on_game_thread's callback: the SDK's HfTickCallback (the mod's own HfMod, the update's dt in seconds). */
+struct HfMod;
+typedef void (*OvTickFn)(struct HfMod* mod, float dt, void* user);
 
 typedef struct OvPanelDef
 {
@@ -271,6 +277,17 @@ typedef struct OvApi
     /* Mouse wheel notches (+ up) the game window received since the last call while no host window was open and look
      * capture was off. The game still gets them. Any thread; reading resets the count. */
     float (*passive_wheel)(void);
+
+    /* ======== API version 5: check ov->version >= 5 (or size) before using these ======== */
+
+    /* ---- the game thread (any thread) ---- */
+    /* Calls back every game update on the game thread, as HfApi.on_game_thread does (before the game's update; keep it
+     * short), but from the host's own HellForge slot: every mod that uses this shares that one of HellForge's 16. The
+     * callbacks run one after another, in the order they were added; one added from inside a callback starts at the
+     * next update. Like HellForge's, a callback cannot be removed. Returns 1, or 0 when HellForge gave the host no slot
+     * or the host's 32 are taken (the host's log says which): then use hf->on_game_thread. ov_on_game_thread, at the
+     * end of this header, does both. */
+    int (*on_game_thread)(struct HfMod* mod, OvTickFn callback, void* user);
 } OvApi;
 
 enum OvLayer { OV_LAYER_BACKGROUND = 0, OV_LAYER_WINDOW = 1, OV_LAYER_FOREGROUND = 2 };
@@ -325,6 +342,21 @@ static inline const OvApi* ov_connect(void)
     OvApiFn get = host != NULL ? (OvApiFn)(void*)GetProcAddress(host, "ov_api") : NULL;
     return get != NULL ? get(OV_API_VERSION) : NULL;
 }
+
+#ifdef HF_MOD_SDK_VERSION
+/* hf->on_game_thread, through the host's slot while the host is loaded (and new enough), else the mod's own. Call it
+ * where ov_connect may be called: an HfApi event, HF_EVENT_GAME_LOADED or later. That costs nothing against calling
+ * hf->on_game_thread from hellforge_mod_init: either way the callback starts once HellForge has hooked the game's
+ * update, up to a minute after HF_EVENT_GAME_LOADED. Returns 1 registered, 0 refused by the host and by HellForge. */
+static inline int ov_on_game_thread(const HfApi* hf, HfMod* mod, HfTickCallback callback, void* user)
+{
+    const OvApi* ov = ov_connect();
+    if (ov != NULL && ov->size >= offsetof(OvApi, on_game_thread) + sizeof ov->on_game_thread && ov->on_game_thread(mod, callback, user))
+        return 1;
+    if (hf->size < offsetof(HfApi, on_game_thread) + sizeof hf->on_game_thread || hf->on_game_thread == NULL) return 0;
+    return hf->on_game_thread(mod, callback, user);
+}
+#endif
 #endif
 
 #endif

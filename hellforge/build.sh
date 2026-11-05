@@ -3,7 +3,9 @@
 # Usage: ./build.sh dll                          the mod's DLL, built exactly as HellForge builds a source mod, then its
 #                                                import check (tests/check_imports.sh)
 #        ./build.sh test                         the Linux unit tests: tests/test_*.c with the portable units of src/
-#        ./build.sh wine-test                    the tests that need the Windows build (Wine; none yet)
+#        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
+#                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
+#                                                once per case, with the stub Overlay Hosts and loader built here
 #        ./build.sh install <HellForge installation>
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
@@ -11,7 +13,8 @@
 # in a way Wine does not implement). Settings: HF_INSTALL (the HellForge installation the toolchain and SDK come from;
 # default HellForge 0.4's Linux install, ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge),
 # HF_ZIG (default the installation's tools/zig-linux Zig), HF_SDK (the mod SDK headers; default the installation's
-# app/sdk), HF_PGREP (the pgrep install asks whether the game or HellForge runs; default pgrep).
+# app/sdk), HF_PGREP (the pgrep install asks whether the game or HellForge runs; default pgrep), PROTON (wine-test: default
+# Steam's Proton - Experimental; its prefix is build/proton).
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo="$(dirname "$here")"
@@ -54,12 +57,12 @@ run_tests() {
   if [ ${#tests[@]} -eq 0 ]; then echo "no tests yet (tests/test_*.c)"; return 0; fi
   toolchain
   # The portable units of src/ (not the entry point and not the Windows platform layer) and the test helpers (the POSIX
-  # platform layer among them; the Wine host belongs to wine-test).
+  # platform layer among them; the Wine host and its stubs, tests/wine_*.c, belong to wine-test).
   for file in "$mod"/src/*.c; do
     case ${file##*/} in dbf.c|platform_win.c) ;; *) sources+=("$file") ;; esac
   done
   for file in "$here"/tests/*.c; do
-    case ${file##*/} in test_*.c|wine_host.c) ;; *) helpers+=("$file") ;; esac
+    case ${file##*/} in test_*.c|wine_*.c) ;; *) helpers+=("$file") ;; esac
   done
   mkdir -p "$here/build/tests"
   local passed=0 failed=0 test name first flags
@@ -81,7 +84,53 @@ run_tests() {
 }
 
 run_wine_tests() {
-  echo "no wine tests yet"
+  build_dll
+  local out="$here/build/wine" flags=(-std=c11 -target x86_64-windows-gnu -O1 -Wall -Werror -Wno-unused-parameter)
+  mkdir -p "$out"
+  # The stand-in HellForge with the synthetic image; the stub Overlay Hosts (one goose_overlay.dll per API version, each
+  # in a folder of its own) with the recording OvApi of tests/fake_ov.c; the stub hellforge_modloader.dll.
+  "$zig" cc "${flags[@]}" -I "$mod/src" -I "$here/tests" -I "$sdk" "$here/tests/wine_host.c" "$here/tests/synthetic.c" \
+      -o "$out/wine_host.exe" || die "The Wine host did not compile."
+  local api
+  for api in 3 4 5; do
+    mkdir -p "$out/overlay-api$api"
+    "$zig" cc "${flags[@]}" -shared -DSTUB_API=$api -I "$mod/src" -I "$here/tests" "$here/tests/wine_overlay_stub.c" \
+        "$here/tests/fake_ov.c" -o "$out/overlay-api$api/goose_overlay.dll" || die "The API $api stub Overlay Host did not compile."
+  done
+  mkdir -p "$out/modloader"
+  "$zig" cc "${flags[@]}" -shared "$here/tests/wine_modloader_stub.c" -o "$out/modloader/hellforge_modloader.dll" \
+      || die "The stub loader did not compile."
+  find "$out" -name '*.lib' -delete
+
+  # As the Overlay Host's build.sh --test runs host_test.exe: Proton sets up a prefix (here build/proton; no Steam app
+  # ids, so nothing registers with Steam as a game), then each case runs on Proton's own wine, which keeps its output.
+  local proton="${PROTON:-$HOME/.local/share/Steam/steamapps/common/Proton - Experimental/proton}"
+  [ -x "$proton" ] || die "no Proton at $proton (set PROTON)"
+  export STEAM_COMPAT_DATA_PATH="$here/build/proton" STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.local/share/Steam}"
+  unset SteamAppId SteamGameId WINEPREFIX
+  mkdir -p "$STEAM_COMPAT_DATA_PATH"
+  "$proton" run 'C:\windows\system32\cmd.exe' /c exit >/dev/null 2>&1 || true
+  w() { printf 'Z:%s' "${1//\//\\}"; }
+  # Each case in a process of its own (the DLL keeps static state); its full output is kept in build/wine/<case>.log.
+  local passed=0 failed=0 name status stubs
+  for name in no-host host-api3 host-api4 host-api5 no-tick; do
+    case $name in
+      no-host) stubs=() ;;
+      no-tick) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")") ;;
+      host-api5) stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      *) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
+    esac
+    status=0
+    WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
+        "$(w "$out/wine_host.exe")" "$(w "$mod/$dllName")" "$name" ${stubs[@]+"${stubs[@]}"} > "$out/$name.log" 2>&1 || status=$?
+    sed -i 's/\r$//' "$out/$name.log" # a Windows program's text-mode stdout ends its lines with CR LF
+    grep -E '^(==|PASS|FAIL)' "$out/$name.log" || true
+    # A case passes when the host exits 0 and printed its last line (a crash in the DLL never gets there).
+    if [ "$status" = 0 ] && grep -qx "== $name: 0 failure(s)" "$out/$name.log"; then echo "PASS $name"; passed=$((passed + 1))
+    else echo "FAIL $name (exit $status; log $out/$name.log)"; failed=$((failed + 1)); fi
+  done
+  echo "wine-test: $passed passed, $failed failed"
+  [ "$failed" -eq 0 ]
 }
 
 running() { # the game or HellForge (by process name, or by the Windows exe in a Wine/Proton command line, or the
