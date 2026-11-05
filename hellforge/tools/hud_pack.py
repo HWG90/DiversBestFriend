@@ -16,9 +16,9 @@ HUD = HF / "hud"
 HOST = HF / "tools/hud_archive_host.lua"
 ADDON = "mods/goose/divers_best_friend"
 PATCH = "data/9ba626afa44a3aa3.patch_0"
-R46 = ("layout", "guards", "mission_blacklist", "menu_latch", "pointing", "camera",
+R46 = ("layout", "guards", "mission_blacklist", "pointing", "camera",
        "icon_colors", "duplicate", "emote", "blacklist", "feedback")
-WHEEL = ("wheel_native", "wheel_input", "wheel_selection", "wheel_release", "wheel_expanded")
+WHEEL = ("wheel_native", "wheel_latch", "wheel_input", "wheel_selection", "wheel_release", "wheel_expanded")
 
 
 def source_module(name, path):
