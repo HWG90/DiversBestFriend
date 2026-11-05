@@ -60,7 +60,7 @@
  * Checks of the first five: init returns 0, logs the version line, registers for HF_EVENT_GAME_LOADED and nothing else.
  * After the event: without a usable host (no-host, host-api3) the "running without a settings window" line, exactly once even after 3
  * ticks, and the tick on HellForge's on_game_thread; with one, one register_panel call for the Status window (id, title,
- * kind, hotkey 0, 640x520), the tick on the host's on_game_thread when it has one (API 5) and HellForge's otherwise, the
+ * kind, hotkey F7, 640x520), the tick on the host's on_game_thread when it has one (API 5) and HellForge's otherwise, the
  * window drawing "starting" before the first tick, the menu open after the first, and, after 3 ticks (the menu closed in
  * the game before the last), the last published snapshot as the Status tab draws it: build OK, the three read features OK,
  * in a mission, the menu closed, no reader reason, four rows with the scene's names and codes. The snapshot is read as a
@@ -86,7 +86,7 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.8 (game 25480438)"
+#define VERSION_LINE "Diver's Best Friend R50-hellforge.9 (game 25480438)"
 #define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"
@@ -659,8 +659,8 @@ static void run_standard(void)
         CHECK(logged(NO_HOST_LINE) == 0, "with an Overlay Host 0.2.0 or later, no \"running without a settings window\" line");
         CHECK(s_panel_count() == 1 && p != NULL && strcmp(p->id, PANEL_ID) == 0, "one settings window with id " PANEL_ID);
         CHECK(p && p->size == sizeof(OvPanelDef) && strcmp(p->title, PANEL_TITLE) == 0 && p->kind == OV_PANEL_WINDOW
-                  && p->hotkey == 0 && p->width == 640.0f && p->height == 520.0f && p->draw != NULL,
-              "the panel is the window \"" PANEL_TITLE "\", no hotkey, 640x520, with a draw callback");
+                  && p->hotkey == VK_F7 && p->width == 640.0f && p->height == 520.0f && p->draw != NULL,
+              "the panel is the window \"" PANEL_TITLE "\", F7 hotkey, 640x520, with a draw callback");
         if (api5)
             CHECK(s_game_thread_count() == 1 && g_ticker_count == 0,
                   "the tick goes through the Overlay Host's on_game_thread (API 5), not HellForge's");

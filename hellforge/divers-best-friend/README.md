@@ -1,8 +1,12 @@
 # Diver's Best Friend for HellForge
 
-This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF, HF-LLL 0.1.0 and Goose Overlay Host 0.6.0. The ZIP contains the native input DLL and the companion archive that draws inside the game HUD.
+This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF, HF-LLL 0.1.0 and NEST 0.8.1 or later. The ZIP contains the native input DLL and the companion archive that draws inside the game HUD.
 
-Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. Select a category to edit its settings in place, or use **Ctrl+F** to search across categories. Use **Ctrl+E** to review staged changes and **F9** to apply them. **Discard** drops staged edits. **Restore defaults** in **Review** stages the default settings for review. The strip reflects the changeable controls on the equipped weapon. The Diagnostics tab shows build checks, HUD ownership and the latest message from the engine addon.
+Press **F7** to open the DBF menu directly. **Page Down** opens the NEST panel list. If a custom NEST configuration assigns F7 to that list, change its launcher shortcut to free F7 for DBF.
+
+In **Settings**, choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. Select a category to edit its settings in place, or use **Ctrl+F** to search across categories. Use **Ctrl+E** to review staged changes and **F9** to apply them. **Discard** drops staged edits. **Restore defaults** in **Review** stages the default settings for review. The strip reflects the changeable controls on the equipped weapon. The Diagnostics tab shows build checks, HUD ownership and the latest message from the engine addon.
+
+Auto Terminal Complete enters the arrows by default. To use instant completion when hosting, choose **Terminals → Terminal input → Instant**. An existing terminal input selection takes precedence over the default.
 
 In **Key bindings**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Exclusions**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
 

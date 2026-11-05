@@ -45,7 +45,7 @@ static const HudOption options[] = {
     OPTION(track_unavailable, "Track unavailable / ineligible", "COOLDOWN DISPLAY", HUD_TOGGLE, false, 0, 1, 1, NULL),
     OPTION(balance_separated_dock, "Center Cooldown Separator", "COOLDOWN DISPLAY", HUD_TOGGLE, true, 0, 1, 1, NULL),
     OPTION(auto_terminal_complete, "Auto Terminal Complete", "TERMINALS", HUD_TOGGLE, true, 0, 1, 1, NULL),
-    OPTION(terminal_input, "Terminal input", "TERMINALS", HUD_CHOICE, 1, 1, 2, 1, terminal_choices),
+    OPTION(terminal_input, "Terminal input", "TERMINALS", HUD_CHOICE, 2, 1, 2, 1, terminal_choices),
     OPTION(input_interval_ms, "Input interval (ms)", "ADVANCED", HUD_SLIDER, DBF_INTERVAL_DEFAULT_MS, 0, DBF_INTERVAL_MAX_MS, 5, NULL),
     OPTION(randomize_input_delay, "Randomize input delay", "ADVANCED", HUD_TOGGLE, false, 0, 1, 1, NULL),
     OPTION(instant_stratagems, "Instant complete Stratagems", "ADVANCED", HUD_TOGGLE, false, 0, 1, 1, NULL),

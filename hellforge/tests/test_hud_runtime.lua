@@ -168,7 +168,7 @@ scope.terminal_controller=function(_,b)
     assert(b==bridge)
     return {
         retry_cleanup=function() return restore_terminal,'terminal byte still held' end,
-        update=function() terminal_ticks=terminal_ticks+1 end,
+        update=function(_,s) assert(s.terminal_input==2);terminal_ticks=terminal_ticks+1 end,
     }
 end
 mask=-1;transient_error=false

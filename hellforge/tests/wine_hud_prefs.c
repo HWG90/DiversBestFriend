@@ -79,13 +79,13 @@ int main(void)
     s.bind[BIND_SLOT2] = (Binding){.kind = BIND_PAD, .code = BIND_PAD_RB};
     s.blacklist_kind[5] = true;
     s.hide_sos = true;
-    s.terminal_input = 2;
+    s.terminal_input = 1;
     assert(hud_prefs_create(path, &s));
     DbfSettings imported;
     n = read_bytes(path);
     assert(!settings_parse(&imported, data, n, NULL, 0));
     assert(imported.bind[BIND_SLOT2].code == BIND_PAD_RB && imported.blacklist_kind[5] &&
-           imported.hide_sos && imported.terminal_input == 2);
+           imported.hide_sos && imported.terminal_input == 1);
 
     /* Simulate edits by a text editor after DBF read its baseline. A UI change
      * updates every matching token, and copies unrelated keys and comments verbatim. */

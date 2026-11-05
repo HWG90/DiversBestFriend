@@ -149,8 +149,8 @@ int main(void)
     CHECK(!editor_apply(&snap.options,&e), "multi-bit pad binding refused");
     e.b = BIND_MOUSE*65536+6;
     CHECK(!editor_apply(&snap.options,&e), "out of range mouse binding refused");
-    CHECK(hud_option_get(&snap.options,"auto_terminal_complete") == 1 && hud_option_get(&snap.options,"terminal_input") == 1,
-          "R50 terminal defaults are available to runtime");
+    CHECK(hud_option_get(&snap.options,"auto_terminal_complete") == 1 && hud_option_get(&snap.options,"terminal_input") == 2,
+          "fresh terminal settings enable completion by entering arrows");
     direct = true;
     int prior_tabs = tabs_opened;
     ov.selectable = select_action;

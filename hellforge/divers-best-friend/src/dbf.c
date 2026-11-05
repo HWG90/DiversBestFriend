@@ -62,7 +62,7 @@
 #include "hud_prefs.h"
 #include "migration.h"
 
-#define DBF_VERSION "R50-hellforge.8"
+#define DBF_VERSION "R50-hellforge.9"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
 #define DBF_TITLE "Diver's Best Friend"
@@ -760,7 +760,7 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
         return;
     }
     if (ov != NULL) {
-        OvPanelDef panel = { sizeof panel, DBF_PANEL_ID, DBF_TITLE, OV_PANEL_WINDOW, 0 };
+        OvPanelDef panel = { sizeof panel, DBF_PANEL_ID, DBF_TITLE, OV_PANEL_WINDOW, VK_F7 };
         bool editor = editor_shell_available(ov);
         panel.width = editor ? 1260.0f : 640.0f;
         panel.height = editor ? 930.0f : 520.0f;

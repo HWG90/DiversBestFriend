@@ -19,7 +19,7 @@ local function terminal_controller(b,bridge,arrow_update)
     -- 989750(manager, stage state, definition+0xD4, entity, dt, local interactor),
     -- the arguments its caller 985839 passes. Cast on first use.
     -- Per update: whether to press arrows as host, and the delay between them.
-    local entering,interval_ms,randomize=false,70,false
+    local entering,interval_ms,randomize=true,70,false
     local stage_delay={}
     local float_buffer=ffi.new('float[1]')
     local function u32(p)
@@ -256,7 +256,8 @@ local function terminal_controller(b,bridge,arrow_update)
         clock=clock+(type(dt)=='number'and math.max(0,math.min(dt,1))or 1/60)
         if clock<next_poll then return end;next_poll=clock+.1
         local enabled=settings and settings.enabled~=false and settings.auto_terminal_complete==true
-        entering,randomize=settings and settings.terminal_input==2,settings and settings.randomize_input_delay==true
+        entering=not settings or settings.terminal_input~=1 -- only an explicit Instant choice skips pacing
+        randomize=settings and settings.randomize_input_delay==true
         interval_ms=settings and settings.input_interval_ms
         if type(interval_ms)~='number' or interval_ms~=interval_ms or interval_ms<0 or interval_ms>250 then interval_ms=70 end
         if self.disabled then self.status='refused';self.reason=self.disabled;return end

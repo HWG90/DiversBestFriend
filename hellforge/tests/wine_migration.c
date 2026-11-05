@@ -28,7 +28,7 @@ int main(void)
     write_file(opts, "native_stratagem_radial.selection_mode\t4\n"
                      "native_stratagem_radial.cooldown_display\t3\n"
                      "native_stratagem_radial.auto_terminal_complete\tfalse\n"
-                     "native_stratagem_radial.terminal_input\t2\n");
+                     "native_stratagem_radial.terminal_input\t1\n");
     write_file(list, "version\t3\n149\ttrue\n43\ttrue\n");
     HANDLE locked = CreateFileW(list, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     assert(locked != INVALID_HANDLE_VALUE && migration_first_start(base, dst) == MIGRATION_FAILED);
@@ -43,7 +43,7 @@ int main(void)
     assert(!settings_parse(&s, data, n, NULL, 0));
     assert(s.hide_sos && s.blacklist_kind[42] && s.cooldown_display == 3 &&
            s.selection_mode_ordered == 1 && s.experimental_layout == 2 &&
-           !s.auto_terminal_complete && s.terminal_input == 2);
+           !s.auto_terminal_complete && s.terminal_input == 1);
     write_file(dst, "; user's existing ini\r\n[bindings]\r\nnext = key:r\r\n");
     assert(migration_first_start(base, dst) == MIGRATION_FAILED);
     f = _wfopen(dst, L"rb");

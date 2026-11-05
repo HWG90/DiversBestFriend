@@ -41,7 +41,7 @@ local defaults={
     instant_stratagems=false,cooldown_icons=true,hide_closed_status=true,
     cooldown_timers=true,cooldown_timer=2,short_timer_style=2,brief_timer_limit=10,
     balance_separated_dock=true,short_status_placement=3,track_unavailable=false,
-    dock_gap=24,cooldown_display=1,weapon_status_strip=true,auto_terminal_complete=false,terminal_input=1,
+    dock_gap=24,cooldown_display=1,weapon_status_strip=true,auto_terminal_complete=false,terminal_input=2,
 }
 local actions={'next','previous','confirm','slot1','slot2','slot3','slot4'}
 local presets={{},{85,100,95},{100,100,100},{115,110,110}}

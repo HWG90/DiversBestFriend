@@ -106,7 +106,7 @@ put(image+0x3483c20,'uint32_t',0xffffffff)
 put(image+0x3483c4c,'uint32_t',0xffffffff)
 local A,B=instances,instances+0x1470
 
-local api={enabled=true,auto_terminal_complete=true}
+local api={enabled=true,auto_terminal_complete=true,terminal_input=1} -- direct-write cases explicitly select Instant
 local scope={terminal_guards_25480438=guards}
 setmetatable(scope,{__index=_G})
 local T=setfenv(assert(loadfile(here..'/../hud/terminal.lua')),scope)()
@@ -165,7 +165,7 @@ local function arrow_case(name,mode,interval,host,setup,frames,check)
     local seen={}
     for frame=1,frames do t.update(1/60,api);seen[frame]=progress(A,2)end
     local ok,why=pcall(check,t,seen)
-    api.terminal_input,api.input_interval_ms=nil,nil;client(false);behaviour='take'
+    api.terminal_input,api.input_interval_ms=1,nil;client(false);behaviour='take'
     for action=1,4 do put(arrow(action),'uint8_t',0)end
     print((ok and 'PASS ' or 'FAIL ')..name..' | '..tostring(t.status)..(ok and '' or ' -> '..tostring(why)))
     if not ok then failures=failures+1 end
@@ -195,6 +195,8 @@ arrow_case('restores the byte when the update fails',1,70,false,function()termin
 arrow_case('waits while an arrow is held',1,70,false,function()terminal(A,2,6,0,CODE);put(arrow(3),'uint8_t',1)end,5,
     function(t,seen)assert(#calls==0);assert(get(arrow(3),'uint8_t')==1 and #pressed()==1);assert(t.status=='Arrow key held; waiting')end)
 -- Terminal input "Enter arrows": the host enters arrows too, paced by the interval.
+arrow_case('missing terminal mode defaults to paced arrows',nil,70,true,function()terminal(A,2,6,0,CODE)end,2,
+    function(t,seen) assert(#calls==1 and seen[1]==1 and seen[2]==1 and #pressed()==0) end)
 arrow_case('host Enter arrows enters instead of writing',2,70,true,function()terminal(A,2,6,3,CODE)end,1,
     function(t,seen)assert(seen[1]==4 and #calls==1);assert(t.status=='Entering terminal code 3/6 (4/6)')end)
 arrow_case('host Enter arrows at 70 ms',2,70,true,function()terminal(A,2,6,0,CODE)end,60,
