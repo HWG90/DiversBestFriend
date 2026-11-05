@@ -44,7 +44,7 @@ local function word(at)
     if not words[at] then words[at]={[0]=0} end
     return words[at]
 end
-natives[0x1446840]=function(at) dock_root=at end
+natives[0x1446840]=function(at) dock_root=at;widget(at).visible=1 end
 natives[0x1839520]=function(at,a,b,c,order,flags)
     assert(a==0 and b==0 and c==0 and order==0x22b and flags==0)
     tile=tile or at
@@ -114,6 +114,10 @@ local function step(style,ms,visible)
     d.sample(s,ms);d.draw(ms,visible)
     assert(not d.timer_error,d.timer_error)
 end
+s.rows[1].dock_payload=nil
+assert(not pcall(step,1,0) and widget(dock_root).visible==0, 'bad first row exposed uninitialized tiles')
+d.hide()
+s.rows[1].dock_payload=8001
 step(1,0);step(1,70);assert(widget(tile).opacity==0.5)
 step(1,400)
 assert(widget(tile).scale[1]==48/64 and widget(tile).position[1]==-30)

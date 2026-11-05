@@ -512,6 +512,9 @@ local function cooldown_dock(b,scope,input)
                     b.set(icon,'anchor',{0,0});order(icon,0x22b)
                     attach(address,icon);finish(address)
                 end
+                -- The constructor sets the visible bit at 0x1446a6d. Publish
+                -- only after every row in the first draw has been validated.
+                visible(address,0)
                 attach(parent,address);finish(parent)
             end
             assert(identity==s.identity and parent==s.dock_parent and b.pointer(address+0xf0)==parent,'Cooldown dock ownership mismatch')
