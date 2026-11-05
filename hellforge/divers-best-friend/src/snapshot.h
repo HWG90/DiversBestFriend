@@ -30,8 +30,8 @@
  * game memory or into another unit's state, and text in fixed fields), so the render thread draws it without calling
  * anything but the Overlay Host.
  *
- * Portable C11: standard headers, platform.h, admission.h, game.h, logic.h, entry.h, settings.h and ui_settings.h (the
- * stratagem names) only. */
+ * Portable C11: standard headers, platform.h, admission.h, game.h, logic.h, entry.h, settings.h and text.h (the stratagem
+ * names) only. */
 #ifndef DBF_SNAPSHOT_H
 #define DBF_SNAPSHOT_H
 
@@ -47,13 +47,15 @@
 #define DBF_SNAP_REASON_SIZE 80 /* admit_reason and build_reason: a reason longer than 79 bytes is cut */
 #define UI_QUEUE_SLOTS 64
 
-#define DBF_LIST_ROWS 16        /* the cards of the HUD list (DBF_VAL_CARD_COUNT); logic_list_rows serves at most 16 */
+#define DBF_LIST_ROWS ((int)DBF_VAL_CARD_COUNT) /* one row per card of the HUD list */
 #define DBF_LIST_NAME_SIZE 48   /* a stratagem's name: the longest vanilla one is 38 bytes, "Stratagem 4294967295" 20 */
 #define DBF_LIST_BIND_SIZE 24   /* a binding as the settings file spells it ("pad:dpad_right" is the longest, 14 bytes) */
 #define DBF_LIST_STATUS_SIZE 64 /* bind_poll's status text */
 #define DBF_LIST_FILE_SIZE 32   /* the settings file's name */
 
-_Static_assert(DBF_LIST_ROWS <= DBF_VAL_CARD_COUNT, "the list view has no more rows than the game view");
+/* snap_fill_list hands logic_list_rows arrays of DBF_LIST_ROWS entries, and logic_list_rows writes LOGIC_LIST_ROWS into
+ * each: they must have room for all of them. */
+_Static_assert(DBF_LIST_ROWS >= LOGIC_LIST_ROWS, "snap_fill_list's arrays hold what logic_list_rows writes");
 
 /* One row of the list. */
 typedef struct ListRowView {

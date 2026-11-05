@@ -128,21 +128,6 @@ static bool balanced(void)
 
 /* --- tests ----------------------------------------------------------------------------------------------------- */
 
-static void test_kind_names(void)
-{
-    CHECK(strcmp(dbf_kind_name(118), "Orbital Precision Strike") == 0, "kind 118 is Orbital Precision Strike");
-    CHECK(strcmp(dbf_kind_name(3), "Eagle 500kg Bomb") == 0, "kind 3 is Eagle 500kg Bomb");
-    CHECK(strcmp(dbf_kind_name(0), "Stratagem 0") == 0, "kind 0 has no name");
-    CHECK(strcmp(dbf_kind_name(150), "Stratagem 150") == 0, "kind 150 is a HellForge kind: Stratagem 150");
-    CHECK(strcmp(dbf_kind_name(4294967295u), "Stratagem 4294967295") == 0, "the largest kind is spelt out");
-    {
-        bool all = true;
-        for (uint32_t k = 0; k < 150; k++)
-            if (dbf_kind_name(k) == NULL || dbf_kind_name(k)[0] == '\0') all = false;
-        CHECK(all, "every vanilla kind has a non-empty name");
-    }
-}
-
 static void test_status_in_mission(void)
 {
     sample(&g_snap);
@@ -576,7 +561,6 @@ static void test_null_api(void)
 
 int main(void)
 {
-    test_kind_names();
     test_status_in_mission();
     test_status_order();
     test_every_feature_line();

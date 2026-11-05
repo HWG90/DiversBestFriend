@@ -2,7 +2,7 @@
 #include <string.h>
 #include "platform.h"
 #include "snapshot.h"
-#include "ui_settings.h"
+#include "text.h"
 
 static bool g_locks_ready; /* the locks were initialised (once, ever: a lock is not initialised twice) */
 static bool g_ready;       /* snap_init has run */
@@ -120,14 +120,7 @@ bool snap_capturing(void)
 
 void snap_copy_text(char* dst, size_t size, const char* src)
 {
-    size_t n = 0;
-    if (dst == NULL || size == 0) return;
-    if (src != NULL)
-        while (n < size - 1 && src[n] != '\0') {
-            dst[n] = src[n];
-            n++;
-        }
-    dst[n] = '\0';
+    dbf_text_copy(dst, size, src);
 }
 
 void snap_fill_admission(DbfSnapshot* s)

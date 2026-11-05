@@ -89,11 +89,15 @@ typedef struct ListState {
 
 typedef enum { LIST_NONE, LIST_MOVED, LIST_CONFIRM } ListEvent;
 
+/* The most rows logic_list_rows serves, and how many entries it writes into each of order[] and eligible[]: one per card
+ * of the HUD list (logic.c asserts it equals DBF_VAL_CARD_COUNT). */
+#define LOGIC_LIST_ROWS 16
+
 /* The rows of the GameView in list order, with whether each may be chosen. Returns the number of rows (GameView.row_count
- * limited to 16, 0 for a NULL view or a negative count): order[0..n) are indices into v->rows from the top of the list
- * down (order[k] = -1 for k >= n), and eligible[i] is whether v->rows[i] may be chosen (indexed by the row, not by its
- * place in the order; false for i >= n). Either array may be NULL. */
-int logic_list_rows(const GameView* v, const DbfSettings* s, int order[16], bool eligible[16]);
+ * limited to LOGIC_LIST_ROWS, 0 for a NULL view or a negative count): order[0..n) are indices into v->rows from the top
+ * of the list down (order[k] = -1 for k >= n), and eligible[i] is whether v->rows[i] may be chosen (indexed by the row,
+ * not by its place in the order; false for i >= n). Both arrays get all LOGIC_LIST_ROWS entries; either may be NULL. */
+int logic_list_rows(const GameView* v, const DbfSettings* s, int order[LOGIC_LIST_ROWS], bool eligible[LOGIC_LIST_ROWS]);
 
 /* One tick of List Select (see above). `levels` are bind_poll's (NULL: all up); `busy` is whether a code entry is under
  * way; `row` (NULL allowed) is set to -1, and on LIST_CONFIRM to the chosen row's index in v->rows. LIST_MOVED: a Next or

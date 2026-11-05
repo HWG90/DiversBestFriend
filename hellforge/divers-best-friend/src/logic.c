@@ -8,9 +8,8 @@
 #define LOGIC_DEADLINE_FLOOR_MS 3000u  /* a code entry gives up after at least this long: R46 selection.lua:92 */
 #define LOGIC_DEADLINE_SLACK_MS 1500u  /* plus this much on top of length * interval: R46 selection.lua:92 */
 
-#define LOGIC_ROWS 16 /* the arrays of logic_list_rows and logic_list_step */
 
-_Static_assert(DBF_VAL_CARD_COUNT == LOGIC_ROWS, "logic_list_rows takes order[16] and eligible[16]");
+_Static_assert(DBF_VAL_CARD_COUNT == LOGIC_LIST_ROWS, "logic_list_rows takes one entry per card of the HUD list");
 _Static_assert(DBF_OFF_CARD_TIMER_KIND_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the timer block holds the kind");
 _Static_assert(DBF_OFF_CARD_TIMER_STATE_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the timer block holds the state");
 _Static_assert(DBF_OFF_CARD_TIMER_INCOMING_SECONDS_OFFSET + 4u <= DBF_OFF_CARD_TIMER_SIZE, "the block holds the seconds");
@@ -83,18 +82,18 @@ static bool row_before(const DbfRow* a, const DbfRow* b)
     return a->card < b->card;
 }
 
-int logic_list_rows(const GameView* v, const DbfSettings* s, int order[16], bool eligible[16])
+int logic_list_rows(const GameView* v, const DbfSettings* s, int order[LOGIC_LIST_ROWS], bool eligible[LOGIC_LIST_ROWS])
 {
-    int idx[LOGIC_ROWS], n;
-    bool ok[LOGIC_ROWS];
+    int idx[LOGIC_LIST_ROWS], n;
+    bool ok[LOGIC_LIST_ROWS];
 
-    for (int k = 0; k < LOGIC_ROWS; k++) {
+    for (int k = 0; k < LOGIC_LIST_ROWS; k++) {
         idx[k] = -1;
         ok[k] = false;
     }
     n = v == NULL ? 0 : v->row_count;
     if (n < 0) n = 0;
-    if (n > LOGIC_ROWS) n = LOGIC_ROWS;
+    if (n > LOGIC_LIST_ROWS) n = LOGIC_LIST_ROWS;
 
     /* A stable insertion sort of the row indices: at most 16 of them. */
     for (int i = 0; i < n; i++) {
@@ -132,8 +131,8 @@ ListEvent logic_list_step(ListState* st, const GameView* v, const DbfSettings* s
                           int* row)
 {
     bool lv[BIND_COUNT], rising[BIND_COUNT];
-    int order[LOGIC_ROWS], n;
-    bool eligible[LOGIC_ROWS];
+    int order[LOGIC_LIST_ROWS], n;
+    bool eligible[LOGIC_LIST_ROWS];
     ListEvent event = LIST_NONE;
 
     if (row != NULL) *row = -1;
@@ -184,7 +183,7 @@ ListEvent logic_list_step(ListState* st, const GameView* v, const DbfSettings* s
 
     /* Next and Previous (selection.lua:76-81): one of them rising, not both. */
     if (rising[BIND_NEXT] != rising[BIND_PREVIOUS]) {
-        int ranked[LOGIC_ROWS], m = 0, at = -1;
+        int ranked[LOGIC_LIST_ROWS], m = 0, at = -1;
         for (int k = 0; k < n; k++) {
             if (!eligible[order[k]]) continue;
             if (order[k] == st->chosen) at = m;

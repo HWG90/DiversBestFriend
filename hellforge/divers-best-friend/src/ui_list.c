@@ -3,18 +3,21 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "text.h"
 #include "ui_list.h"
-#include "ui_settings.h"
 
-/* Sizes in 1080p pixels, scaled by OvFrame.scale. */
-#define LIST_TEXT_PX 22.0f
-#define LIST_MARGIN_PX 24.0f          /* the plate's distance from the left edge of the screen */
-#define LIST_PAD_PX 12.0f             /* inside the plate */
-#define LIST_COLUMN_GAP_PX 18.0f
-#define LIST_ROW_GAP_PX 6.0f
+/* Sizes in 1080p pixels, scaled by OvFrame.scale. Where they come from: the rounding and the bar are DESIGN.md tokens
+ * (HD2-UI-Style's DESIGN.md, "Size"); DESIGN.md has no HUD text size, margin, padding or gaps, and R46 drew no
+ * list of its own (it rearranged the game's), so the other five are DBF's own choices for Plan 2's plain list (Task 11),
+ * to be looked at in game in Task 13; Plan 3 replaces the list. */
+#define LIST_TEXT_PX 22.0f            /* DBF's own: the text size */
+#define LIST_MARGIN_PX 24.0f          /* DBF's own: the plate's distance from the left edge of the screen */
+#define LIST_PAD_PX 12.0f             /* DBF's own: inside the plate (DESIGN.md window_padding's 12 px, up and down) */
+#define LIST_COLUMN_GAP_PX 18.0f      /* DBF's own: between the name, code and timer columns */
+#define LIST_ROW_GAP_PX 6.0f          /* DBF's own: between two rows */
 #define LIST_PLATE_ROUNDING_PX 6.0f   /* DESIGN.md hud_plate_rounding */
 #define LIST_BAR_PX 3.0f              /* DESIGN.md selected_bar */
-#define THEME_ABSENT 0xFFFFFFFFu      /* what a host answers for a token it does not have (before 0.4.0) */
+#define THEME_ABSENT 0xFFFFFFFFu      /* what a host answers for a token it does not have (goose_overlay.h: before 0.4.0) */
 
 /* One row's texts and colours, ready to draw. */
 typedef struct Item {

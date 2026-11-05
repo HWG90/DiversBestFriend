@@ -22,7 +22,7 @@
  * There is no text shadow: the host has no hud_shadow token and a colour is never a literal. The arrows are ASCII because
  * the host loads only ImGui's default glyph range.
  *
- * Portable C11: standard headers, goose_overlay.h, snapshot.h and ui_settings.h (dbf_code_arrows) only. No printf. */
+ * Portable C11: standard headers, goose_overlay.h, snapshot.h and text.h (dbf_code_arrows) only. No printf. */
 #ifndef DBF_UI_LIST_H
 #define DBF_UI_LIST_H
 

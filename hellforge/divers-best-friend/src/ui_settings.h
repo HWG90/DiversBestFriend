@@ -26,8 +26,8 @@
  * The OvApi functions it calls: text, separator, begin_tab_bar, end_tab_bar, begin_tab_item, end_tab_item, begin_table,
  * table_setup_column, table_headers_row, table_next_row, table_next_column, end_table.
  *
- * Portable C11: standard headers, goose_overlay.h, snapshot.h and the generated kind names only. The two text helpers at the
- * end are shared with the snapshot (names) and the plain list (codes). */
+ * Portable C11: standard headers, goose_overlay.h, snapshot.h and text.h (the line builder, the names and the arrows, which
+ * the snapshot and the plain list share) only. */
 #ifndef DBF_UI_SETTINGS_H
 #define DBF_UI_SETTINGS_H
 
@@ -38,18 +38,5 @@
 
 /* NULL ov: nothing is drawn. */
 void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s);
-
-/* The stratagem's name: its entry in dbf_kind_names for vanilla kinds (below 150) that have one, else "Stratagem <kind>"
- * (HellForge mods' kinds start at 150; Plan 3 gives those their own titles). The "Stratagem <kind>" text lives in a
- * static buffer that the next call overwrites: use it before calling again. Render thread only. */
-const char* dbf_kind_name(uint32_t kind);
-
-/* The same name copied into dst[size] (terminated, cut to fit): no shared buffer, so any thread may call it. The game
- * thread names the list view's rows with it while the render thread uses dbf_kind_name. */
-void dbf_kind_name_copy(uint32_t kind, char* dst, size_t size);
-
-/* The first `n` directions of a code (limited to DBF_CODE_CAPACITY) as "^ > v <" into dst[size] (terminated, cut to fit): 1
- * up, 2 right, 3 down, 4 left, "?" for any other value; "" for none. Any thread. */
-void dbf_code_arrows(const uint8_t* code, size_t n, char* dst, size_t size);
 
 #endif

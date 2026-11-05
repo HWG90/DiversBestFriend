@@ -21,7 +21,7 @@
 #include "snapshot.h"
 #include "synthetic.h"
 #include "test.h"
-#include "ui_settings.h"
+#include "text.h"
 
 #define GRACE_OVER 30000u
 
