@@ -145,3 +145,28 @@ assert(recovering:shutdown())
 snapshot.open=false;tick(recovering,1000)
 assert(wheels==before+1 and not token,'manager disable permanently cancels recovery')
 print('Transient rebuild recovery released the lease and manager disable cancelled reinitialization')
+
+-- A terminal can own the game's UI while the selector mask is blocked.
+local allow_terminal,restore_terminal,terminal_ticks=true,true,0
+local get=bridge.dbf_hud_option
+bridge.dbf_hud_option=function(key)
+    if key=='auto_terminal_complete' then return 1 end
+    return get(key)
+end
+bridge.dbf_hud_terminal_active=function(t) return t==token and allow_terminal and 1 or 0 end
+scope.terminal_controller=function(_,b)
+    assert(b==bridge)
+    return {
+        retry_cleanup=function() return restore_terminal,'terminal byte still held' end,
+        update=function() terminal_ticks=terminal_ticks+1 end,
+    }
+end
+mask=-1;transient_error=false
+local terminal_owner=scope.dbf_hud_runtime(bridge)
+tick(terminal_owner,16);assert(terminal_ticks==1 and terminal_owner:ready())
+allow_terminal=false;tick(terminal_owner,16);assert(terminal_ticks==1)
+restore_terminal=false
+assert(not terminal_owner:shutdown() and token==terminal_owner.token)
+restore_terminal=true
+assert(terminal_owner:shutdown() and not token)
+print('Independent terminal gate and pending-byte release passed')

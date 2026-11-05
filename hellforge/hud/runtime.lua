@@ -11,6 +11,7 @@ ffi.cdef[[
     int dbf_hud_guard(unsigned rva,const void *expected,unsigned bytes);
     int dbf_hud_option(const char *key);
     int dbf_hud_buttons(void);
+    int dbf_hud_terminal_active(const void *token);
     int dbf_hud_bound(unsigned action);
     int dbf_hud_blacklisted(unsigned kind);
     int dbf_hud_code(unsigned kind,unsigned char *dirs,unsigned capacity);
@@ -106,10 +107,13 @@ local function dbf_hud_runtime(bridge)
         local errors={}
         local function clean(key,method,...)
             if r[key] then
-                local ok,why=pcall(r[key][method],...)
-                if not ok then errors[#errors+1]=key..': '..tostring(why) end
+                local ok,result,reason=pcall(r[key][method],...)
+                if not ok or result==false then
+                    errors[#errors+1]=key..': '..tostring(reason or result)
+                end
             end
         end
+        clean('terminal','retry_cleanup')
         clean('input','retry_cleanup')
         clean('release','reset')
         clean('selection','step',nil,nil,0)
@@ -224,6 +228,10 @@ local function dbf_hud_runtime(bridge)
         r.strip.update(snapshot,dt)
     end
     local function frame(dt)
+        if r.terminal then
+            local restored,why=r.terminal.retry_cleanup()
+            assert(restored,why or 'terminal input restoration pending')
+        end
         r.input.retry_cleanup()
         local now=r.b.milliseconds()
         if bridge.dbf_hud_option('enabled')==0 then
@@ -247,9 +255,15 @@ local function dbf_hud_runtime(bridge)
             buttons={}
             for i,name in ipairs(actions) do buttons[name]=math.floor(mask/2^(i-1))%2==1 end
         end
-        if buttons and s.auto_terminal_complete and terminal_controller then
-            if not r.terminal then r.terminal=terminal_controller(r.b) end
-            r.terminal.update(dt,s)
+        if s.auto_terminal_complete and terminal_controller then
+            -- The terminal itself can obstruct selector input. The separate C
+            -- gate still checks token, foreground, local avatar and capture.
+            if bridge.dbf_hud_terminal_active(r.token)==1 then
+                if not r.terminal then r.terminal=terminal_controller(r.b,bridge) end
+                r.terminal.update(dt,s)
+                local restored,why=r.terminal.retry_cleanup()
+                assert(restored,why or 'terminal input restoration pending')
+            end
         end
         local snapshot=r.b.snapshot()
         local hud_visible=snapshot and snapshot.hud_visible
