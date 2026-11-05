@@ -37,165 +37,116 @@ local function new_renderer(b,scope)
  local asset=call('void (*)(uintptr_t,uint64_t,uint8_t)',0x144f800)
  local attach=call('void (*)(uintptr_t,uintptr_t)',0x144c5c0)
  local finish=call('void (*)(uintptr_t)',0x144c2c0)
- local opacity=call('void (*)(uintptr_t,float)',0x1448ad0)
+ local backing=call('void (*)(uintptr_t,uint32_t,uint8_t)',0x18166c0)
+ local texture=call('void (*)(uintptr_t,uint32_t,uint64_t)',0x1450120)
+ local material=call('uintptr_t (*)(uintptr_t)',0x144f6e0)
+ local param4=call('void (*)(uintptr_t,uint32_t,const float *)',0x14498c0)
+ local param2=call('void (*)(uintptr_t,uint32_t,const float *)',0x14497a0)
  local order=call('void (*)(uintptr_t,uint32_t)',0x14491f0)
  local visible=call('void (*)(uintptr_t,uint8_t)',0x144cfb0)
  local uv=call('void (*)(uintptr_t, NSR_vec2, NSR_vec2)',0x143eef0)
- -- The icon textures carry a wide empty margin; show their centre so each glyph
- -- fills more of its tile (crop per side, in texture UV units).
- local zoom_crop=0.15
- local uv_min,uv_max=ffi.new('NSR_vec2',{zoom_crop,zoom_crop}),ffi.new('NSR_vec2',{1-zoom_crop,1-zoom_crop})
- local storage,address,identity,parent,key;local size=0x690
- -- Largest icon edge and spacing in HUD pixels (bottom-left pivot, Y up); on the
- -- weapon row the icons shrink to fit its height.
- local icon_size,icon_gap=48,10
+ local uv_min,uv_max=ffi.new('NSR_vec2',{.15,.15}),ffi.new('NSR_vec2',{.85,.85})
+ -- One DBF-owned subtree: container, stock backing (including its sprite), four glyphs.
+ local backing_offset,icons_offset=0x110,0x380
+ local size=icons_offset+4*0x160
+ local storage,address,identity,parent
+ local assets,layout={},nil
  local self={status='closed',icons={}}
  local function owned()return address and b.valid(identity)and b.pointer(address+0xf0)==parent end
  local function bounds()
   assert(ffi.string(ffi.cast('const char *',address-16),16)==string.rep('\165',16),'Weapon status prefix overwritten')
   assert(ffi.string(ffi.cast('const char *',address+size),16)==string.rep('\165',16),'Weapon status suffix overwritten')
  end
- -- Frosted backing with corner trim behind the icons, styled like the Cooldowns
- -- overview panel. It lives on its own screen GUI (the dock owns the other one).
- local panel={}
- local function panel_hide()
-  if panel.lease then assert(panel.lease.release(), "weapon GUI cleanup pending") end
-  panel={}
- end
- local function panel_draw(v,x0,y0,x1,y1,seam)
-  local sr=rawget(_G,'stingray');if not sr then return end
-  if panel.lease and not panel.lease.valid()then panel={} end
-  if not panel.lease then
-   local A=sr.Application;local world=A.main_world()
-   for _,candidate in pairs(A.worlds()or{})do if candidate~=world then world=candidate;break end end
-   if not world then return end
-   panel.owner={};panel.lease=cooldown_gui_pool(sr,'DBFWeaponStripGuiPool').acquire(world,panel.owner)
-   panel.gui,panel.ui,panel.ids=panel.lease.gui,panel.lease.api,{}
-   if type(A.can_get)=='function' and type(sr.Gui.bitmap)=='function' then
-    for _,name in ipairs({'content/ui/shared/material/gui_blur','content/ui/shared/material/blur_background'})do
-     local ok,available=pcall(A.can_get,'material',name)
-     if ok and available then panel.blur_material=name;break end
-    end
-   end
-  end
-  local G,gui=panel.ui,panel.gui
-  for _,item in ipairs(panel.ids)do G['destroy_'..item[1]](gui,item[2])end
-  panel.ids={}
-  -- Weapon HUD space (Y up) to screen GUI space through the container matrix.
-  local function screen(x,y)return v[1]*x+v[3]*y+v[5],v[2]*x+v[4]*y+v[6]end
-  local ax,ay=screen(x0,y0);local bx,by=screen(x1,y1)
-  local left,bottom=math.min(ax,bx),math.min(ay,by)
-  local width,height=math.abs(bx-ax),math.abs(by-ay)
-  local unit=math.abs(bx-ax)/(x1-x0)
-  local function add(kind,id)if id~=nil and id~=false then panel.ids[#panel.ids+1]={kind,id}end end
-  local function color(name,alpha_scale)
-   local c=style.tokens.colors[name]
-   return sr.Color(math.floor(c[4]*(alpha_scale or 1)+0.5),c[1],c[2],c[3])
-  end
-  local frosted=false
-  if panel.blur_material then
-   local ok,value=pcall(G.bitmap,gui,panel.blur_material,sr.Vector3(left,bottom,0x21f),sr.Vector2(width,height),color('text',210/255))
-   if ok and value then add('bitmap',value);frosted=true end
-  end
-  -- Match the Lua weapon panel and cooldown panel: a frosted backing needs
-  -- less tint to keep the native sprite underneath readable.
-  local plate_alpha=(frosted and 95 or 155)/204
-  add('rect',G.rect(gui,sr.Vector3(left,bottom,0x220),sr.Vector2(width,height),color('hud_plate',plate_alpha)))
-  local edge=math.max(1,unit*.65)
-  -- Butted against the native box, the left edge is a seam marked by a vertical
-  -- separator inset from top and bottom. No corner trims (they read as clutter
-  -- once the panel continues the native row).
-  if seam then
-   local inset=math.min(height/4,8*unit)
-   add('rect',G.rect(gui,sr.Vector3(left-edge/2,bottom+inset,0x221),sr.Vector2(edge,height-2*inset),color('line_strong')))
-  end
-  panel.lease.show()
- end
  function self.close()
-  panel_hide()
   if not address then return true end
   local ok,why=b.release_owned_ui(storage,address,identity,parent,{})
   if not ok then self.status=why;return false,why end
-  bounds();storage,address,identity,parent,key=nil,nil,nil,nil,nil;self.status='closed';return true
+  bounds();storage,address,identity,parent=nil,nil,nil,nil
+  assets,layout={},nil
+  self.status='closed';return true
  end
  function self.hide()
-  panel_hide()
-  if owned()then visible(address,0)end;key=nil;self.status='hidden'
+  if owned()then visible(address,0)end
+  self.status='hidden'
  end
- local node_floats,matrix_lanes=ffi.new('float[44]'),{0,2,8,10,12,14}
- local function geometry(node)
-  local h=assert(b.read(node,0xb0));local v=node_floats;ffi.copy(v,h,#h)
-  local width,height=v[9],v[10]
-  local m={};for i,k in ipairs(matrix_lanes)do m[i]=v[25+k]end
-  for _,n in ipairs(m)do assert(n==n and math.abs(n)<=100000,'Invalid weapon HUD transform')end
-  assert(width>0 and width<10000 and height>0 and height<10000,'Invalid weapon HUD size')
-  return width,height,m
+ local function attach_child(owner,child)
+  attach(owner,child);finish(owner)
  end
+ local function create(root,row,resource)
+  storage=ffi.new('uint8_t[?]',size+64)
+  address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
+  ffi.fill(ffi.cast('void *',address-16),16,165);ffi.fill(ffi.cast('void *',address+size),16,165)
+  identity,parent=root,row
+  init(address,1)
+  b.set(address,'anchor',{1,0});b.set(address,'pivot',{0,0});b.set(address,'position',{0,0})
+  visible(address,0)
+  local plate=address+backing_offset
+  backing(plate,0x226,1) -- same stretch wrapper and gui_blur_curved as frame+0x8c0
+  assert(b.pointer(plate+0xf8)==resource and b.pointer(plate+0x110+0xf0)==plate,'Weapon backing layout changed')
+  attach_child(address,plate)
+  for i=0,3 do
+   local p=address+icons_offset+i*0x160
+   sprite(p);assert(b.pointer(p+0xf8)==resource,'Weapon icon context changed')
+   -- Stock option sprite constructor (1828c26) and diffuse_map update (1829219).
+   -- Preserve all DDS channels; the native shader interprets their masks.
+   asset(p,0x358512d85e35b47dULL,0)
+   assert(tonumber(material(p))~=0,'Weapon icon material unavailable')
+   param4(p,0x7701209e,ffi.cast('const float *',b.base+0x21e2d60))
+   param2(p,0xe13777ce,ffi.cast('const float *',b.base+0x21e53c0))
+   b.set(p,'anchor',{0,0});b.set(p,'pivot',{0,0});order(p,0x228)
+   visible(p,0);attach_child(address,p)
+  end
+  attach_child(row,address);assert(owned(),'Weapon strip attachment failed')
+ end
+ local dimensions=ffi.new('float[2]')
  function self.draw(root,model)
   local icons=M.icons(model);self.icons=icons
   if #icons==0 then self.hide();return end
   assert(b.valid(root),'Weapon status HUD changed')
-  -- Same native current-weapon image used by the stock HUD; follow its matrix.
-  local weapon=root+0x251468
-  local context=assert(b.pointer(root+0x820+0xf8),'Weapon HUD context unavailable')
-  local node,seen,frame,box=weapon,{},weapon,weapon
-  for depth=1,24 do
-   assert(node>=root and node<root+0x500000 and not seen[node],'Weapon HUD ancestry escaped or cycled')
-   seen[node]=true
-   local flags=b.u32(b.read(node,4),0)
-   assert(flags and flags%2==1 and b.pointer(node+0xf8)==context,'Weapon HUD ancestry retired')
-   if node==root+0x820 then break end
-   box,frame=frame,node -- frame: last ancestor below the container; box: the weapon row inside it
-   node=assert(b.pointer(node+0xf0),'Weapon HUD ancestry detached')
+  local frame,container=root+0x24e3a0,root+0x820
+  local row,plate,holder,glyph=frame+0x7b0,frame+0x8c0,frame+0x2fb8,frame+0x30c8
+  local context=assert(b.pointer(container+0xf8),'Weapon HUD context unavailable')
+  local function child(p,owner)
+   local flags=b.u32(b.read(p,4),0)
+   assert(flags and flags%2==1 and b.pointer(p+0xf8)==context and b.pointer(p+0xf0)==owner,'Weapon HUD row changed')
   end
-  assert(node==root+0x820 and frame==root+0x24e3a0,'Weapon HUD frame mismatch')
-  assert(box~=frame and box~=weapon,'Weapon row ancestry unavailable')
-  geometry(weapon) -- validates the weapon image's transform
-  local vw,vh,v=geometry(root+0x820)
-  local det=v[1]*v[4]-v[2]*v[3];assert(math.abs(det)>0.01,'Weapon HUD transform degenerate')
-  -- The weapon row's background box (the frame's child holding the weapon image)
-  -- is the reference (container space, Y up).
-  local bw,bh,bm=geometry(box);local box_top,box_bottom,box_left,box_right=-math.huge,math.huge,math.huge,-math.huge
-  for _,c in ipairs({{0,0},{bw,0},{0,bh},{bw,bh}})do
-   local ex,ey=bm[5]+bm[1]*c[1]+bm[3]*c[2]-v[5],bm[6]+bm[2]*c[1]+bm[4]*c[2]-v[6]
-   local lx=(ex*v[4]-ey*v[3])/det
-   local ly=(ey*v[1]-ex*v[2])/det
-   box_top,box_bottom=math.max(box_top,ly),math.min(box_bottom,ly)
-   box_left,box_right=math.min(box_left,lx),math.max(box_right,lx)
-  end
-  -- The panel sits on the weapon's own row, right of its box: flush with the
-  -- box's top and bottom, a small gap from its right end. Icons scale to fit
-  -- the row height (at most icon_size).
-  local gap,pad=0,4 -- butted against the native box; the seam gets a separator
-  local edge=math.max(8,math.min(icon_size,(box_top-box_bottom)-2*pad))
-  local spacing=math.min(icon_gap,edge*0.25)
-  local row=#icons*edge+(#icons-1)*spacing
-  local x0=box_right+gap;local left=x0+pad
-  local cy=box_bottom+((box_top-box_bottom)-edge)/2
-  local parts={tostring(root),string.format('%.2f,%.2f,%.2f',left,cy,edge)}
-  for _,item in ipairs(icons)do parts[#parts+1]=item.asset end
-  local nextkey=table.concat(parts,':');if owned()and key==nextkey and panel.lease and panel.lease.valid() then return end
-  if address and not owned()then assert(self.close())end
-  scope.context_scope(root+0x820,function(resource)
-   if not address then
-    storage=ffi.new('uint8_t[?]',size+64);address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
-    ffi.fill(ffi.cast('void *',address-16),16,165);ffi.fill(ffi.cast('void *',address+size),16,165)
-    identity,parent=root,root+0x820
-    init(address,1);b.set(address,'size',{vw,vh});b.set(address,'anchor',{0,0});b.set(address,'pivot',{0,0});b.set(address,'position',{0,0});opacity(address,1)
-    for i=1,4 do
-     local p=address+0x110+(i-1)*0x160;sprite(p);assert(b.pointer(p+0xf8)==resource,'Weapon icon context changed')
-     b.set(p,'anchor',{0,0});b.set(p,'pivot',{0,0});b.set(p,'size',{icon_size,icon_size});opacity(p,.92);order(p,0x400)
-     attach(address,p);finish(address)
+  child(frame,container);child(row,frame);child(plate,row);child(plate+0x110,plate);child(holder,row);child(glyph,holder)
+  if address and (identity~=root or not owned())then assert(self.close())end
+  ffi.copy(dimensions,assert(b.read(row+0x24,8)),8)
+  local height=tonumber(dimensions[1])
+  assert(height>8 and height<10000,'Invalid weapon row height')
+  local edge=math.min(48,height-8)
+  local spacing=math.min(10,edge*.25)
+  local resized=not layout or layout.height~=height or layout.count~=#icons
+  local wrapper_style=b.get_text_style(plate)
+  local backing_style=b.get_text_style(plate+0x110)
+  local glyph_style,holder_style=b.get_text_style(glyph),b.get_text_style(holder)
+  for i=1,4 do glyph_style[i]=glyph_style[i]*holder_style[i]end
+  local style_key=table.concat(wrapper_style,',')..':'..table.concat(backing_style,',')..':'..table.concat(glyph_style,',')
+  local changed=resized or self.status~='visible' or layout.style~=style_key
+  for i,item in ipairs(icons)do if assets[i]~=item.asset then changed=true end end
+  if not changed then return end
+  scope.context_scope(row,function(resource)
+   if not address then create(root,row,resource)end
+   local owned_plate=address+backing_offset
+   b.set_text_style(owned_plate,wrapper_style);b.set_text_style(owned_plate+0x110,backing_style)
+   if resized then b.set(address,'size',{8+#icons*edge+(#icons-1)*spacing,height})end
+   for i=1,4 do
+    local p=address+icons_offset+(i-1)*0x160
+    local item=icons[i]
+    if item then
+     if assets[i]~=item.asset then
+      texture(p,0x3aa8b87e,asset_ids[item.asset]);uv(p,uv_min,uv_max);assets[i]=item.asset
+     end
+     if resized then
+      b.set(p,'size',{edge,edge});b.set(p,'position',{4+(i-1)*(edge+spacing),(height-edge)/2})
+     end
+     b.set_text_style(p,glyph_style)
     end
-    attach(parent,address);finish(parent);assert(owned(),'Weapon strip attachment failed')
+    if resized then visible(p,item and 1 or 0)end
    end
-   for i=1,4 do local p=address+0x110+(i-1)*0x160;local item=icons[i]
-    if item then asset(p,asset_ids[item.asset],0);uv(p,uv_min,uv_max);b.set(p,'size',{edge,edge});b.set(p,'position',{left+(i-1)*(edge+spacing),cy});visible(p,1)else visible(p,0)end
-   end
-   visible(address,1);bounds();key=nextkey;self.status='visible'
+   bounds();visible(address,1);layout={height=height,count=#icons,style=style_key};self.status='visible'
   end)
-  local drawn,why=pcall(panel_draw,v,x0,box_bottom,left+row+pad,box_top,true)
-  if not drawn then panel_hide();self.panel_error=tostring(why)end
  end
  return self
 end

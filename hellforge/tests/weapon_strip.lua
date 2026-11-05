@@ -93,3 +93,88 @@ assert(reader.poll()==nil and reader.status:find('entity identity',1,true))
 accept=false
 local denied=make_reader({base=base},bridge)
 assert(denied.poll()==nil and denied.status:find('layout mismatch',1,true))
+
+-- Exercise the renderer through its production update/hide/close entry points.
+ffi.cdef 'typedef struct {float x,y;} NSR_vec2;'
+local root,resource=0x40000000,8192
+local frame=root+0x24e3a0
+local stockrow,plate,holder,glyph=frame+0x7b0,frame+0x8c0,frame+0x2fb8,frame+0x30c8
+local nodes={}
+local function node(p,owner)
+    nodes[p]={owner=owner,style={1,1,1,1}}
+    return nodes[p]
+end
+node(root+0x820);node(frame,root+0x820);node(stockrow,frame)
+node(plate,stockrow).style[1]=.5
+node(plate+0x110,plate).style={1,.75,.74,.72}
+node(holder,stockrow);node(glyph,holder).style={.7,1,.98,.85}
+local strip,scopes,releases,bindings=nil,0,0,0
+local function mine(p) assert(strip and p>=strip and p<strip+0x900,'write outside owned subtree');return nodes[p] end
+local calls={
+    [0x1446840]=function(p,k) assert(k==1);strip=p;node(p) end,
+    [0x18166c0]=function(p,order,curved)
+        assert(p==strip+0x110 and order==0x226 and curved==1)
+        node(p);node(p+0x110,p)
+    end,
+    [0x143eab0]=function(p) mine(p);node(p) end,
+    [0x144f800]=function(p,id,mode) assert(id==0x358512d85e35b47dULL and mode==0);mine(p).asset=id end,
+    [0x144f6e0]=function(p) assert(mine(p).asset);return p end,
+    [0x14498c0]=function(p,id,v) assert(mine(p).asset and id==0x7701209e and tonumber(ffi.cast('uintptr_t',v))==base+0x21e2d60) end,
+    [0x14497a0]=function(p,id,v) assert(mine(p).asset and id==0xe13777ce and tonumber(ffi.cast('uintptr_t',v))==base+0x21e53c0) end,
+    [0x14491f0]=function(p,order) assert(mine(p) and order==0x228) end,
+    [0x144cfb0]=function(p,v) mine(p).visible=v end,
+    [0x144c5c0]=function(parent,p) assert(parent==stockrow or parent==strip);mine(p).owner=parent end,
+    [0x144c2c0]=function(parent) assert(parent==stockrow or parent==strip) end,
+    [0x1450120]=function(p,slot,id) assert(slot==0x3aa8b87e and mine(p).asset);nodes[p].texture=id;bindings=bindings+1 end,
+    [0x143eef0]=function(p,lo,hi) assert(mine(p).texture and math.abs(lo.x-.15)<.001 and math.abs(hi.y-.85)<.001) end,
+}
+local proxy=setmetatable({cast=function(sig,v)
+    if sig:find('(*)',1,true) then return assert(calls[v-base],sig) end
+    return ffi.cast(sig,v)
+end},{__index=ffi})
+local model=first
+local env=setmetatable({
+    require=function(name) assert(name=='ffi');return proxy end,
+    weapon_reader=function() return {poll=function()return model end}end,
+},{__index=_G})
+local chunk=assert(loadfile(hud..'/weapon_strip.lua'));setfenv(chunk,env)
+local backend={
+    base=base,valid=function(id)return id==root end,
+    pointer=function(p)
+        if nodes[p-0xf8]then return resource end
+        if nodes[p-0xf0]then return nodes[p-0xf0].owner end
+    end,
+    read=function(p,n)
+        if n==4 and nodes[p]then return 1 end
+        assert(p==stockrow+0x24 and n==8)
+        return ffi.string(ffi.new('float[2]',{450,56}),8)
+    end,
+    u32=function(word)return word end,
+    set=function(p,k,v)mine(p)[k]=v end,
+    get_text_style=function(p)return {unpack(nodes[p].style)}end,
+    set_text_style=function(p,style)mine(p).style={unpack(style)}end,
+    release_owned_ui=function(storage,p,id,parent)
+        assert(storage and p==strip and id==root and parent==stockrow and nodes[p].owner==stockrow)
+        nodes[p].owner=nil;releases=releases+1;return true
+    end,
+}
+local renderer=chunk().weapon_strip(backend,{context_scope=function(p,fn)
+    assert(p==stockrow);scopes=scopes+1;return fn(resource)
+end},{})
+local function tick()renderer.update({identity=root},.1)end
+tick();assert(renderer.status=='visible',renderer.status)
+local icon=strip+0x380
+assert(nodes[strip].owner==stockrow and nodes[strip].anchor[1]==1)
+assert(nodes[strip].size[1]==230 and nodes[icon].size[1]==48)
+assert(nodes[icon].texture==0x3efff09cd12fb89aULL and nodes[icon].style[1]==.7)
+assert(nodes[strip+0x110].style[1]==.5 and nodes[strip+0x220].style[2]==.75)
+tick();assert(scopes==1 and bindings==4)
+nodes[plate].style[1]=0;nodes[glyph].style[1]=1
+tick();assert(nodes[strip+0x110].style[1]==0 and nodes[icon].style[1]==1 and bindings==4)
+model={changeable={fire_mode=true},fire_mode='AUTO'}
+tick();assert(nodes[icon].texture==0x6115051c9558c50eULL and nodes[icon+0x160].visible==0)
+nodes[holder].owner=frame
+tick();assert(renderer.status:find('Weapon HUD row changed',1,true) and nodes[strip].visible==0)
+nodes[holder].owner=stockrow;tick();assert(nodes[strip].visible==1)
+renderer.hide();assert(nodes[strip].visible==0)
+assert(renderer.close() and renderer.close() and releases==1 and nodes[glyph].owner==holder)
