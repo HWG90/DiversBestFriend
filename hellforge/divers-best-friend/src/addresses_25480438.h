@@ -6,6 +6,7 @@
 #ifndef DBF_ADDRESSES_25480438_H
 #define DBF_ADDRESSES_25480438_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Features in admission's order. DbfWitness.features is a mask of (1u << DBF_FEATURE_*). */
@@ -27,7 +28,7 @@
 /* Globals (RVAs in game.dll) and offsets, from R46. */
 #define DBF_RVA_HUD_ROOT 0x346d538u /* R46 native.lua:77, input.lua:98 */
 #define DBF_OFF_HUD_READY_OFFSET 0x24e334u /* R46 native.lua:78 */
-#define DBF_RVA_GAME_STATE 0x3326340u /* R46 native.lua:81, input.lua:96 */
+#define DBF_RVA_GAME_STATE 0x3326340u /* R46 native.lua:81, input.lua:96, native.lua:329 */
 #define DBF_OFF_GAME_MODE_OFFSET 0xac21cu /* R46 native.lua:82, input.lua:97 */
 #define DBF_OFF_HUD_PANEL_OFFSET 0x395100u /* 0x24e340+0x146dc0; R46 native.lua:87, input.lua:100 */
 #define DBF_OFF_LIST_OFFSET 0x1040u /* R46 native.lua:88 */
@@ -99,6 +100,33 @@
 #define DBF_OFF_DEFINITION_CODE_OFFSET 0x40u /* R46 input.lua:165 */
 #define DBF_OFF_DEFINITION_CODE_COUNT_OFFSET 0x48u /* R46 input.lua:165 */
 #define DBF_OFF_CODE_STRIDE 0x4u /* R46 input.lua:171 */
+#define DBF_RVA_EFFECTS 0x33264b0u /* R46 input.lua:153 */
+#define DBF_RVA_POSITIONS 0x3326508u /* R46 input.lua:150 */
+#define DBF_OFF_POSITIONS_LOOKUP_OFFSET 0x40u /* R46 input.lua:151 */
+#define DBF_OFF_POSITIONS_ENTRIES_OFFSET 0x68u /* R46 input.lua:152 */
+#define DBF_OFF_POSITIONS_ENTRY_STRIDE 0x308u /* R46 input.lua:152 */
+#define DBF_OFF_POSITION_OFFSET 0x2e0u /* R46 input.lua:152 */
+#define DBF_OFF_POSITION_SIZE 0xcu /* R46 input.lua:152 */
+#define DBF_OFF_AVATAR_SCRAMBLE_SEED_OFFSET 0x11b8u /* R46 input.lua:157 */
+#define DBF_OFF_COMPONENT_DIRECTION_BASE 0x3u /* R46 input.lua:260 */
+#define DBF_OFF_COMPONENT_MATCHED_OFFSET 0x14u /* R46 input.lua:242, input.lua:259, input.lua:275 */
+#define DBF_OFF_COMPONENT_QUEUED_OFFSET 0x2cu /* R46 input.lua:242, input.lua:384 */
+#define DBF_OFF_ACTION_ENTRY_STRIDE 0x20u /* R46 input.lua:188, input.lua:265, input.lua:293 */
+#define DBF_OFF_ACTION_TRIGGER_OFFSET 0x18u /* R46 input.lua:287, menu_latch.lua:53 */
+#define DBF_OFF_WEAPON_OFFSET 0x420u /* R46 input.lua:139 */
+#define DBF_OFF_WEAPON_SLOT_OFFSET 0x4u /* R46 input.lua:332, input.lua:337 */
+#define DBF_OFF_CONTROLS_MENU_ACTION_OFFSET 0x3fc8u /* 808+32*(97*5); R46 input.lua:314, menu_latch.lua:38, menu_latch.lua:53 */
+#define DBF_OFF_CONTROLS_MENU_TRIGGER_OFFSET 0x3fe0u /* 808+32*(97*5)+24; R46 menu_latch.lua:38, menu_latch.lua:53 */
+#define DBF_OFF_BINDING_MAP_OFFSET 0xa7ad0u /* R46 menu_latch.lua:11 */
+#define DBF_OFF_BINDING_MAP_CAPACITY_OFFSET 0x8u /* R46 menu_latch.lua:12 */
+#define DBF_OFF_BINDING_BUCKET_STRIDE 0x148u /* R46 menu_latch.lua:15 */
+#define DBF_OFF_BINDING_BUCKET_COUNT_OFFSET 0x4u /* R46 menu_latch.lua:17 */
+#define DBF_OFF_BINDING_BUCKET_ENTRIES_OFFSET 0x8u /* R46 menu_latch.lua:32, menu_latch.lua:48, menu_latch.lua:65 */
+#define DBF_OFF_BINDING_ENTRY_SIZE 0x14u /* R46 menu_latch.lua:32, menu_latch.lua:48, menu_latch.lua:65 */
+#define DBF_OFF_BINDING_ENTRY_TRIGGER_OFFSET 0x8u /* R46 menu_latch.lua:66 */
+#define DBF_OFF_AUDIO_CALL_OFFSET 0x288u /* R46 native.lua:330 */
+#define DBF_OFF_AUDIO_TAIL_CALL_OFFSET 0x338u /* R46 native.lua:330 */
+#define DBF_OFF_GAME_AUDIO_OFFSET 0x10f8u /* R46 native.lua:330 */
 
 /* Values R46 compares with or bounds its reads by (not addresses), from R46. */
 #define DBF_VAL_GAMEPLAY_MODE 4u /* R46 native.lua:82, input.lua:97 */
@@ -120,7 +148,7 @@
 #define DBF_VAL_MISSION_PEER_MAX 32u /* R46 input.lua:129 */
 #define DBF_VAL_PAYLOAD_ENTRY_MAX 32u /* R46 input.lua:230 */
 #define DBF_VAL_KIND_LIMIT 150u /* R46 input.lua:5 */
-#define DBF_VAL_VANILLA_KINDS 149u /* R46 native.lua:55 */
+#define DBF_VAL_VANILLA_KINDS 149u /* R46 native.lua:55, input.lua:157 */
 #define DBF_VAL_DEFINITION_TABLE_ALIGN 8u /* R46 native.lua:52 */
 #define DBF_VAL_DEFINITION_RELOCATION_SPAN 0x400000u /* R46 native.lua:52 */
 #define DBF_VAL_DEFINITION_ALIGN 4u /* R46 input.lua:147, input.lua:163 */
@@ -129,6 +157,53 @@
 #define DBF_VAL_CODE_MAX 12u /* R46 input.lua:166 */
 #define DBF_VAL_DIRECTION_MIN 1u /* R46 input.lua:171 */
 #define DBF_VAL_DIRECTION_MAX 4u /* R46 input.lua:171 */
+#define DBF_VAL_SCRAMBLE_NONE 0xffffffffu /* R46 input.lua:156, native.lua:334 */
+#define DBF_VAL_POSITIONS_INDEX_LIMIT 65536u /* R46 input.lua:151 */
+#define DBF_VAL_ACTION_LEFT 1u /* R46 input.lua:263 */
+#define DBF_VAL_ACTION_RIGHT 2u /* R46 input.lua:263 */
+#define DBF_VAL_ACTION_UP 3u /* R46 input.lua:263 */
+#define DBF_VAL_ACTION_DOWN 4u /* R46 input.lua:263 */
+#define DBF_VAL_DIRECTION_1_ACTION 3u /* R46 input.lua:264 */
+#define DBF_VAL_DIRECTION_2_ACTION 2u /* R46 input.lua:264 */
+#define DBF_VAL_DIRECTION_3_ACTION 4u /* R46 input.lua:264 */
+#define DBF_VAL_DIRECTION_4_ACTION 1u /* R46 input.lua:264 */
+#define DBF_VAL_ACTION_PRESSED 1u /* R46 input.lua:267, input.lua:290, input.lua:315 */
+#define DBF_VAL_ACTION_RELEASED 0u /* R46 input.lua:271, input.lua:290, input.lua:315 */
+#define DBF_VAL_STRATAGEM_SLOT 5u /* R46 input.lua:334, input.lua:337, native.lua:340 */
+#define DBF_VAL_WEAPON_SLOT_MIN 1u /* R46 input.lua:333 */
+#define DBF_VAL_WEAPON_SLOT_MAX 7u /* R46 input.lua:333 */
+#define DBF_VAL_PAYLOAD_SLOTS_MIN 8u /* R46 input.lua:358 */
+#define DBF_VAL_SLOT_MIN 1u /* R46 input.lua:356 */
+#define DBF_VAL_SLOT_MAX 4u /* R46 input.lua:356 */
+#define DBF_VAL_PAYLOAD_SLOT_BASE 3u /* R46 input.lua:361 */
+#define DBF_VAL_BINDING_MAP_CAPACITY 256u /* R46 menu_latch.lua:12 */
+#define DBF_VAL_BINDING_MENU_KEY 0x50000u /* R46 menu_latch.lua:16 */
+#define DBF_VAL_BINDING_COUNT_MAX 16u /* R46 menu_latch.lua:17 */
+#define DBF_VAL_TRIGGER_PRESS 0u /* R46 menu_latch.lua:55 */
+#define DBF_VAL_TRIGGER_HOLD 2u /* R46 menu_latch.lua:55, menu_latch.lua:67, input.lua:288 */
+#define DBF_VAL_TRIGGER_LONG_HOLD 9u /* R46 menu_latch.lua:55, menu_latch.lua:67, input.lua:288 */
+#define DBF_VAL_BINDING_FLAGS_FORMAT_DIVISOR 16u /* R46 menu_latch.lua:69 */
+#define DBF_VAL_BINDING_FLAGS_TRIGGER_DIVISOR 65536u /* R46 menu_latch.lua:69, menu_latch.lua:71 */
+#define DBF_VAL_BINDING_FLAGS_FIELD_MODULUS 16u /* R46 menu_latch.lua:69 */
+#define DBF_VAL_BINDING_FLAGS_FORMAT 4u /* R46 menu_latch.lua:69 */
+#define DBF_VAL_SOUND_MOVE 0x39425a55u /* R46 native.lua:326 */
+#define DBF_VAL_SOUND_CONFIRM 0xdd274583u /* R46 native.lua:326 */
+
+/* Game functions the port calls (RVAs in game.dll), from R46, each with the witnesses that guard
+   it: every one of them gates the features that call the function. */
+/* SCRAMBLE_QUERY: R46 native.lua:303; guarded by scramble_query, scramble_query_position */
+#define DBF_FN_SCRAMBLE_QUERY 0xa10820u
+/* OPEN_INPUT: R46 native.lua:300; guarded by release_guarded_open, release_hold_test, release_match_survives,
+   release_opener_slot_guard, release_opener_slot_call */
+#define DBF_FN_OPEN_INPUT 0xa8e850u
+/* CLOSE_INPUT: R46 native.lua:301; guarded by release_close */
+#define DBF_FN_CLOSE_INPUT 0xa8fb50u
+/* INPUT_HANDLER: R46 native.lua:298; guarded by input_handler, append_and_match */
+#define DBF_FN_INPUT_HANDLER 0xa900d0u
+/* REQUEST_SLOT: R46 native.lua:304; guarded by release_weapon_request, release_weapon_request_assignment */
+#define DBF_FN_REQUEST_SLOT 0xa93e90u
+/* UI_SOUND: R46 native.lua:302; guarded by ui_sound */
+#define DBF_FN_UI_SOUND 0x1327f50u
 
 typedef struct {
     const char* name;
@@ -140,6 +215,16 @@ typedef struct {
 
 extern const DbfWitness dbf_witnesses[];
 extern const int dbf_witness_count;
+
+/* A mission stratagem R46 lets the player blacklist (its mission_blacklist_names), with R46's default. */
+typedef struct {
+    uint32_t kind;
+    const char* name;
+    bool default_on;
+} DbfBlacklistKind;
+
+extern const DbfBlacklistKind dbf_blacklist_kinds[];
+extern const int dbf_blacklist_kind_count;
 
 #ifdef DBF_ADDRESSES_DEFINE
 /* dock_charge_group_layout: guards.lua:3, unreadable; dock tile's charge group at +0x920 (dock tile constructor);
@@ -619,6 +704,47 @@ const DbfWitness dbf_witnesses[] = {
     { "dock_charge_count", 0x183aef1u, 19, (1u << DBF_FEATURE_DOCK), dbf_w_dock_charge_count },
 };
 const int dbf_witness_count = (int)(sizeof dbf_witnesses / sizeof dbf_witnesses[0]);
+
+const DbfBlacklistKind dbf_blacklist_kinds[] = {
+    { 5u, "ORBITAL ILLUMINATION FLARE", false }, /* R46 mission_blacklist.lua:2 */
+    { 7u, "EXTRACTION BEACON", false }, /* R46 mission_blacklist.lua:3 */
+    { 11u, "RAISE FLAG", false }, /* R46 mission_blacklist.lua:4 */
+    { 17u, "BUG THUMPER", false }, /* R46 mission_blacklist.lua:5 */
+    { 19u, "SEISMIC PROBE", false }, /* R46 mission_blacklist.lua:6 */
+    { 28u, "SEAF Artillery", false }, /* R46 mission_blacklist.lua:7 */
+    { 29u, "DARK FLUID BACKPACK", false }, /* R46 mission_blacklist.lua:8 */
+    { 33u, "Resupply", false }, /* R46 mission_blacklist.lua:9 */
+    { 36u, "OIL RIG EXTRACT", false }, /* R46 mission_blacklist.lua:10 */
+    { 42u, "HELLBOMB", false }, /* R46 mission_blacklist.lua:11 */
+    { 48u, "DATA JACK", false }, /* R46 mission_blacklist.lua:12 */
+    { 49u, "Eagle Rearm", false }, /* R46 mission_blacklist.lua:13 */
+    { 64u, "TCS 03 THUMPER", false }, /* R46 mission_blacklist.lua:14 */
+    { 70u, "PROSPECTING DRILL", false }, /* R46 mission_blacklist.lua:15 */
+    { 71u, "CARGO CONTAINER", false }, /* R46 mission_blacklist.lua:16 */
+    { 72u, "BUG PLUG", false }, /* R46 mission_blacklist.lua:17 */
+    { 76u, "Cyborg Carry Data", false }, /* R46 mission_blacklist.lua:18 */
+    { 78u, "SHOULDER MOUNTED CAMERA", false }, /* R46 mission_blacklist.lua:19 */
+    { 79u, "Carry Data", false }, /* R46 mission_blacklist.lua:20 */
+    { 84u, "JAMMED PINATA", false }, /* R46 mission_blacklist.lua:21 */
+    { 85u, "RAISE FLAG NO CLEAR AREA", false }, /* R46 mission_blacklist.lua:22 */
+    { 86u, "REMOTE EXPLOSIVES", false }, /* R46 mission_blacklist.lua:23 */
+    { 94u, "POISON DRILL", false }, /* R46 mission_blacklist.lua:24 */
+    { 98u, "EMERGENCY EXTRACTION BEACON", false }, /* R46 mission_blacklist.lua:25 */
+    { 102u, "MOBILE COMMS RELAY", false }, /* R46 mission_blacklist.lua:26 */
+    { 103u, "Carpet Bombing Run", false }, /* R46 mission_blacklist.lua:27 */
+    { 108u, "Scrambler", false }, /* R46 mission_blacklist.lua:28 */
+    { 111u, "IMMEDIATE EXTRACTION BEACON", false }, /* R46 mission_blacklist.lua:29 */
+    { 122u, "SPIRE STERILIZER", false }, /* R46 mission_blacklist.lua:30 */
+    { 123u, "CALL IN DESTROYER", false }, /* R46 mission_blacklist.lua:31 */
+    { 124u, "Reinforce", false }, /* R46 mission_blacklist.lua:32 */
+    { 128u, "Upload Discovery", false }, /* R46 mission_blacklist.lua:33 */
+    { 129u, "DRILLING CHARGE", false }, /* R46 mission_blacklist.lua:34 */
+    { 132u, "Nuke", false }, /* R46 mission_blacklist.lua:35 */
+    { 138u, "CARGO CONTAINER", false }, /* R46 mission_blacklist.lua:36 */
+    { 145u, "SOS Beacon", false }, /* R46 mission_blacklist.lua:37 */
+    { 148u, "EXTRACTION", false }, /* R46 mission_blacklist.lua:38 */
+};
+const int dbf_blacklist_kind_count = (int)(sizeof dbf_blacklist_kinds / sizeof dbf_blacklist_kinds[0]);
 #endif
 
 #endif

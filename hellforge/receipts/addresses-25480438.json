@@ -9,7 +9,7 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "0e95d6051490b482241f5ed5c9e7c2b91d7aaa82cb948acab6280a30401fef32",
+    "addresses_25480438.json": "0a96f0bfa75837231182902d2244fdf561f471a22ef30ce53fed4c4981d4f44b",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
     "duplicate.lua": "9e4a0b555f8dd37632b5d28e1f0b26edc264d07a77eda2e059b3a22811919452",
@@ -19,11 +19,13 @@
     "hellforge_content.h": "2e8006cf56c6582ba2fe9f84e1df03bacdde7ffb48eb945c7f4c68cb34533b03",
     "icon_colors.lua": "22a76d3322c900aa4d4cdd30342b19b522f7a3ebead36db48ef08e2e79307143",
     "input.lua": "d4a98758587ac19d6e576467be9682c09d1c6a8139e60643c6c0079272006301",
+    "menu_latch.lua": "9d0a9b58b9d8e487d26430235f6345356668c4234f1f747e29b4c0b7e9efdf57",
+    "mission_blacklist.lua": "844cae1f1bfdf7d78965bf80dd102d57710020c7339514fce08d0fe1306b5a3d",
     "native.lua": "892313940ffa332a904be1baa8069403aefb6905bdd4033abfd1585490682916",
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "e79bc191690f3e23825ef6166556ebfe3e6a22c9ddb97c092d091bad9e273afd",
+    "addresses_25480438.h": "0014e48ba2a51baa4a62da53c735ea6462c7542da5624fbdf46e75fbd4d691df",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
@@ -53,8 +55,10 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 74,
-    "values": 28,
+    "addresses": 101,
+    "values": 59,
+    "functions": 6,
+    "blacklist_kinds": 37,
     "kind_names": 149
   },
   "sections": [
@@ -178,7 +182,7 @@
       "kind": "rva",
       "value": "0x3326340",
       "define": "DBF_RVA_GAME_STATE",
-      "source": "R46 native.lua:81, input.lua:96"
+      "source": "R46 native.lua:81, input.lua:96, native.lua:329"
     },
     {
       "name": "GAME_MODE_OFFSET",
@@ -680,6 +684,197 @@
       "source": "R46 input.lua:171"
     },
     {
+      "name": "EFFECTS",
+      "kind": "rva",
+      "value": "0x33264b0",
+      "define": "DBF_RVA_EFFECTS",
+      "source": "R46 input.lua:153"
+    },
+    {
+      "name": "POSITIONS",
+      "kind": "rva",
+      "value": "0x3326508",
+      "define": "DBF_RVA_POSITIONS",
+      "source": "R46 input.lua:150"
+    },
+    {
+      "name": "POSITIONS_LOOKUP_OFFSET",
+      "kind": "offset",
+      "value": "0x40",
+      "define": "DBF_OFF_POSITIONS_LOOKUP_OFFSET",
+      "source": "R46 input.lua:151"
+    },
+    {
+      "name": "POSITIONS_ENTRIES_OFFSET",
+      "kind": "offset",
+      "value": "0x68",
+      "define": "DBF_OFF_POSITIONS_ENTRIES_OFFSET",
+      "source": "R46 input.lua:152"
+    },
+    {
+      "name": "POSITIONS_ENTRY_STRIDE",
+      "kind": "offset",
+      "value": "0x308",
+      "define": "DBF_OFF_POSITIONS_ENTRY_STRIDE",
+      "source": "R46 input.lua:152"
+    },
+    {
+      "name": "POSITION_OFFSET",
+      "kind": "offset",
+      "value": "0x2e0",
+      "define": "DBF_OFF_POSITION_OFFSET",
+      "source": "R46 input.lua:152"
+    },
+    {
+      "name": "POSITION_SIZE",
+      "kind": "offset",
+      "value": "0xc",
+      "define": "DBF_OFF_POSITION_SIZE",
+      "source": "R46 input.lua:152"
+    },
+    {
+      "name": "AVATAR_SCRAMBLE_SEED_OFFSET",
+      "kind": "offset",
+      "value": "0x11b8",
+      "define": "DBF_OFF_AVATAR_SCRAMBLE_SEED_OFFSET",
+      "source": "R46 input.lua:157"
+    },
+    {
+      "name": "COMPONENT_DIRECTION_BASE",
+      "kind": "offset",
+      "value": "0x3",
+      "define": "DBF_OFF_COMPONENT_DIRECTION_BASE",
+      "source": "R46 input.lua:260"
+    },
+    {
+      "name": "COMPONENT_MATCHED_OFFSET",
+      "kind": "offset",
+      "value": "0x14",
+      "define": "DBF_OFF_COMPONENT_MATCHED_OFFSET",
+      "source": "R46 input.lua:242, input.lua:259, input.lua:275"
+    },
+    {
+      "name": "COMPONENT_QUEUED_OFFSET",
+      "kind": "offset",
+      "value": "0x2c",
+      "define": "DBF_OFF_COMPONENT_QUEUED_OFFSET",
+      "source": "R46 input.lua:242, input.lua:384"
+    },
+    {
+      "name": "ACTION_ENTRY_STRIDE",
+      "kind": "offset",
+      "value": "0x20",
+      "define": "DBF_OFF_ACTION_ENTRY_STRIDE",
+      "source": "R46 input.lua:188, input.lua:265, input.lua:293"
+    },
+    {
+      "name": "ACTION_TRIGGER_OFFSET",
+      "kind": "offset",
+      "value": "0x18",
+      "define": "DBF_OFF_ACTION_TRIGGER_OFFSET",
+      "source": "R46 input.lua:287, menu_latch.lua:53"
+    },
+    {
+      "name": "WEAPON_OFFSET",
+      "kind": "offset",
+      "value": "0x420",
+      "define": "DBF_OFF_WEAPON_OFFSET",
+      "source": "R46 input.lua:139"
+    },
+    {
+      "name": "WEAPON_SLOT_OFFSET",
+      "kind": "offset",
+      "value": "0x4",
+      "define": "DBF_OFF_WEAPON_SLOT_OFFSET",
+      "source": "R46 input.lua:332, input.lua:337"
+    },
+    {
+      "name": "CONTROLS_MENU_ACTION_OFFSET",
+      "kind": "offset",
+      "value": "0x3fc8",
+      "define": "DBF_OFF_CONTROLS_MENU_ACTION_OFFSET",
+      "source": "R46 input.lua:314, menu_latch.lua:38, menu_latch.lua:53",
+      "expr": "808+32*(97*5)"
+    },
+    {
+      "name": "CONTROLS_MENU_TRIGGER_OFFSET",
+      "kind": "offset",
+      "value": "0x3fe0",
+      "define": "DBF_OFF_CONTROLS_MENU_TRIGGER_OFFSET",
+      "source": "R46 menu_latch.lua:38, menu_latch.lua:53",
+      "expr": "808+32*(97*5)+24"
+    },
+    {
+      "name": "BINDING_MAP_OFFSET",
+      "kind": "offset",
+      "value": "0xa7ad0",
+      "define": "DBF_OFF_BINDING_MAP_OFFSET",
+      "source": "R46 menu_latch.lua:11"
+    },
+    {
+      "name": "BINDING_MAP_CAPACITY_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_BINDING_MAP_CAPACITY_OFFSET",
+      "source": "R46 menu_latch.lua:12"
+    },
+    {
+      "name": "BINDING_BUCKET_STRIDE",
+      "kind": "offset",
+      "value": "0x148",
+      "define": "DBF_OFF_BINDING_BUCKET_STRIDE",
+      "source": "R46 menu_latch.lua:15"
+    },
+    {
+      "name": "BINDING_BUCKET_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x4",
+      "define": "DBF_OFF_BINDING_BUCKET_COUNT_OFFSET",
+      "source": "R46 menu_latch.lua:17"
+    },
+    {
+      "name": "BINDING_BUCKET_ENTRIES_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_BINDING_BUCKET_ENTRIES_OFFSET",
+      "source": "R46 menu_latch.lua:32, menu_latch.lua:48, menu_latch.lua:65"
+    },
+    {
+      "name": "BINDING_ENTRY_SIZE",
+      "kind": "offset",
+      "value": "0x14",
+      "define": "DBF_OFF_BINDING_ENTRY_SIZE",
+      "source": "R46 menu_latch.lua:32, menu_latch.lua:48, menu_latch.lua:65"
+    },
+    {
+      "name": "BINDING_ENTRY_TRIGGER_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_BINDING_ENTRY_TRIGGER_OFFSET",
+      "source": "R46 menu_latch.lua:66"
+    },
+    {
+      "name": "AUDIO_CALL_OFFSET",
+      "kind": "offset",
+      "value": "0x288",
+      "define": "DBF_OFF_AUDIO_CALL_OFFSET",
+      "source": "R46 native.lua:330"
+    },
+    {
+      "name": "AUDIO_TAIL_CALL_OFFSET",
+      "kind": "offset",
+      "value": "0x338",
+      "define": "DBF_OFF_AUDIO_TAIL_CALL_OFFSET",
+      "source": "R46 native.lua:330"
+    },
+    {
+      "name": "GAME_AUDIO_OFFSET",
+      "kind": "offset",
+      "value": "0x10f8",
+      "define": "DBF_OFF_GAME_AUDIO_OFFSET",
+      "source": "R46 native.lua:330"
+    },
+    {
       "name": "GAMEPLAY_MODE",
       "kind": "value",
       "value": "4",
@@ -817,7 +1012,7 @@
       "kind": "value",
       "value": "149",
       "define": "DBF_VAL_VANILLA_KINDS",
-      "source": "R46 native.lua:55"
+      "source": "R46 native.lua:55, input.lua:157"
     },
     {
       "name": "DEFINITION_TABLE_ALIGN",
@@ -874,6 +1069,223 @@
       "value": "4",
       "define": "DBF_VAL_DIRECTION_MAX",
       "source": "R46 input.lua:171"
+    },
+    {
+      "name": "SCRAMBLE_NONE",
+      "kind": "value",
+      "value": "0xffffffff",
+      "define": "DBF_VAL_SCRAMBLE_NONE",
+      "source": "R46 input.lua:156, native.lua:334"
+    },
+    {
+      "name": "POSITIONS_INDEX_LIMIT",
+      "kind": "value",
+      "value": "65536",
+      "define": "DBF_VAL_POSITIONS_INDEX_LIMIT",
+      "source": "R46 input.lua:151"
+    },
+    {
+      "name": "ACTION_LEFT",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_ACTION_LEFT",
+      "source": "R46 input.lua:263"
+    },
+    {
+      "name": "ACTION_RIGHT",
+      "kind": "value",
+      "value": "2",
+      "define": "DBF_VAL_ACTION_RIGHT",
+      "source": "R46 input.lua:263"
+    },
+    {
+      "name": "ACTION_UP",
+      "kind": "value",
+      "value": "3",
+      "define": "DBF_VAL_ACTION_UP",
+      "source": "R46 input.lua:263"
+    },
+    {
+      "name": "ACTION_DOWN",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_ACTION_DOWN",
+      "source": "R46 input.lua:263"
+    },
+    {
+      "name": "DIRECTION_1_ACTION",
+      "kind": "value",
+      "value": "3",
+      "define": "DBF_VAL_DIRECTION_1_ACTION",
+      "source": "R46 input.lua:264"
+    },
+    {
+      "name": "DIRECTION_2_ACTION",
+      "kind": "value",
+      "value": "2",
+      "define": "DBF_VAL_DIRECTION_2_ACTION",
+      "source": "R46 input.lua:264"
+    },
+    {
+      "name": "DIRECTION_3_ACTION",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_DIRECTION_3_ACTION",
+      "source": "R46 input.lua:264"
+    },
+    {
+      "name": "DIRECTION_4_ACTION",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_DIRECTION_4_ACTION",
+      "source": "R46 input.lua:264"
+    },
+    {
+      "name": "ACTION_PRESSED",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_ACTION_PRESSED",
+      "source": "R46 input.lua:267, input.lua:290, input.lua:315"
+    },
+    {
+      "name": "ACTION_RELEASED",
+      "kind": "value",
+      "value": "0",
+      "define": "DBF_VAL_ACTION_RELEASED",
+      "source": "R46 input.lua:271, input.lua:290, input.lua:315"
+    },
+    {
+      "name": "STRATAGEM_SLOT",
+      "kind": "value",
+      "value": "5",
+      "define": "DBF_VAL_STRATAGEM_SLOT",
+      "source": "R46 input.lua:334, input.lua:337, native.lua:340"
+    },
+    {
+      "name": "WEAPON_SLOT_MIN",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_WEAPON_SLOT_MIN",
+      "source": "R46 input.lua:333"
+    },
+    {
+      "name": "WEAPON_SLOT_MAX",
+      "kind": "value",
+      "value": "7",
+      "define": "DBF_VAL_WEAPON_SLOT_MAX",
+      "source": "R46 input.lua:333"
+    },
+    {
+      "name": "PAYLOAD_SLOTS_MIN",
+      "kind": "value",
+      "value": "8",
+      "define": "DBF_VAL_PAYLOAD_SLOTS_MIN",
+      "source": "R46 input.lua:358"
+    },
+    {
+      "name": "SLOT_MIN",
+      "kind": "value",
+      "value": "1",
+      "define": "DBF_VAL_SLOT_MIN",
+      "source": "R46 input.lua:356"
+    },
+    {
+      "name": "SLOT_MAX",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_SLOT_MAX",
+      "source": "R46 input.lua:356"
+    },
+    {
+      "name": "PAYLOAD_SLOT_BASE",
+      "kind": "value",
+      "value": "3",
+      "define": "DBF_VAL_PAYLOAD_SLOT_BASE",
+      "source": "R46 input.lua:361"
+    },
+    {
+      "name": "BINDING_MAP_CAPACITY",
+      "kind": "value",
+      "value": "256",
+      "define": "DBF_VAL_BINDING_MAP_CAPACITY",
+      "source": "R46 menu_latch.lua:12"
+    },
+    {
+      "name": "BINDING_MENU_KEY",
+      "kind": "value",
+      "value": "0x50000",
+      "define": "DBF_VAL_BINDING_MENU_KEY",
+      "source": "R46 menu_latch.lua:16"
+    },
+    {
+      "name": "BINDING_COUNT_MAX",
+      "kind": "value",
+      "value": "16",
+      "define": "DBF_VAL_BINDING_COUNT_MAX",
+      "source": "R46 menu_latch.lua:17"
+    },
+    {
+      "name": "TRIGGER_PRESS",
+      "kind": "value",
+      "value": "0",
+      "define": "DBF_VAL_TRIGGER_PRESS",
+      "source": "R46 menu_latch.lua:55"
+    },
+    {
+      "name": "TRIGGER_HOLD",
+      "kind": "value",
+      "value": "2",
+      "define": "DBF_VAL_TRIGGER_HOLD",
+      "source": "R46 menu_latch.lua:55, menu_latch.lua:67, input.lua:288"
+    },
+    {
+      "name": "TRIGGER_LONG_HOLD",
+      "kind": "value",
+      "value": "9",
+      "define": "DBF_VAL_TRIGGER_LONG_HOLD",
+      "source": "R46 menu_latch.lua:55, menu_latch.lua:67, input.lua:288"
+    },
+    {
+      "name": "BINDING_FLAGS_FORMAT_DIVISOR",
+      "kind": "value",
+      "value": "16",
+      "define": "DBF_VAL_BINDING_FLAGS_FORMAT_DIVISOR",
+      "source": "R46 menu_latch.lua:69"
+    },
+    {
+      "name": "BINDING_FLAGS_TRIGGER_DIVISOR",
+      "kind": "value",
+      "value": "65536",
+      "define": "DBF_VAL_BINDING_FLAGS_TRIGGER_DIVISOR",
+      "source": "R46 menu_latch.lua:69, menu_latch.lua:71"
+    },
+    {
+      "name": "BINDING_FLAGS_FIELD_MODULUS",
+      "kind": "value",
+      "value": "16",
+      "define": "DBF_VAL_BINDING_FLAGS_FIELD_MODULUS",
+      "source": "R46 menu_latch.lua:69"
+    },
+    {
+      "name": "BINDING_FLAGS_FORMAT",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_BINDING_FLAGS_FORMAT",
+      "source": "R46 menu_latch.lua:69"
+    },
+    {
+      "name": "SOUND_MOVE",
+      "kind": "value",
+      "value": "0x39425a55",
+      "define": "DBF_VAL_SOUND_MOVE",
+      "source": "R46 native.lua:326"
+    },
+    {
+      "name": "SOUND_CONFIRM",
+      "kind": "value",
+      "value": "0xdd274583",
+      "define": "DBF_VAL_SOUND_CONFIRM",
+      "source": "R46 native.lua:326"
     }
   ],
   "bound_functions": [
@@ -882,6 +1294,11 @@
       "rva": "0xa10820",
       "features": [
         "SCRAMBLE"
+      ],
+      "define": "DBF_FN_SCRAMBLE_QUERY",
+      "guarded_by": [
+        "scramble_query",
+        "scramble_query_position"
       ],
       "source": "R46 native.lua:303"
     },
@@ -892,6 +1309,14 @@
         "ENTRY",
         "LATCH"
       ],
+      "define": "DBF_FN_OPEN_INPUT",
+      "guarded_by": [
+        "release_guarded_open",
+        "release_hold_test",
+        "release_match_survives",
+        "release_opener_slot_guard",
+        "release_opener_slot_call"
+      ],
       "source": "R46 native.lua:300"
     },
     {
@@ -901,6 +1326,10 @@
         "ENTRY",
         "LATCH"
       ],
+      "define": "DBF_FN_CLOSE_INPUT",
+      "guarded_by": [
+        "release_close"
+      ],
       "source": "R46 native.lua:301"
     },
     {
@@ -908,6 +1337,11 @@
       "rva": "0xa900d0",
       "features": [
         "ENTRY"
+      ],
+      "define": "DBF_FN_INPUT_HANDLER",
+      "guarded_by": [
+        "input_handler",
+        "append_and_match"
       ],
       "source": "R46 native.lua:298"
     },
@@ -917,6 +1351,11 @@
       "features": [
         "ENTRY",
         "LATCH"
+      ],
+      "define": "DBF_FN_REQUEST_SLOT",
+      "guarded_by": [
+        "release_weapon_request",
+        "release_weapon_request_assignment"
       ],
       "source": "R46 native.lua:304"
     },
@@ -947,6 +1386,10 @@
       "rva": "0x1327f50",
       "features": [
         "SOUND"
+      ],
+      "define": "DBF_FN_UI_SOUND",
+      "guarded_by": [
+        "ui_sound"
       ],
       "source": "R46 native.lua:302"
     },
@@ -2713,6 +3156,230 @@
       "section": "#1",
       "file_offset": null,
       "check": "unreadable"
+    }
+  ],
+  "blacklist": [
+    {
+      "kind": 5,
+      "name": "ORBITAL ILLUMINATION FLARE",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:2"
+    },
+    {
+      "kind": 7,
+      "name": "EXTRACTION BEACON",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:3"
+    },
+    {
+      "kind": 11,
+      "name": "RAISE FLAG",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:4"
+    },
+    {
+      "kind": 17,
+      "name": "BUG THUMPER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:5"
+    },
+    {
+      "kind": 19,
+      "name": "SEISMIC PROBE",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:6"
+    },
+    {
+      "kind": 28,
+      "name": "SEAF Artillery",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:7"
+    },
+    {
+      "kind": 29,
+      "name": "DARK FLUID BACKPACK",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:8"
+    },
+    {
+      "kind": 33,
+      "name": "Resupply",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:9"
+    },
+    {
+      "kind": 36,
+      "name": "OIL RIG EXTRACT",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:10"
+    },
+    {
+      "kind": 42,
+      "name": "HELLBOMB",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:11"
+    },
+    {
+      "kind": 48,
+      "name": "DATA JACK",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:12"
+    },
+    {
+      "kind": 49,
+      "name": "Eagle Rearm",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:13"
+    },
+    {
+      "kind": 64,
+      "name": "TCS 03 THUMPER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:14"
+    },
+    {
+      "kind": 70,
+      "name": "PROSPECTING DRILL",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:15"
+    },
+    {
+      "kind": 71,
+      "name": "CARGO CONTAINER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:16"
+    },
+    {
+      "kind": 72,
+      "name": "BUG PLUG",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:17"
+    },
+    {
+      "kind": 76,
+      "name": "Cyborg Carry Data",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:18"
+    },
+    {
+      "kind": 78,
+      "name": "SHOULDER MOUNTED CAMERA",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:19"
+    },
+    {
+      "kind": 79,
+      "name": "Carry Data",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:20"
+    },
+    {
+      "kind": 84,
+      "name": "JAMMED PINATA",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:21"
+    },
+    {
+      "kind": 85,
+      "name": "RAISE FLAG NO CLEAR AREA",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:22"
+    },
+    {
+      "kind": 86,
+      "name": "REMOTE EXPLOSIVES",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:23"
+    },
+    {
+      "kind": 94,
+      "name": "POISON DRILL",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:24"
+    },
+    {
+      "kind": 98,
+      "name": "EMERGENCY EXTRACTION BEACON",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:25"
+    },
+    {
+      "kind": 102,
+      "name": "MOBILE COMMS RELAY",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:26"
+    },
+    {
+      "kind": 103,
+      "name": "Carpet Bombing Run",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:27"
+    },
+    {
+      "kind": 108,
+      "name": "Scrambler",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:28"
+    },
+    {
+      "kind": 111,
+      "name": "IMMEDIATE EXTRACTION BEACON",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:29"
+    },
+    {
+      "kind": 122,
+      "name": "SPIRE STERILIZER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:30"
+    },
+    {
+      "kind": 123,
+      "name": "CALL IN DESTROYER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:31"
+    },
+    {
+      "kind": 124,
+      "name": "Reinforce",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:32"
+    },
+    {
+      "kind": 128,
+      "name": "Upload Discovery",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:33"
+    },
+    {
+      "kind": 129,
+      "name": "DRILLING CHARGE",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:34"
+    },
+    {
+      "kind": 132,
+      "name": "Nuke",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:35"
+    },
+    {
+      "kind": 138,
+      "name": "CARGO CONTAINER",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:36"
+    },
+    {
+      "kind": 145,
+      "name": "SOS Beacon",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:37"
+    },
+    {
+      "kind": 148,
+      "name": "EXTRACTION",
+      "default": false,
+      "source": "R46 mission_blacklist.lua:38"
     }
   ]
 }

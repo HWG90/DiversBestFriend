@@ -4,10 +4,11 @@ Run from the repository root:
     DBF_R46_DIR=<R46 native-selection-poc folder> python3 -I -B -m unittest discover -s hellforge/tools -p 'test_*.py'
 
 The synthetic tests always run. The tests on the real inputs need DBF_R46_DIR (R46's HellForge native-selection-poc
-folder) and HellForge's game copy and SDK (HF_INSTALL, default HellForge 0.4's Linux install,
+folder) and HellForge's game copy (HF_INSTALL, default HellForge 0.4's Linux install,
 ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge); without them they are skipped and
-say why. The compile tests also need HellForge's Zig: HF_ZIG, else $HF_INSTALL/tools/zig-linux/zig, as build.sh
-finds it.
+say why. They read the SDK's hellforge_content.h from HF_SDK, else the vendored hellforge/sdk, as build.sh and
+map_addresses.py do. The compile tests also need HellForge's Zig: HF_ZIG, else $HF_INSTALL/tools/zig-linux/zig, as
+build.sh finds it.
 """
 import json
 import os
@@ -31,7 +32,8 @@ RECEIPTS = os.path.join(HELLFORGE, "receipts")
 HF_INSTALL = os.environ.get("HF_INSTALL", os.path.expanduser(
     "~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge"))
 GAME_DLL = os.path.join(HF_INSTALL, "game", "data", "game", "game.dll")
-CONTENT_H = os.path.join(os.environ.get("HF_SDK", os.path.join(HF_INSTALL, "app", "sdk")), "hellforge_content.h")
+VENDORED_SDK = os.path.join(HELLFORGE, "sdk")
+CONTENT_H = os.path.join(os.environ.get("HF_SDK") or VENDORED_SDK, "hellforge_content.h")
 # The same default chain as build.sh: HF_ZIG, else the installation's tools/zig-linux/zig.
 ZIG = os.environ.get("HF_ZIG", os.path.join(HF_INSTALL, "tools", "zig-linux", "zig"))
 R46 = os.environ.get("DBF_R46_DIR", "")
@@ -133,7 +135,8 @@ class Fixture:
                  "source": "R46 native.lua:3"},
             ],
             "bound_functions": {
-                "entry_fn": {"rva": "0x1000", "features": ["ENTRY"], "source": "R46 native.lua:4"},
+                "entry_fn": {"rva": "0x1000", "features": ["ENTRY"], "source": "R46 native.lua:4",
+                             "define": "ENTRY_FN", "guarded_by": ["entry_fn", "same"]},
             },
             "witnesses": {
                 "entry_fn": {"features": ["ENTRY"], "reason": "the bound function itself"},
@@ -144,7 +147,14 @@ class Fixture:
                 "layout": {"features": ["STATE"], "reason": "layout"},
                 "unused": {"dropped": True, "reason": "guards code the port never calls"},
             },
+            "blacklist": [
+                {"kind": 5, "name": "ORBITAL ILLUMINATION FLARE", "default": False,
+                 "source": "R46 mission_blacklist.lua:2"},
+                {"kind": 145, "name": "SOS Beacon", "default": True, "source": "R46 mission_blacklist.lua:3"},
+            ],
         }
+        self.blacklist = ["local mission_blacklist_names={", "    [5]='ORBITAL ILLUMINATION FLARE',",
+                          "    [145]='SOS Beacon',", "}"]
 
     def write(self, sections=None):
         if sections is None:
@@ -159,6 +169,8 @@ class Fixture:
             f.write("\n".join(lines) + "\n")
         with open(os.path.join(self.r46, "native.lua"), "w", encoding="utf-8") as f:
             f.write("\n".join(self.native) + "\n")
+        with open(os.path.join(self.r46, "mission_blacklist.lua"), "w", encoding="utf-8") as f:
+            f.write("\n".join(self.blacklist) + "\n")
         with open(self.table, "w", encoding="utf-8") as f:
             json.dump(self.entries, f, indent=2)
 
@@ -382,6 +394,231 @@ class SyntheticTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("HUD_ROOT", err)
 
+    def test_a_literal_may_end_a_sentence(self):
+        self.fx.native.append("-- Native actions: left=1 right=2 up=3 down=4.")
+        self.fx.native.append("local half=4.5")
+        line = len(self.fx.native)
+        self.fx.entries["addresses"].append(
+            {"name": "ACTION_DOWN", "kind": "value", "value": "4", "source": "R46 native.lua:%d" % (line - 1)})
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        for value in ("4", "5"):
+            with self.subTest(value=value):
+                self.fx.entries["addresses"][-1] = {"name": "PROBE", "kind": "value", "value": value,
+                                                    "source": "R46 native.lua:%d" % line}
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, "%s is part of 4.5, not a literal" % value)
+                self.assertIn("PROBE", err)
+
+    # --- expressions --------------------------------------------------------------------------------------------
+
+    def test_expressions_allow_sums_products_and_parentheses_of_integer_literals(self):
+        for text, value in (("7", 7), ("0x24e340+0x146dc0", 0x395100), ("808+32*(97*5)", 16328),
+                            ("808+32*(97*5)+24", 16352), ("(1+2)*3", 9), ("2*3+4", 10), ("((0x10))", 16)):
+            with self.subTest(expr=text):
+                self.assertEqual(ma.eval_expr(text), value)
+
+    def test_expressions_refuse_everything_else(self):
+        for text in ("a+1", "base+0x10", "f(1)", "int(4)", "1-1", "-1", "8/2", "8//2", "2**3", "1.5", "0o7", "0b1",
+                     "0X10", "0xABC", "1_000", "08", "True", "1 + 2", "", "(1,2)", "[1]", "1<2", "~1", "1;2",
+                     "1if1else2", "'1'", None, 4):
+            with self.subTest(expr=text):
+                with self.assertRaises(ma.GeneratorError):
+                    ma.eval_expr(text)
+
+    def add_controls_line(self):
+        self.fx.native.append("for _,p in ipairs({owner+808+32*(97*5)+24,actions+24}) do")
+        return len(self.fx.native)
+
+    def test_expression_on_its_line_as_written(self):
+        for text, expr, holds in (
+                ("if at==owner+808+32*(97*5)+24 or valid then", "808+32*(97*5)+24", True),   # a word after a space
+                ("at = owner + 808 + 32 * (97 * 5)", "808+32*(97*5)", True),               # spaced tokens
+                ("owner+808+32*(97*5)+24", "808+32*(97*5)", True),                           # a leading term
+                ("owner+808+32*(97*5)+24", "8+32*(97*5)", False),                            # glued to 80
+                ("owner+808+32*(97*5)+24", "32*(97*5)+2", False),                            # glued to 4
+                ("2*808+32", "808+32", False),                                               # a product's operand
+                ("2 * 808+32", "808+32", False),
+                ("808+32 * 2", "808+32", False),
+                ("f 808+32 (1)", "808+32", False),                                           # a call
+                ("8 08+32", "808+32", False)):                                               # split literal
+            with self.subTest(text=text, expr=expr):
+                self.assertEqual(ma._holds_expr(text, expr), holds)
+
+    def test_offset_expression_with_products_is_matched_on_its_line(self):
+        line = self.add_controls_line()
+        self.fx.entries["addresses"] += [
+            {"name": "MENU_ACTION", "kind": "offset", "value": "0x3fc8", "expr": "808+32*(97*5)",
+             "source": "R46 native.lua:%d" % line},
+            {"name": "MENU_TRIGGER", "kind": "offset", "value": "0x3fe0", "expr": "808+32*(97*5)+24",
+             "source": "R46 native.lua:%d" % line},
+        ]
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertIn("#define DBF_OFF_MENU_ACTION 0x3fc8u /* 808+32*(97*5); R46 native.lua:%d */" % line, header)
+        self.assertIn("#define DBF_OFF_MENU_TRIGGER 0x3fe0u /* 808+32*(97*5)+24; R46 native.lua:%d */" % line, header)
+
+    def test_offset_expression_must_hold_its_value_and_stand_whole_on_its_line(self):
+        line = self.add_controls_line()
+        for value, expr in (("0x3fc9", "808+32*(97*5)"),     # the expression is 0x3fc8
+                            ("0x3ca8", "8+32*(97*5)"),       # a tail of 808+…, not a term of the line
+                            ("0x3fc8", "808+32*(5*97)"),     # equal, but not what the line says
+                            ("0x3fc7", "808+32*(97*5)-1"),   # minus is refused
+                            ("0x3fc8", "808+32*(97*x)")):    # names are refused
+            with self.subTest(expr=expr):
+                self.fx.entries["addresses"] = self.fx.entries["addresses"][:2] + [
+                    {"name": "PROBE", "kind": "offset", "value": value, "expr": expr,
+                     "source": "R46 native.lua:%d" % line}]
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, expr)
+                self.assertIn("PROBE", err)
+                self.assertFalse(os.path.exists(self.fx.out_h))
+
+    # --- functions ----------------------------------------------------------------------------------------------
+
+    def test_function_define_emits_its_rva_and_guards(self):
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertRegex(header, r"(?m)^#define DBF_FN_ENTRY_FN 0x1000u$")
+        self.assertIn("ENTRY_FN: R46 native.lua:4; guarded by entry_fn, same", header)
+        self.assertLess(header.index("DBF_OFF_HUD_PANEL_OFFSET"), header.index("DBF_FN_ENTRY_FN"))
+        with open(self.fx.receipt, encoding="utf-8") as f:
+            receipt = json.load(f)
+        row = {f["name"]: f for f in receipt["bound_functions"]}["entry_fn"]
+        self.assertEqual(row["define"], "DBF_FN_ENTRY_FN")
+        self.assertEqual(row["guarded_by"], ["entry_fn", "same"])
+        self.assertEqual(receipt["tally"]["functions"], 1)
+
+    def test_function_without_an_emitted_witness_is_refused(self):
+        entry = self.fx.entries["bound_functions"]["entry_fn"]
+        for guarded_by in ([], None, ["ghost"], ["unused"], ["entry_fn", "entry_fn"], "entry_fn", [4]):
+            with self.subTest(guarded_by=guarded_by):
+                if guarded_by is None:
+                    entry.pop("guarded_by", None)
+                else:
+                    entry["guarded_by"] = guarded_by
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, repr(guarded_by))
+                self.assertIn("ENTRY_FN", err)
+                self.assertFalse(os.path.exists(self.fx.out_h))
+
+    def test_function_unknown_witness_is_refused_beside_a_good_one(self):
+        self.fx.entries["bound_functions"]["entry_fn"]["guarded_by"] = ["entry_fn", "ghost"]
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("ENTRY_FN", err)
+        self.assertIn("ghost", err)
+
+    def test_function_guard_must_carry_the_functions_features(self):
+        # layout gates STATE only: refusing it would not stop ENTRY from calling entry_fn.
+        self.fx.entries["bound_functions"]["entry_fn"]["guarded_by"] = ["entry_fn", "layout"]
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("ENTRY_FN", err)
+        self.assertIn("layout", err)
+
+    def test_function_define_names(self):
+        entry = self.fx.entries["bound_functions"]["entry_fn"]
+        for define in ("entry_fn", "", None, 4, "ENTRY FN"):
+            with self.subTest(define=define):
+                entry["define"] = define
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, repr(define))
+                self.assertIn("entry_fn", err)
+
+    def test_dropped_function_cannot_be_defined(self):
+        entry = self.fx.entries["bound_functions"]["entry_fn"]
+        del entry["features"]
+        entry.update({"dropped": True, "reason": "not called"})
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("ENTRY_FN", err)
+
+    def test_function_defines_are_unique(self):
+        self.fx.native.append("local other=ffi.cast('void (*)(void)',base+0x1010)")
+        self.fx.entries["bound_functions"]["other_fn"] = {
+            "rva": "0x1010", "features": ["ENTRY", "LATCH"], "source": "R46 native.lua:%d" % len(self.fx.native),
+            "define": "ENTRY_FN", "guarded_by": ["same"]}
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0)
+        self.assertIn("ENTRY_FN", err)
+        self.fx.entries["bound_functions"]["other_fn"]["define"] = "OTHER_FN"
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertLess(header.index("DBF_FN_ENTRY_FN"), header.index("DBF_FN_OTHER_FN"), "functions in RVA order")
+
+    # --- the blacklist ------------------------------------------------------------------------------------------
+
+    def test_blacklist_kinds_emit_a_table_with_defaults(self):
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertIn("#include <stdbool.h>", header)
+        self.assertIn("} DbfBlacklistKind;", header)
+        self.assertIn("extern const DbfBlacklistKind dbf_blacklist_kinds[];", header)
+        self.assertIn("extern const int dbf_blacklist_kind_count;", header)
+        define = header.index("#ifdef DBF_ADDRESSES_DEFINE")
+        table = header.index("const DbfBlacklistKind dbf_blacklist_kinds[] = {")
+        self.assertLess(define, table, "the table is defined only in the defining translation unit")
+        self.assertLess(table, header.index("#endif", define))
+        self.assertIn('    { 5u, "ORBITAL ILLUMINATION FLARE", false }, /* R46 mission_blacklist.lua:2 */', header)
+        self.assertIn('    { 145u, "SOS Beacon", true }, /* R46 mission_blacklist.lua:3 */', header)
+        self.assertIn("const int dbf_blacklist_kind_count = (int)(sizeof dbf_blacklist_kinds / "
+                      "sizeof dbf_blacklist_kinds[0]);", header)
+        with open(self.fx.receipt, encoding="utf-8") as f:
+            receipt = json.load(f)
+        self.assertEqual(receipt["blacklist"][1], {"kind": 145, "name": "SOS Beacon", "default": True,
+                                                   "source": "R46 mission_blacklist.lua:3"})
+        self.assertEqual(receipt["tally"]["blacklist_kinds"], 2)
+        self.assertIn("mission_blacklist.lua", receipt["inputs"])
+
+    def test_blacklist_rows_are_checked(self):
+        good = [dict(row) for row in self.fx.entries["blacklist"]]
+        cases = (
+            ("name not on the line", 0, {"name": "ORBITAL ILLUMINATION"}),
+            ("kind not on the line", 0, {"kind": 6}),
+            ("other line", 0, {"source": "R46 mission_blacklist.lua:3"}),
+            ("no line", 0, {"source": "R46 mission_blacklist.lua:40"}),
+            ("two lines", 0, {"source": "R46 mission_blacklist.lua:2, mission_blacklist.lua:3"}),
+            ("kind a string", 0, {"kind": "5"}),
+            ("kind 0", 0, {"kind": 0}),
+            ("kind 150", 0, {"kind": 150}),
+            ("kind a bool", 0, {"kind": True}),
+            ("default missing", 0, {"default": None}),
+            ("default a string", 0, {"default": "false"}),
+            ("kind twice", 1, {"kind": 5, "name": "ORBITAL ILLUMINATION FLARE",
+                               "source": "R46 mission_blacklist.lua:2"}),
+        )
+        for label, index, change in cases:
+            with self.subTest(case=label):
+                rows = [dict(row) for row in good]
+                rows[index].update(change)
+                self.fx.entries["blacklist"] = rows
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, label)
+                self.assertIn("blacklist", err)
+                self.assertFalse(os.path.exists(self.fx.out_h))
+        self.fx.entries["blacklist"] = []
+        code, err = self.fx.run()
+        self.assertNotEqual(code, 0, "an empty blacklist")
+        self.assertIn("blacklist", err)
+
+    # --- the SDK default ----------------------------------------------------------------------------------------
+
+    def test_content_header_defaults_to_the_vendored_sdk(self):
+        vendored = os.path.join(HELLFORGE, "sdk", "hellforge_content.h")
+        self.assertEqual(ma.default_content_header({}), vendored)
+        self.assertEqual(ma.default_content_header({"HF_INSTALL": "/elsewhere"}), vendored)
+        self.assertEqual(ma.default_content_header({"HF_SDK": ""}), vendored)
+        self.assertEqual(ma.default_content_header({"HF_SDK": "/sdk"}), os.path.join("/sdk", "hellforge_content.h"))
+
     @unittest.skipUnless(HAVE_ZIG, WHY_NO_ZIG)
     def test_synthetic_headers_compile(self):
         code, err = self.fx.run()
@@ -389,7 +626,9 @@ class SyntheticTests(unittest.TestCase):
         out = os.path.dirname(self.fx.out_h)
         result = zig_compile(out, '#define DBF_ADDRESSES_DEFINE\n#include "addresses_25480438.h"\n'
                                   '#include "kind_names_25480438.h"\n'
-                                  'int probe(void);\nint probe(void) { return dbf_witness_count; }\n', "define")
+                                  'int probe(void);\nint probe(void) { return dbf_witness_count + '
+                                  'dbf_blacklist_kind_count + dbf_blacklist_kinds[1].default_on + '
+                                  '(int)DBF_FN_ENTRY_FN; }\n', "define")
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
@@ -461,6 +700,83 @@ class RealInputTests(unittest.TestCase):
                        "#define DBF_VAL_VANILLA_KINDS 149u", "#define DBF_VAL_DEFINITION_RELOCATION_SPAN 0x400000u"):
             self.assertIn(define, header)
 
+    def test_header_has_the_entry_functions_and_their_guards(self):
+        self.assertEqual(self.code, 0, self.err)
+        header = self.read(self.header)
+        expected = {
+            "INPUT_HANDLER": ("0xa900d0", ["input_handler", "append_and_match"]),
+            "OPEN_INPUT": ("0xa8e850", ["release_guarded_open", "release_hold_test", "release_match_survives",
+                                        "release_opener_slot_guard", "release_opener_slot_call"]),
+            "CLOSE_INPUT": ("0xa8fb50", ["release_close"]),
+            "REQUEST_SLOT": ("0xa93e90", ["release_weapon_request", "release_weapon_request_assignment"]),
+            "UI_SOUND": ("0x1327f50", ["ui_sound"]),
+            "SCRAMBLE_QUERY": ("0xa10820", ["scramble_query", "scramble_query_position"]),
+        }
+        for define, (rva, _) in expected.items():
+            self.assertRegex(header, r"(?m)^#define DBF_FN_%s %su$" % (define, rva))
+        self.assertEqual(len(re.findall(r"(?m)^#define DBF_FN_", header)), len(expected))
+        rows = {f["define"]: f for f in self.receipt["bound_functions"] if "define" in f}
+        self.assertEqual(sorted(rows), sorted("DBF_FN_" + d for d in expected))
+        for define, (rva, guards) in expected.items():
+            self.assertEqual(rows["DBF_FN_" + define]["rva"], rva)
+            self.assertEqual(rows["DBF_FN_" + define]["guarded_by"], guards)
+
+    def test_header_has_the_entry_latch_sound_and_scramble_addresses(self):
+        self.assertEqual(self.code, 0, self.err)
+        header = self.read(self.header)
+        for define in (
+                # scramble (input.lua:150-157)
+                "DBF_RVA_EFFECTS 0x33264b0u", "DBF_RVA_POSITIONS 0x3326508u", "DBF_OFF_POSITIONS_LOOKUP_OFFSET 0x40u",
+                "DBF_OFF_POSITIONS_ENTRIES_OFFSET 0x68u", "DBF_OFF_POSITIONS_ENTRY_STRIDE 0x308u",
+                "DBF_OFF_POSITION_OFFSET 0x2e0u", "DBF_OFF_POSITION_SIZE 0xcu", "DBF_VAL_POSITIONS_INDEX_LIMIT 65536u",
+                "DBF_OFF_AVATAR_SCRAMBLE_SEED_OFFSET 0x11b8u", "DBF_VAL_SCRAMBLE_NONE 0xffffffffu",
+                "DBF_VAL_VANILLA_KINDS 149u /* R46 native.lua:55, input.lua:157 */",
+                # menu active (input.lua:118)
+                "DBF_OFF_AVATAR_MENU_OFFSET 0xfd8u", "DBF_VAL_MENU_ACTIVE_MASK 512u",
+                # the input component and the actions (input.lua:240-293)
+                "DBF_OFF_COMPONENT_DIRECTION_BASE 0x3u /* R46 input.lua:260 */",
+                "DBF_OFF_COMPONENT_MATCHED_OFFSET 0x14u", "DBF_OFF_COMPONENT_QUEUED_OFFSET 0x2cu",
+                "DBF_OFF_ACTION_ENTRY_STRIDE 0x20u", "DBF_OFF_ACTION_TRIGGER_OFFSET 0x18u",
+                "DBF_VAL_ACTION_LEFT 1u", "DBF_VAL_ACTION_RIGHT 2u", "DBF_VAL_ACTION_UP 3u", "DBF_VAL_ACTION_DOWN 4u",
+                "DBF_VAL_DIRECTION_1_ACTION 3u", "DBF_VAL_DIRECTION_2_ACTION 2u", "DBF_VAL_DIRECTION_3_ACTION 4u",
+                "DBF_VAL_DIRECTION_4_ACTION 1u", "DBF_VAL_ACTION_PRESSED 1u", "DBF_VAL_ACTION_RELEASED 0u",
+                "DBF_RVA_UI 0x347ce28u", "DBF_OFF_UI_OBSTRUCTION_OFFSET 0x429cu",
+                "DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET 0x14u",
+                # the weapon and the equipped slots (input.lua:139, 329-361; native.lua:340)
+                "DBF_OFF_WEAPON_OFFSET 0x420u", "DBF_OFF_WEAPON_SLOT_OFFSET 0x4u", "DBF_VAL_STRATAGEM_SLOT 5u",
+                "DBF_VAL_WEAPON_SLOT_MIN 1u", "DBF_VAL_WEAPON_SLOT_MAX 7u", "DBF_VAL_PAYLOAD_SLOTS_MIN 8u",
+                "DBF_VAL_SLOT_MIN 1u", "DBF_VAL_SLOT_MAX 4u", "DBF_VAL_PAYLOAD_SLOT_BASE 3u",
+                # the controls and the binding map (input.lua:313-315; menu_latch.lua)
+                "DBF_RVA_CONTROLS 0x347cf18u",
+                "DBF_OFF_CONTROLS_MENU_ACTION_OFFSET 0x3fc8u /* 808+32*(97*5); R46 input.lua:314",
+                "DBF_OFF_CONTROLS_MENU_TRIGGER_OFFSET 0x3fe0u /* 808+32*(97*5)+24; R46 menu_latch.lua:38",
+                "DBF_OFF_BINDING_MAP_OFFSET 0xa7ad0u", "DBF_OFF_BINDING_MAP_CAPACITY_OFFSET 0x8u",
+                "DBF_OFF_BINDING_BUCKET_STRIDE 0x148u", "DBF_OFF_BINDING_BUCKET_COUNT_OFFSET 0x4u",
+                "DBF_OFF_BINDING_BUCKET_ENTRIES_OFFSET 0x8u", "DBF_OFF_BINDING_ENTRY_SIZE 0x14u",
+                "DBF_OFF_BINDING_ENTRY_TRIGGER_OFFSET 0x8u", "DBF_VAL_BINDING_MAP_CAPACITY 256u",
+                "DBF_VAL_BINDING_MENU_KEY 0x50000u", "DBF_VAL_BINDING_COUNT_MAX 16u", "DBF_VAL_TRIGGER_PRESS 0u",
+                "DBF_VAL_TRIGGER_HOLD 2u", "DBF_VAL_TRIGGER_LONG_HOLD 9u", "DBF_VAL_BINDING_FLAGS_FORMAT_DIVISOR 16u",
+                "DBF_VAL_BINDING_FLAGS_TRIGGER_DIVISOR 65536u", "DBF_VAL_BINDING_FLAGS_FIELD_MODULUS 16u",
+                "DBF_VAL_BINDING_FLAGS_FORMAT 4u",
+                # sounds (native.lua:325-331)
+                "DBF_RVA_AUDIO 0x3326318u", "DBF_RVA_GAME_STATE 0x3326340u", "DBF_OFF_AUDIO_CALL_OFFSET 0x288u",
+                "DBF_OFF_AUDIO_TAIL_CALL_OFFSET 0x338u", "DBF_OFF_GAME_AUDIO_OFFSET 0x10f8u",
+                "DBF_VAL_SOUND_MOVE 0x39425a55u", "DBF_VAL_SOUND_CONFIRM 0xdd274583u"):
+            with self.subTest(define=define):
+                self.assertIn("#define " + define, header)
+
+    def test_blacklist_kinds_are_r46s_37_with_r46s_defaults(self):
+        self.assertEqual(self.code, 0, self.err)
+        rows = self.receipt["blacklist"]
+        self.assertEqual([r["kind"] for r in rows], [
+            5, 7, 11, 17, 19, 28, 29, 33, 36, 42, 48, 49, 64, 70, 71, 72, 76, 78, 79, 84, 85, 86, 94, 98, 102, 103, 108,
+            111, 122, 123, 124, 128, 129, 132, 138, 145, 148])
+        self.assertEqual({r["default"] for r in rows}, {False}, "R46 has no per-kind default: every toggle is off")
+        header = self.read(self.header)
+        self.assertIn('    { 145u, "SOS Beacon", false }, /* R46 mission_blacklist.lua:37 */', header)
+        self.assertIn('    { 49u, "Eagle Rearm", false }, /* R46 mission_blacklist.lua:13 */', header)
+        self.assertEqual(self.receipt["tally"]["blacklist_kinds"], 37)
+
     def test_kind_names(self):
         self.assertEqual(self.code, 0, self.err)
         kinds = self.read(self.kinds)
@@ -484,7 +800,8 @@ class RealInputTests(unittest.TestCase):
         define = ('#define DBF_ADDRESSES_DEFINE\n#include "addresses_25480438.h"\n#include "kind_names_25480438.h"\n'
                   'int probe(void);\nint probe(void) { return dbf_witness_count + (dbf_kind_names[118] != 0); }\n')
         use = ('#include "addresses_25480438.h"\n#include "kind_names_25480438.h"\n'
-               'int probe(void);\nint probe(void) { return dbf_witnesses[0].size + (int)DBF_RVA_HUD_ROOT; }\n')
+               'int probe(void);\nint probe(void) { return dbf_witnesses[0].size + (int)DBF_RVA_HUD_ROOT + '
+               '(int)dbf_blacklist_kinds[0].kind + (int)DBF_FN_INPUT_HANDLER; }\n')
         for target in (None, "x86_64-windows-gnu"):
             for name, text in (("define", define), ("use", use)):
                 result = zig_compile(self.out, text, "%s_%s" % (name, target or "native"), target)
