@@ -55,8 +55,11 @@
 #include "text.h"
 #include "native_list.h"
 #include "ui_settings.h"
+#include "hud_bridge.h"
+#include "hud_options.h"
+#include "hud_prefs.h"
 
-#define DBF_VERSION "R50-hellforge.3"
+#define DBF_VERSION "R50-hellforge.4"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
 #define DBF_TITLE "Diver's Best Friend"
@@ -99,6 +102,7 @@ static uint64_t g_ticks;
 /* The settings: written by OnGameLoaded before the tick is registered, then read only by the game thread. */
 static DbfSettings g_settings;
 static int g_settings_problems;
+static WCHAR g_settings_path[PATH_CHARS];
 static bool g_settings_read; /* a file was read (else the defaults are in use) */
 static char g_settings_text[SETTINGS_MAX_BYTES];
 static char g_settings_problem_text[SETTINGS_PROBLEMS_SIZE];
@@ -226,6 +230,7 @@ static void load_settings(void)
     }
     memcpy(path + n, DBF_SETTINGS_FOLDER, folder * sizeof(WCHAR));
     memcpy(path + n + folder, DBF_SETTINGS_NAME_W, name * sizeof(WCHAR));
+    memcpy(g_settings_path, path, (n + folder + name) * sizeof(WCHAR));
     file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
                        FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) {
@@ -295,6 +300,8 @@ static void start(uint64_t now)
         if (loader == 0) log_line("No " DBF_LOADER_DLL " image: HellForge mod stratagems get no code");
         mem_init(&mem);
         adm_init(&adm, now);
+        HudBridgePort bridge = {g_hf->read, g_hf->read_code, adm.rewrites, log_line};
+        hud_bridge_init(game_dll, size, &bridge);
         native_init(&nat);
         native_set_base(game_dll);
         codes_init(&codes);
@@ -565,10 +572,64 @@ static void run_waiting(void)
     (void)logic_list_step(&g_list, NULL, &g_settings, levels, false, NULL);
 }
 
+/* The Lua update polls for a grant. Keep both input paths mutually exclusive
+ * through the entire close/release transition, including failed-write retries. */
+static void update_owners(DbfSnapshot* s, uint64_t now)
+{
+    static bool yielding;
+    bool requested = hud_bridge_requested();
+    int buttons = -1;
+    if (requested != yielding) {
+        bind_init(&g_bind_port, g_settings.bind);
+        memset(&g_list, 0, sizeof g_list);
+        g_list.chosen = -1;
+        memset(g_slot_prev, 0, sizeof g_slot_prev);
+        yielding = requested;
+    }
+    if (requested) {
+        if (job_active()) cancel_job(&s->game, "native HUD activated");
+        retry_restores(&s->game);
+        watch_job();
+        bool levels[BIND_COUNT];
+        bool allowed = g_front && input_blocked(&s->game) == NULL;
+        bind_poll(levels, allowed, g_bind_status, sizeof g_bind_status);
+        if (allowed) {
+            buttons = 0;
+            for (int i = 0; i < BIND_COUNT; ++i)
+                if (levels[i]) buttons |= 1 << i;
+        }
+        if (!hud_bridge_owned()) native_list_update(&s->game, -1);
+    } else {
+        run(&s->game, now);
+        native_list_update(&s->game, g_settings.enabled && !shortcut_active() ? g_list.chosen : -1);
+    }
+    bool ready = requested && !job_active() && !native_list_pending() && !pending_changes();
+    hud_bridge_publish(&s->game, &g_settings, buttons, s->build_ok, ready);
+    s->hud_owned = hud_bridge_owned();
+}
+
+static void apply_settings(void)
+{
+    UiEvent events[UI_QUEUE_SLOTS];
+    int count = ui_drain(events, UI_QUEUE_SLOTS);
+    if (!count) return;
+    DbfSettings updated = g_settings;
+    bool changed = false;
+    for (int i = 0; i < count; ++i) {
+        if (events[i].kind == UI_HUD_OPTION && events[i].a >= 0 &&
+            hud_option_set(&updated, (unsigned)events[i].a, events[i].b)) changed = true;
+    }
+    if (!changed) return;
+    if (g_settings_path[0] && hud_prefs_save(g_settings_path, &updated)) {
+        g_settings = updated;
+        g_settings_read = true;
+    } else log_line("Could not save HUD settings to settings.ini; retained the previous settings");
+}
+
 static void Tick(HfMod* mod, float dt, void* user)
 {
     static DbfSnapshot s; /* the game thread's only: snap_publish copies it */
-    static UiEvent events[UI_QUEUE_SLOTS];
+    apply_settings();
     uint64_t now = GetTickCount64();
     if (!g_bind_ready) { /* the bindings need nothing of game.dll: from the first tick (platform_win.h: game thread) */
         g_bind_port = *dbf_bind_port(g_ov);
@@ -587,17 +648,16 @@ static void Tick(HfMod* mod, float dt, void* user)
         adm_tick(now);
         game_read(&s.game);
         snap_fill_admission(&s);
-        run(&s.game, now);
-        native_list_update(&s.game, g_settings.enabled && !shortcut_active() ? g_list.chosen : -1);
+        update_owners(&s, now);
     } else {
         fill_waiting(&s);
         run_waiting();
     }
     snap_fill_list(&s, &s.game, &g_settings, &g_list, &g_job, g_bind_status, g_settings_read ? DBF_SETTINGS_NAME : NULL,
                    g_settings_problems);
+    s.options = g_settings;
     s.host_version = g_ov != NULL ? g_ov->version : 0;
     snap_publish(&s); /* every tick: a publish skipped while the window holds a buffer is made good by the next */
-    (void)ui_drain(events, UI_QUEUE_SLOTS); /* the whole queue; nothing posts events yet */
 }
 
 /* The tick, through the host's shared game-thread slot when the table connect_overlay got has one (Overlay Host 0.3.0 and

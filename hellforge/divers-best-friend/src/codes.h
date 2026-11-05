@@ -99,6 +99,8 @@ bool codes_read(uint32_t kind, const GameLocal* local, DbfCode* out, char* reaso
 
 /* The table the last codes_table accepted (an address), or 0. */
 uintptr_t codes_table_at(void);
+/* Game thread: the admitted row for presentation fields, including loader-owned rows. */
+uintptr_t codes_definition(uint32_t kind);
 
 /* True when a codes_read since the last codes_table asked the game's scramble query (it ran: its feature was admitted
  * and native had the game.dll base and the effects pointer). */

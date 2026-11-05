@@ -220,6 +220,8 @@ static void transition(uintptr_t base, const DbfRow* row, const DbfRow* selected
     if (values(widget, scale, current)) change->held = !memcmp(current, change->applied, bytes);
 }
 
+bool native_list_pending(void) { return owner != 0; }
+
 void native_list_update(const GameView* view, int chosen)
 {
     const DbfRow* slots[DBF_VAL_CARD_COUNT] = {0};

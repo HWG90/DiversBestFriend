@@ -9,6 +9,7 @@ void native_list_init(uintptr_t base, void (*log)(const char*));
 /* Game thread, once per tick after game_read and list selection. chosen indexes this
  * view's rows. Pass -1 (including on shutdown with a fresh view) to release styling.
  * A transiently missing view suspends changes until identity can be checked. */
+bool native_list_pending(void);
 void native_list_update(const GameView* view, int chosen);
 
 #endif

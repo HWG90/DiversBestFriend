@@ -235,6 +235,14 @@ static const char* definition(uint32_t kind, uintptr_t settings, uintptr_t* def)
     return NULL;
 }
 
+uintptr_t codes_definition(uint32_t kind)
+{
+    uintptr_t settings, address;
+    if (!g_table_ok || !kind || kind > g_max_kind || !stratagems_admitted(NULL, 0) ||
+        !mem_ptr(g_base + DBF_RVA_SETTINGS, &settings) || definition(kind, settings, &address)) return 0;
+    return address;
+}
+
 /* [array, array + 4 * count) inside [from, from + size); nothing is inside a range starting at 0 or of size 0 (a port
  * without the loader image). */
 static bool inside(uintptr_t array, uint32_t count, uintptr_t from, uint64_t size)

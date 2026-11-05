@@ -86,7 +86,7 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.3 (game 25480438)"
+#define VERSION_LINE "Diver's Best Friend R50-hellforge.4 (game 25480438)"
 #define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"
@@ -1366,8 +1366,40 @@ static bool ended(const char* line)
     return false;
 }
 
+/* Exercise the same exported surface the in-game Lua VM resolves. A second
+ * generation must not drive input or release the first generation's lease. */
+static void check_hud_handoff(HMODULE dll, const SynStratagem* st)
+{
+    int (*acquire)(const void*) = (void*)need(dll, "dbf_hud_acquire");
+    void (*release)(const void*) = (void*)need(dll, "dbf_hud_release");
+    int (*code)(unsigned, unsigned char*, unsigned) = (void*)need(dll, "dbf_hud_code");
+    uint64_t (*row)(unsigned) = (void*)need(dll, "dbf_hud_row");
+    int (*option)(const char*) = (void*)need(dll, "dbf_hud_option");
+    int (*buttons)(void) = (void*)need(dll, "dbf_hud_buttons");
+    if (!acquire || !release || !code || !row || !option || !buttons) return;
+    char first = 0, second = 0;
+    uint8_t directions[DBF_VAL_CODE_MAX];
+    CHECK(!acquire(&first), "Lua waits for C to restore its native HUD before taking ownership");
+    entry_tick();
+    CHECK(acquire(&first) && !acquire(&second) && native_chosen(-1), "only the claimant owns the restored HUD");
+    release(&second);
+    CHECK(acquire(&first) && option("selection_mode_ordered") == 1, "a stale claimant cannot release the current HUD");
+    CHECK(row(st->kind) && code(st->kind, directions, sizeof directions) == st->code_len &&
+          !memcmp(directions, st->code, st->code_len), "Lua receives the admitted HUD row and code");
+    CHECK(!code(st->kind, directions, 0) && !row(999), "invalid row and insufficient buffer fail closed");
+    key(KEY_NEXT, true);
+    entry_tick();
+    CHECK((buttons() & 1) && native_chosen(-1), "Lua receives Next while C leaves native selection alone");
+    key(KEY_NEXT, false);
+    entry_tick();
+    release(&first);
+    CHECK(!row(st->kind) && buttons() == -1, "release invalidates the HUD frame");
+    entry_tick();
+    CHECK(native_chosen(0), "fallback selection resumes on its first ready card");
+}
+
 /* list-confirm: the default scene (menu open, kinds 118, 4, 50, 63 from the top), Next once, Confirm. */
-static void run_list_confirm(void)
+static void run_list_confirm(HMODULE dll)
 {
     static const uint32_t SOUNDS[2] = { DBF_VAL_SOUND_MOVE, DBF_VAL_SOUND_CONFIRM };
     SynScene scene;
@@ -1425,6 +1457,7 @@ static void run_list_confirm(void)
     CHECK(g_write_no >= 2 * st->code_len && syn_write_count() == 0, "a press and a release per direction");
     CHECK(g_calls[FN_OPEN] == 0 && g_calls[FN_CLOSE] == 0 && g_calls[FN_REQUEST] == 0,
           "a List job opens, closes and requests nothing");
+    check_hud_handoff(dll, st);
     end_keys();
 }
 
@@ -2022,7 +2055,7 @@ int main(int argc, char** argv)
     case C_NULL_PANEL: run_null_panel(); break;
     case C_ON_FAILS: run_on_fails(); break;
     case C_MASKED_LOG: run_masked_log(); break;
-    case C_LIST_CONFIRM: run_list_confirm(); break;
+    case C_LIST_CONFIRM: run_list_confirm(dll); break;
     case C_INSTANT: run_instant(); break;
     case C_MENU_CLOSE: run_interrupted(false); break;
     case C_MISSION_END: run_interrupted(true); break;
