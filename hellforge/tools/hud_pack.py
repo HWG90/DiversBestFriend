@@ -38,7 +38,12 @@ def factories():
         yield original["src/" + name + ".lua"].decode("utf-8")
     style = (HUD / "hd2_ui_style.lua").read_text(encoding="utf-8")
     yield "local kit = (function()\n" + style + "\nend)()\nreturn {style=kit, cooldown_tokens=kit.tokens}"
-    for name in (*WHEEL, "cooldown_gui", "cooldown_dock", "weapon_reader", "weapon_strip", "runtime"):
+    terminal = ("terminal_guards", "terminal")
+    present = [(HUD / (name + ".lua")).is_file() for name in terminal]
+    if any(present) and not all(present):
+        raise ValueError("terminal_guards.lua and terminal.lua must be supplied together")
+    optional = terminal if all(present) else ()
+    for name in (*WHEEL, "cooldown_gui", "cooldown_dock", "weapon_reader", "weapon_strip", *optional, "runtime"):
         yield (HUD / (name + ".lua")).read_text(encoding="utf-8")
 
 
