@@ -2,8 +2,8 @@
  *
  * A Binding says which input drives an action: a keyboard key, a mouse button, one direction of the mouse wheel or a
  * controller button. bind_poll reads them through a BindPort (the operating system's side: src/platform_win.c has the real
- * one, the tests have fakes) and gives each action a level that is true while its input is down. A wheel notch is not a
- * held input, so a wheel binding is true for one poll per notch.
+ * one, the tests have fakes) and gives each action a level that is true while its input is down (once it has been seen up:
+ * see Release after a block below). A wheel notch is not a held input, so a wheel binding is true for one poll per notch.
  *
  * Nothing fires unless the caller says it may: bind_poll's `allowed` is the caller's gate (DBF enabled, the game's UI not
  * obstructed, no Overlay Host window open: the HUD panel's OvFrame.capturing, stored through snap_set_capturing), and the
@@ -19,6 +19,16 @@
  * net movement). While nothing may fire, the pending pulses are dropped and the baseline moves to the current total, so a
  * notch turned then is gone for good. The baseline is taken at bind_init (or at the first poll that can read the total);
  * what was turned before is not DBF's.
+ *
+ * Release after a block. A key, mouse button or controller button that is down when nothing could fire is not a press:
+ * a level can only be true for an action whose input has been seen up on an allowed poll since the module started
+ * (bind_init) or since the last poll that could not fire (`allowed` false, or the game's window not in front). Until then
+ * the level stays false though the input is down, and the poll that sees it up arms it, so the poll after that, with the
+ * input down again, is true at once. A Confirm that opened the stratagem menu, or was held through a window that blocked
+ * input, therefore does not confirm anything, and an input that was up when the block ended works the moment it is
+ * pressed. It is judged per action, and an input is only looked at on allowed polls (a block-time release and press is
+ * not seen). A controller that is absent counts as up. The wheel is not held, so it is outside the rule: a pulse is
+ * true on the first allowed poll that has one (notches turned while blocked were already dropped).
  *
  * Portable C11: standard headers only. No windows.h, no Overlay Host header: the BindPort is the whole interface. */
 #ifndef DBF_BINDINGS_H
@@ -72,15 +82,18 @@ typedef struct BindPort {
     bool (*pad_buttons)(uint16_t* buttons); /* XInput user 0's wButtons; false when there is no controller */
 } BindPort;
 
-/* Starts (or restarts) the module: copies the port and the map, takes the wheel baseline, forgets pending pulses. A binding
+/* Starts (or restarts) the module: copies the port and the map, takes the wheel baseline, forgets pending pulses, and takes
+ * every input as not yet seen up (the release rule above: a key held now does nothing until it is let go). A binding
  * that cannot work (an unknown kind, a mouse code outside 1..5, a key or pad code of 0) counts as BIND_NONE. A NULL port
  * reads nothing; a NULL map binds nothing. */
 void bind_init(const BindPort* port, const Binding map[BIND_COUNT]);
 
-/* Reads the inputs once and writes levels[BIND_COUNT]: true for an action whose input is down (a wheel notch: for this poll
- * only). `allowed` false, or the game's window not in front: every level is false, pending wheel pulses are dropped and the
- * wheel baseline moves on. `status` (n bytes, NULL or 0 allowed) gets "" or, when a wheel binding is set and the port has no
- * wheel total, BIND_STATUS_NEEDS_HOST; it is always terminated and cut to fit. Before bind_init every level is false. */
+/* Reads the inputs once and writes levels[BIND_COUNT]: true for an action whose input is down and has been seen up since
+ * the module started or could last not fire (the release rule above; a wheel notch: for this poll only). `allowed` false,
+ * or the game's window not in front: every level is false, every input has to be seen up again before it can be true,
+ * pending wheel pulses are dropped and the wheel baseline moves on. `status` (n bytes, NULL or 0 allowed) gets "" or, when
+ * a wheel binding is set and the port has no wheel total, BIND_STATUS_NEEDS_HOST; it is always terminated and cut to fit.
+ * Before bind_init every level is false. */
 void bind_poll(bool levels[BIND_COUNT], bool allowed, char* status, size_t n);
 
 #endif

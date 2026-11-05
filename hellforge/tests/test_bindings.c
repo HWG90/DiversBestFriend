@@ -71,18 +71,29 @@ static void default_map(Binding map[BIND_COUNT])
     map[BIND_CONFIRM] = mouse(1);
 }
 
-static void start(const Binding map[BIND_COUNT])
-{
-    reset_fake();
-    bind_init(&g_port, map);
-}
-
 static char g_status[128];
 static bool g_levels[BIND_COUNT];
 
 static void poll(bool allowed)
 {
     bind_poll(g_levels, allowed, g_status, sizeof g_status);
+}
+
+/* bind_init right after a reset of the fake, and nothing polled: the first poll is the first one after bind_init. */
+static void start_cold(const Binding map[BIND_COUNT])
+{
+    reset_fake();
+    bind_init(&g_port, map);
+}
+
+/* start_cold, then one allowed poll with every input up (reset_fake releases them all): each action has been seen up, as
+ * a mod that has run for a moment has seen it, so a test that presses a key next sees it work at once. The counters of
+ * the fake start from zero after it. */
+static void start(const Binding map[BIND_COUNT])
+{
+    start_cold(map);
+    poll(true);
+    g_key_calls = g_front_calls = g_wheel_calls = g_pad_calls = 0;
 }
 
 static bool only(BindAction a)
@@ -408,8 +419,20 @@ static void test_blocked_clears_everything(void)
     CHECK(g_status[0] == '\0', "and nothing is said about it");
     g_front = true;
     poll(true);
+    CHECK(none_down(), "back in front with the inputs still held: still false (they were held while nothing could fire)");
+    poll(true);
+    CHECK(none_down(), "and false for as long as they stay held");
+    g_keys[0x31] = false;
+    g_keys[0x01] = false;
+    g_pad = 0;
+    poll(true);
+    CHECK(none_down(), "released: false");
+    g_keys[0x31] = true;
+    g_keys[0x01] = true;
+    g_pad = BIND_PAD_A;
+    poll(true);
     CHECK(g_levels[BIND_SLOT1] && g_levels[BIND_SLOT2] && g_levels[BIND_CONFIRM],
-          "back in front with the inputs still held: they are true again (levels, not latches)");
+          "pressed again: true (levels once they have been seen up)");
 
     int keys_before = g_key_calls, pads_before = g_pad_calls;
     poll(false);
@@ -439,6 +462,136 @@ static void test_foreground_drops_notches(void)
     g_keys[0x01] = true;
     poll(true);
     CHECK(none_down(), "a port without foreground counts as not in front: nothing fires");
+}
+
+static void test_release_after_block(void)
+{
+    Binding map[BIND_COUNT];
+    default_map(map);
+    start(map);
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "confirm held with the inputs allowed: true");
+    poll(false);
+    CHECK(none_down(), "blocked: false");
+    poll(true);
+    CHECK(none_down(), "allowed again with confirm still held: false (it was held while blocked)");
+    poll(true);
+    CHECK(none_down(), "and for as long as it stays held");
+    g_keys[0x01] = false;
+    poll(true);
+    CHECK(none_down(), "released: false");
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "pressed again: true at once");
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "and a level while it stays held");
+
+    /* A key that is not held when the block ends works as soon as it is pressed. */
+    start(map);
+    poll(false);
+    poll(true);
+    CHECK(none_down(), "blocked and then allowed with nothing held: false");
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "confirm pressed after the block ended: true at once");
+
+    /* The input is seen up on an allowed poll or not at all: letting go and pressing again while blocked is not seen. */
+    start(map);
+    g_keys[0x01] = true;
+    poll(false);
+    g_keys[0x01] = false;
+    poll(false);
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(none_down(), "released and pressed again while blocked: still false (never seen up while allowed)");
+    g_keys[0x01] = false;
+    poll(true);
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "seen up while allowed, then pressed: true");
+
+    /* The window not being in front blocks the same way. */
+    start(map);
+    g_keys[0x01] = true;
+    g_front = false;
+    poll(true);
+    g_front = true;
+    poll(true);
+    CHECK(none_down(), "confirm held while the game was not in front: false when it comes back");
+    g_keys[0x01] = false;
+    poll(true);
+    g_keys[0x01] = true;
+    poll(true);
+    CHECK(only(BIND_CONFIRM), "and it works once it has been released and pressed");
+}
+
+static void test_release_after_block_per_action(void)
+{
+    Binding map[BIND_COUNT];
+    default_map(map);
+    map[BIND_SLOT1] = key(0x31);
+    map[BIND_SLOT2] = pad(BIND_PAD_A);
+    map[BIND_SLOT3] = key(0x31); /* two actions on one key */
+    start(map);
+    g_keys[0x31] = true;
+    g_pad = BIND_PAD_A;
+    poll(false);
+    g_pad = 0; /* the pad button is let go while blocked, the key is not */
+    poll(true);
+    CHECK(none_down(), "slot1 and slot3 (key held) wait; slot2's pad button is up and has been seen up");
+    g_pad = BIND_PAD_A;
+    poll(true);
+    CHECK(only(BIND_SLOT2), "slot2 fires when pressed while slot1 and slot3 are still waiting for the key's release");
+    g_keys[0x31] = false;
+    poll(true);
+    g_keys[0x31] = true;
+    poll(true);
+    CHECK(g_levels[BIND_SLOT1] && g_levels[BIND_SLOT2] && g_levels[BIND_SLOT3] && !g_levels[BIND_CONFIRM],
+          "after the key's release both actions on it work");
+}
+
+static void test_first_poll_after_init(void)
+{
+    Binding map[BIND_COUNT];
+    default_map(map);
+    map[BIND_SLOT1] = key(0x31);
+    map[BIND_SLOT2] = key('Q');
+    start_cold(map);
+    g_keys[0x31] = true;
+    poll(true);
+    CHECK(none_down(), "a key held at the first poll after bind_init: false");
+    g_keys['Q'] = true;
+    poll(true);
+    CHECK(only(BIND_SLOT2), "another key, up at the first poll and pressed after: true at once");
+    poll(true);
+    CHECK(only(BIND_SLOT2), "slot1 is still waiting for its key to be let go");
+    g_keys[0x31] = false;
+    poll(true);
+    g_keys[0x31] = true;
+    poll(true);
+    CHECK(g_levels[BIND_SLOT1] && g_levels[BIND_SLOT2], "and works after it was let go and pressed");
+
+    /* A first poll that is blocked is not a look at the input: the rule starts at the first allowed poll. */
+    start_cold(map);
+    g_keys[0x31] = true;
+    poll(false);
+    g_keys[0x31] = false;
+    poll(true);
+    g_keys[0x31] = true;
+    poll(true);
+    CHECK(only(BIND_SLOT1), "up at the first allowed poll (after a blocked one), pressed after: true");
+
+    /* The wheel has no held state: its first pulse counts at once. */
+    start_cold(map);
+    turn(-1);
+    poll(true);
+    CHECK(only(BIND_NEXT), "wheel: a notch at the first poll after bind_init is a pulse");
+    start(map);
+    poll(false);
+    turn(1);
+    poll(true);
+    CHECK(only(BIND_PREVIOUS), "wheel: a notch turned after a blocked poll is a pulse on the first allowed poll");
 }
 
 static void test_no_wheel_api(void)
@@ -548,10 +701,17 @@ static void test_reinit(void)
     memset(map, 0, sizeof map);
     map[BIND_SLOT4] = key('Z');
     bind_init(&g_port, map);
+    g_keys['Z'] = false;
+    g_keys[0x01] = false;
+    poll(true);
     g_keys['Z'] = true;
     g_keys[0x01] = true;
     poll(true);
     CHECK(only(BIND_SLOT4), "and a new map replaces the old");
+
+    bind_init(&g_port, map);
+    poll(true);
+    CHECK(none_down(), "a key held across bind_init does not fire (the first poll after bind_init only looks)");
 }
 
 int main(void)
@@ -570,6 +730,9 @@ int main(void)
     test_blocked_drops_notches();
     test_blocked_clears_everything();
     test_foreground_drops_notches();
+    test_release_after_block();
+    test_release_after_block_per_action();
+    test_first_poll_after_init();
     test_no_wheel_api();
     test_status_buffer();
     test_bad_bindings();

@@ -9,7 +9,8 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "0a96f0bfa75837231182902d2244fdf561f471a22ef30ce53fed4c4981d4f44b",
+    "addresses_25480438.json": "9a2c3ef31784ce073755d7f56c96194a6823e276e6c954c1d13df96d999649e4",
+    "blacklist.lua": "9ba6ac940b0264403ffa0dcaed58e6268e38d1a6c1e227a7845c7e5c0a47b599",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
     "duplicate.lua": "9e4a0b555f8dd37632b5d28e1f0b26edc264d07a77eda2e059b3a22811919452",
@@ -25,7 +26,7 @@
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "0014e48ba2a51baa4a62da53c735ea6462c7542da5624fbdf46e75fbd4d691df",
+    "addresses_25480438.h": "10034c7e20fb61974858d120cabb7b8c75b078d012f5be508c05e676605cea53",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
@@ -55,8 +56,8 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 101,
-    "values": 59,
+    "addresses": 105,
+    "values": 65,
     "functions": 6,
     "blacklist_kinds": 37,
     "kind_names": 149
@@ -268,6 +269,34 @@
       "value": "0x44",
       "define": "DBF_OFF_CARD_TIMER_SIZE",
       "source": "R46 input.lua:25"
+    },
+    {
+      "name": "CARD_TIMER_KIND_OFFSET",
+      "kind": "offset",
+      "value": "0x34",
+      "define": "DBF_OFF_CARD_TIMER_KIND_OFFSET",
+      "source": "R46 input.lua:26"
+    },
+    {
+      "name": "CARD_TIMER_STATE_OFFSET",
+      "kind": "offset",
+      "value": "0x40",
+      "define": "DBF_OFF_CARD_TIMER_STATE_OFFSET",
+      "source": "R46 input.lua:27"
+    },
+    {
+      "name": "CARD_TIMER_INCOMING_SECONDS_OFFSET",
+      "kind": "offset",
+      "value": "0x0",
+      "define": "DBF_OFF_CARD_TIMER_INCOMING_SECONDS_OFFSET",
+      "source": "R46 input.lua:30"
+    },
+    {
+      "name": "CARD_TIMER_COOLDOWN_SECONDS_OFFSET",
+      "kind": "offset",
+      "value": "0x8",
+      "define": "DBF_OFF_CARD_TIMER_COOLDOWN_SECONDS_OFFSET",
+      "source": "R46 input.lua:30"
     },
     {
       "name": "PLAYERS",
@@ -1286,6 +1315,48 @@
       "value": "0xdd274583",
       "define": "DBF_VAL_SOUND_CONFIRM",
       "source": "R46 native.lua:326"
+    },
+    {
+      "name": "TIMER_STATE_UNAVAILABLE",
+      "kind": "value",
+      "value": "5",
+      "define": "DBF_VAL_TIMER_STATE_UNAVAILABLE",
+      "source": "R46 input.lua:28"
+    },
+    {
+      "name": "TIMER_STATE_INCOMING",
+      "kind": "value",
+      "value": "3",
+      "define": "DBF_VAL_TIMER_STATE_INCOMING",
+      "source": "R46 input.lua:29"
+    },
+    {
+      "name": "TIMER_STATE_COOLDOWN",
+      "kind": "value",
+      "value": "4",
+      "define": "DBF_VAL_TIMER_STATE_COOLDOWN",
+      "source": "R46 input.lua:29"
+    },
+    {
+      "name": "TIMER_SECONDS_MAX",
+      "kind": "value",
+      "value": "86400",
+      "define": "DBF_VAL_TIMER_SECONDS_MAX",
+      "source": "R46 input.lua:33"
+    },
+    {
+      "name": "HIDE_SOS_KIND",
+      "kind": "value",
+      "value": "145",
+      "define": "DBF_VAL_HIDE_SOS_KIND",
+      "source": "R46 blacklist.lua:4"
+    },
+    {
+      "name": "HIDE_EAGLE_REARM_KIND",
+      "kind": "value",
+      "value": "49",
+      "define": "DBF_VAL_HIDE_EAGLE_REARM_KIND",
+      "source": "R46 mission_blacklist.lua:51"
     }
   ],
   "bound_functions": [

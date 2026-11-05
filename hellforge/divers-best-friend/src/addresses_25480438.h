@@ -41,6 +41,10 @@
 #define DBF_OFF_CARD_TARGET_OFFSET 0x3740u /* R46 native.lua:60 */
 #define DBF_OFF_CARD_TIMER_OFFSET 0x3718u /* R46 input.lua:25 */
 #define DBF_OFF_CARD_TIMER_SIZE 0x44u /* R46 input.lua:25 */
+#define DBF_OFF_CARD_TIMER_KIND_OFFSET 0x34u /* R46 input.lua:26 */
+#define DBF_OFF_CARD_TIMER_STATE_OFFSET 0x40u /* R46 input.lua:27 */
+#define DBF_OFF_CARD_TIMER_INCOMING_SECONDS_OFFSET 0x0u /* R46 input.lua:30 */
+#define DBF_OFF_CARD_TIMER_COOLDOWN_SECONDS_OFFSET 0x8u /* R46 input.lua:30 */
 #define DBF_RVA_PLAYERS 0x3326468u /* R46 input.lua:102 */
 #define DBF_RVA_REGISTRY 0x346bf98u /* R46 input.lua:106 */
 #define DBF_OFF_REGISTRY_KEYS_OFFSET 0xf32f20u /* R46 input.lua:107 */
@@ -188,6 +192,12 @@
 #define DBF_VAL_BINDING_FLAGS_FORMAT 4u /* R46 menu_latch.lua:69 */
 #define DBF_VAL_SOUND_MOVE 0x39425a55u /* R46 native.lua:326 */
 #define DBF_VAL_SOUND_CONFIRM 0xdd274583u /* R46 native.lua:326 */
+#define DBF_VAL_TIMER_STATE_UNAVAILABLE 5u /* R46 input.lua:28 */
+#define DBF_VAL_TIMER_STATE_INCOMING 3u /* R46 input.lua:29 */
+#define DBF_VAL_TIMER_STATE_COOLDOWN 4u /* R46 input.lua:29 */
+#define DBF_VAL_TIMER_SECONDS_MAX 86400u /* R46 input.lua:33 */
+#define DBF_VAL_HIDE_SOS_KIND 145u /* R46 blacklist.lua:4 */
+#define DBF_VAL_HIDE_EAGLE_REARM_KIND 49u /* R46 mission_blacklist.lua:51 */
 
 /* Game functions the port calls (RVAs in game.dll), from R46, each with the witnesses that guard
    it: every one of them gates the features that call the function. */

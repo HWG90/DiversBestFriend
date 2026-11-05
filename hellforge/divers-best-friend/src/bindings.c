@@ -11,6 +11,9 @@ static bool g_pad_bound;   /* some action is on a controller button */
 static int64_t g_base;     /* the wheel total the notches are counted from */
 static bool g_base_valid;  /* g_base holds a real total */
 static int g_pending[2];   /* notches waiting to be handed out, [0] up, [1] down */
+static bool g_seen_up[BIND_COUNT]; /* the action's key, mouse button or pad button has been up on an allowed poll since
+                                      bind_init or the last poll that could not fire; only then may its level be true
+                                      (the release rule in bindings.h) */
 
 enum { DIR_UP = 0, DIR_DOWN = 1 };
 
@@ -62,6 +65,7 @@ void bind_init(const BindPort* port, const Binding map[BIND_COUNT])
         g_pad_bound |= g_map[i].kind == BIND_PAD;
     }
     g_pending[DIR_UP] = g_pending[DIR_DOWN] = 0;
+    memset(g_seen_up, 0, sizeof g_seen_up);
     g_base_valid = read_total(&total);
     g_base = g_base_valid ? total : 0;
     g_started = true;
@@ -108,6 +112,7 @@ void bind_poll(bool levels[BIND_COUNT], bool allowed, char* status, size_t n)
      * pending pulses are dropped and the baseline moves to the total. */
     if (!allowed || g_port.foreground == NULL || !g_port.foreground()) {
         g_pending[DIR_UP] = g_pending[DIR_DOWN] = 0;
+        memset(g_seen_up, 0, sizeof g_seen_up); /* what is held now was held while nothing could fire */
         if (have_total) {
             g_base = total;
             g_base_valid = true;
@@ -126,13 +131,18 @@ void bind_poll(bool levels[BIND_COUNT], bool allowed, char* status, size_t n)
 
     for (int i = 0; i < BIND_COUNT; i++) {
         const Binding* b = &g_map[i];
+        bool held = false; /* a key, mouse button or pad button that is down; a wheel pulse is not held */
         switch (b->kind) {
-        case BIND_KEY: levels[i] = g_port.key_down != NULL && g_port.key_down(b->code); break;
-        case BIND_MOUSE: levels[i] = g_port.key_down != NULL && g_port.key_down(g_mouse_vk[b->code]); break;
-        case BIND_WHEEL_UP: levels[i] = pulse[DIR_UP]; break;
-        case BIND_WHEEL_DOWN: levels[i] = pulse[DIR_DOWN]; break;
-        case BIND_PAD: levels[i] = pad_ok && (buttons & b->code) != 0; break;
-        default: break;
+        case BIND_KEY: held = g_port.key_down != NULL && g_port.key_down(b->code); break;
+        case BIND_MOUSE: held = g_port.key_down != NULL && g_port.key_down(g_mouse_vk[b->code]); break;
+        case BIND_WHEEL_UP: levels[i] = pulse[DIR_UP]; continue;
+        case BIND_WHEEL_DOWN: levels[i] = pulse[DIR_DOWN]; continue;
+        case BIND_PAD: held = pad_ok && (buttons & b->code) != 0; break;
+        default: continue;
         }
+        /* An input seen down before it was ever seen up on an allowed poll was pressed while nothing could fire (or
+         * before the module started): it does nothing until it is let go. */
+        if (!held) g_seen_up[i] = true;
+        levels[i] = held && g_seen_up[i];
     }
 }
