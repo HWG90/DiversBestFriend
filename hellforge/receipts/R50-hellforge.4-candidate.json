@@ -1,0 +1,32 @@
+{
+  "version": "R50-hellforge.4",
+  "build": "25480438",
+  "source_commit": "e7e791db16cf69373ca1ec2726392aae8112eeca",
+  "stage": {
+    "hf_lll_sha256": "96e168e52b0a8469c16310434bc66da3699ab35592c5c9a507d991edc782d3a7",
+    "game_vm_sha256": "2c8720c9f446c848436ad993b1a88099d76f0b0b09df53689719b797c3039ce7",
+    "launcher": "0.4.0-beta",
+    "commit": "d8a8b46",
+    "version": "R50-hellforge.4",
+    "planned_dll": "divers_best_friend.dll",
+    "dll_sha256": "47ebbfe3bf4965b2c0afcf349a42dbf5c6896de55e4427bef0f522d6fc006d01",
+    "staged_patch": "9ba626afa44a3aa3.patch_1",
+    "patch_sha256": "bef6d2bc63593fadd6add5057b707b7b52e3c5c24a6e736f28fa7b7df8ce0e00",
+    "package_sha256": "829878a8445ccb2dc055437713dff11cb7f0691b43e32cdf150fd37951879f4f",
+    "data_files": 3
+  },
+  "installed_utc": "2026-11-05T22:15:23Z",
+  "installed_members_verified": 56,
+  "checks": {
+    "portable_c_programs": 21,
+    "python_tests": 54,
+    "proton_wine_cases": 30,
+    "staged_game_vm_lifecycle_cycles": 3,
+    "hud_witnesses_matched": 93
+  },
+  "live_acceptance": {
+    "proton_mission": "pending",
+    "native_windows_mission": "pending",
+    "public_release": "pending acceptance"
+  }
+}
