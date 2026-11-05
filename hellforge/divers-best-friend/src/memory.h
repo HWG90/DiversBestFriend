@@ -51,6 +51,11 @@ bool mem_u64(uintptr_t a, uint64_t* v);
  * above 0x7FFFFFFFFFFF, and unless 8-aligned. The output is left alone on failure. */
 bool mem_ptr(uintptr_t a, uintptr_t* v);
 
+/* mem_ptr with another alignment (1, 2, 4 or 8; anything else fails): the same range, the value a multiple of
+ * `alignment`. For the data pointers the game packs tighter than its objects (R46 reads definition, code-array and lookup
+ * pointers 4-aligned). mem_ptr(a, v) is mem_ptr_aligned(a, v, 8). */
+bool mem_ptr_aligned(uintptr_t a, uintptr_t* v, uintptr_t alignment);
+
 /* Replaces `size` bytes (1 to MEM_SWAP_MAX) at `address` with `value`, only when they equal `expect`, and journals the
  * change under `owner`. A fresh read decides the result: MEM_ALREADY when the bytes already equal `value` (checked
  * first), MEM_DIFFERENT when they do not equal `expect`. A write that fails is MEM_FAILED, and any bytes it did change

@@ -127,6 +127,40 @@ static void test_ptr(void)
     CHECK(mem_ptr(RAM_BASE + 0x48, &p) && p == 0x1F4A5B6C7D8ull, "mem_ptr accepts an ordinary heap pointer");
 }
 
+/* R46 reads some data pointers with a weaker alignment (4: packed settings descriptors, code arrays, lookup slots). */
+static void test_ptr_aligned(void)
+{
+    uintptr_t p = 7;
+    reset();
+    put64(RAM_BASE + 0x00, 0x1F4A5B6C7D4ull);  /* 4 mod 8 */
+    put64(RAM_BASE + 0x08, 0x1F4A5B6C7D2ull);  /* 2 mod 4 */
+    put64(RAM_BASE + 0x10, 0x10000);
+    put64(RAM_BASE + 0x18, 0xFFFC);            /* 4-aligned, below 0x10000 */
+    put64(RAM_BASE + 0x20, 0x7FFFFFFFFFFCull); /* the highest 4-aligned value */
+    put64(RAM_BASE + 0x28, 0x800000000000ull);
+    put64(RAM_BASE + 0x30, 0);
+    put64(RAM_BASE + 0x38, 0x1F4A5B6C7D8ull);
+    CHECK(mem_ptr_aligned(RAM_BASE + 0x00, &p, 4) && p == 0x1F4A5B6C7D4ull, "align 4 accepts a pointer 4 mod 8");
+    p = 7;
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x00, &p, 8) && p == 7, "align 8 refuses it and leaves the output");
+    CHECK(!mem_ptr(RAM_BASE + 0x00, &p) && p == 7, "mem_ptr is align 8");
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x08, &p, 4), "align 4 refuses a value 2 mod 4");
+    CHECK(mem_ptr_aligned(RAM_BASE + 0x08, &p, 2) && p == 0x1F4A5B6C7D2ull, "align 2 accepts it");
+    CHECK(mem_ptr_aligned(RAM_BASE + 0x10, &p, 4) && p == 0x10000, "align 4 accepts 0x10000");
+    p = 7;
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x18, &p, 4) && p == 7, "align 4 keeps the 0x10000 floor");
+    CHECK(mem_ptr_aligned(RAM_BASE + 0x20, &p, 4) && p == 0x7FFFFFFFFFFCull, "align 4 accepts the highest value");
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x28, &p, 4), "align 4 keeps the 0x7FFFFFFFFFFF ceiling");
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x30, &p, 1), "align 1 still refuses 0");
+    CHECK(mem_ptr_aligned(RAM_BASE + 0x38, &p, 8) && p == 0x1F4A5B6C7D8ull, "align 8 accepts an 8-aligned pointer");
+    p = 7;
+    CHECK(!mem_ptr_aligned(RAM_BASE + 0x38, &p, 0) && !mem_ptr_aligned(RAM_BASE + 0x38, &p, 3)
+              && !mem_ptr_aligned(RAM_BASE + 0x38, &p, 16) && p == 7,
+          "an alignment that is not 1, 2, 4 or 8 is refused");
+    CHECK(!mem_ptr_aligned(RAM_BASE + RAM_SIZE, &p, 4) && p == 7, "align 4 fails when the read fails");
+    CHECK(!mem_ptr_aligned(RAM_BASE, NULL, 4), "a NULL output is refused");
+}
+
 static void test_swap_and_restore(void)
 {
     const uint8_t value[4] = { 0xDE, 0xAD, 0xBE, 0xEF };
@@ -363,6 +397,7 @@ int main(void)
     test_before_init();
     test_reads();
     test_ptr();
+    test_ptr_aligned();
     test_swap_and_restore();
     test_swap_refusals();
     test_swap_sizes();

@@ -52,13 +52,19 @@ bool mem_u64(uintptr_t a, uint64_t* v)
     return true;
 }
 
-bool mem_ptr(uintptr_t a, uintptr_t* v)
+bool mem_ptr_aligned(uintptr_t a, uintptr_t* v, uintptr_t alignment)
 {
     uint64_t x;
+    if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8) return false;
     if (!v || !mem_u64(a, &x)) return false;
-    if (x < 0x10000 || x > 0x7FFFFFFFFFFFull || (x & 7) != 0) return false;
+    if (x < 0x10000 || x > 0x7FFFFFFFFFFFull || (x & (alignment - 1)) != 0) return false;
     *v = (uintptr_t)x;
     return true;
+}
+
+bool mem_ptr(uintptr_t a, uintptr_t* v)
+{
+    return mem_ptr_aligned(a, v, 8);
 }
 
 MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_t size, MemOwner owner)
