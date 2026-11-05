@@ -11,7 +11,8 @@ static const char *query, *clicked, *heading;
 static int pressed(int k) { return key == k; }
 static int held(int k) { return modifier == k; }
 static int text_active(void) { return editing; }
-static int inactive(void) { return 0; }
+static int active;
+static int item_active(void) { return active; }
 static void nothing(void) {}
 static void number(int n) { (void)n; }
 static void color(int slot, uint32_t c) { (void)slot; (void)c; }
@@ -47,15 +48,21 @@ int main(void)
     fake_ov_reset();
     ov = *fake_ov_api();
     ov.key_pressed = pressed; ov.key_down = held; ov.want_text_input = text_active;
-    ov.is_item_active = inactive; ov.set_keyboard_focus_here = focus; ov.input_text = input;
+    ov.is_item_active = item_active; ov.set_keyboard_focus_here = focus; ov.input_text = input;
     ov.heading = title; ov.content_region_avail = size; ov.begin_child = child; ov.end_child = nothing;
     ov.push_color = color; ov.pop_color = number; ov.selectable = select_row; ov.same_line = nothing;
     ov.begin_disabled = number; ov.end_disabled = nothing; ov.push_id_int = number; ov.pop_id = nothing;
     ov.checkbox = toggle; ov.combo = combo; ov.slider_int = slider; ov.textf = formatted;
     ov.small_button = click;
 
+    CHECK(editor_browse_available(&ov) && !editor_browse_available(fake_ov_api()),
+          "legacy fake stays on the original path");
+    active = 1;
     editor_browse(&ov, &s, true);
+    active = 0;
     CHECK(children == 3 && focuses == 1, "three panes and explicit Ctrl+F focus");
+    CHECK(editor_browse_escape(), "Escape consumes even an empty active search");
+    frame(0x25); /* options -> categories */
     frame(0x28); /* All -> SELECTION */
     frame(0x09); /* options */
     frame(0x28);

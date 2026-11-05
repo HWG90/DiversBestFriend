@@ -1,5 +1,6 @@
 #include "editor_browse.h"
 #include "hud_options.h"
+#include "settings_editor.h"
 #include <string.h>
 
 bool editor_browse_available(const OvApi* ov)
@@ -156,7 +157,7 @@ static void move_category(int delta)
 
 static bool navigation_allowed(const OvApi* ov)
 {
-    return (!ov->is_focused || ov->is_focused()) && !ov->want_text_input() &&
+    return (!ov->is_focused || ov->is_focused()) && !ov->want_text_input() && !editor_capturing() &&
            !search_active && !ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12);
 }
 
