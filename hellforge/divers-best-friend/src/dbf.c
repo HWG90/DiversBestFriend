@@ -606,6 +606,7 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
     bool ready = requested && !job_active() && !native_list_pending() && !pending_changes();
     hud_bridge_publish(&s->game, &g_settings, buttons, s->build_ok, ready);
     s->hud_owned = hud_bridge_owned();
+    hud_bridge_status(s->hud_status, sizeof s->hud_status);
 }
 
 static void apply_settings(void)

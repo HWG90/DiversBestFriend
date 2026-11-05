@@ -91,6 +91,7 @@ typedef struct DbfSnapshot {
     uint32_t host_version; /* the Overlay Host's OvApi.version; 0 when there is none */
     ListView list; /* snap_fill_list fills it; until then it is all zero and not valid */
     DbfSettings options; /* game-thread copy of the currently applied preferences */
+    char hud_status[192]; /* last engine-side HUD diagnostic */
     bool hud_owned;      /* native HUD bridge currently owns the display */
 } DbfSnapshot;
 

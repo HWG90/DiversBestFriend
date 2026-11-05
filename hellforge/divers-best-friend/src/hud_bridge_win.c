@@ -6,6 +6,7 @@
 #include "hud_bridge.h"
 #include "hud_options.h"
 #include "logic.h"
+#include "snapshot.h"
 #include "codes.h"
 
 #define HUD_EXPORT __declspec(dllexport)
@@ -17,6 +18,7 @@ static bool verified, granted;
 static const void* claimant;
 static DbfSettings options;
 static int levels = -1;
+static char last_message[192];
 
 /* Retained until the next C tick. Publish only the current HUD's validated
  * definitions and codes; the Lua VM never races codes_read's per-pass state. */
@@ -181,6 +183,17 @@ HUD_EXPORT int dbf_hud_code(unsigned kind, unsigned char* dirs, unsigned capacit
 
 HUD_EXPORT void dbf_hud_log(const char* line)
 {
-    if (dbf_hud_base() && line && port.log) port.log(line);
+    if (!line || !dbf_hud_base()) return;
+    AcquireSRWLockExclusive(&lock);
+    snap_copy_text(last_message, sizeof last_message, line);
+    ReleaseSRWLockExclusive(&lock);
+    if (port.log) port.log(line);
+}
+
+void hud_bridge_status(char* out, size_t size)
+{
+    AcquireSRWLockShared(&lock);
+    snap_copy_text(out, size, last_message);
+    ReleaseSRWLockShared(&lock);
 }
 #endif

@@ -132,6 +132,8 @@ static void draw_status(const OvApi* ov, const DbfSnapshot* s)
 
     ov->text(s->hud_owned ? "Native HUD archive: connected" : "Native HUD archive: waiting");
 
+    if (s->hud_status[0]) ov->text(s->hud_status);
+
     in_mission = s->game.in_gameplay && s->game.hud_ready;
     if (in_mission) {
         ov->text("In a mission: yes");
