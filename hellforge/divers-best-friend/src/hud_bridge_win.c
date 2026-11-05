@@ -146,6 +146,15 @@ HUD_EXPORT int dbf_hud_blacklisted(unsigned kind)
     return hidden;
 }
 
+/* 1 bound, 0 explicitly unbound, -1 while the companion is waiting. */
+HUD_EXPORT int dbf_hud_bound(unsigned action)
+{
+    AcquireSRWLockShared(&lock);
+    int value = granted && action < BIND_COUNT ? options.bind[action].kind != BIND_NONE : -1;
+    ReleaseSRWLockShared(&lock);
+    return value;
+}
+
 HUD_EXPORT int dbf_hud_buttons(void)
 {
     AcquireSRWLockShared(&lock);
