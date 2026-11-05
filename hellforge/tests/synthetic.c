@@ -194,6 +194,7 @@ static uint8_t* g_page_data[SYN_MAX_PAGES];
 static int g_writes;
 static int g_mapped_writes;
 static bool g_built;
+static uint32_t g_local_key = LOCAL_KEY; /* the local player's key: LOCAL_KEY until syn_respawn_local */
 static SynScene g_scene;
 static uintptr_t g_block;               /* HellForge's moved block (syn_move_table); 0 when the table is not moved */
 static uintptr_t g_mod_row[HF_NEW];     /* rows of the mod stratagems added (by kind - 150); 0 when not added */
@@ -394,7 +395,7 @@ uintptr_t syn_local_weapon(void) { return syn_local_avatar() + WEAPON; }
 uintptr_t syn_local_component(void) { return syn_local_avatar() + AVATAR_COMPONENT; }
 uintptr_t syn_local_actions(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + ACTIONS; }
 uintptr_t syn_local_input_owner(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + INPUT_OWNER; }
-uint32_t syn_local_key(void) { return LOCAL_KEY; }
+uint32_t syn_local_key(void) { return g_local_key; }
 uint32_t syn_local_index(void) { return LOCAL_AVATAR; }
 float syn_list_y(int card) { return 412.5f - 47.25f * (float)card; }
 
@@ -499,6 +500,7 @@ bool syn_build(const SynScene* s)
     syn_free();
     g_scene = *s;
     g_built = true;
+    g_local_key = LOCAL_KEY;
     g_block = 0;
     memset(g_mod_row, 0, sizeof g_mod_row);
     memset(g_mod_tomb, 0, sizeof g_mod_tomb);
@@ -921,6 +923,24 @@ bool syn_change_peer(uint64_t peer)
     return syn_poke_u64(AT_SESSION + SESSION_PEER, peer)
         && syn_poke_u64(AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * LOCAL_PLAYER, peer)
         && syn_poke_u64(AT_MISSION + (uintptr_t)g_scene.local_entry * MISSION_STRIDE, peer);
+}
+
+bool syn_respawn_local(uint32_t key)
+{
+    static const uint32_t AVATARS[2] = { LOCAL_AVATAR, OTHER_AVATAR };
+    static const uint32_t POSITIONS[2] = { LOCAL_POSITION, OTHER_POSITION };
+    const uint32_t keys[2] = { key, OTHER_KEY };
+    Builder b = { true };
+    if (!g_built || key == OTHER_KEY || key == 0xffffffffu) return false;
+    g_local_key = key;
+    /* The same lookups syn_build lays out, with the new key in place of the old. */
+    put32(&b, AT_REGISTRY + REGISTRY_KEYS + REGISTRY_KEY_STRIDE * LOCAL_REGISTRY_INDEX, key);
+    put_lookup(&b, AT_AVATARS, AVATARS_LOOKUP, AT_LOOKUPS + 0x1000u, 8, 0x85ebca6bu, 0xffffffffu, 2, keys, AVATARS);
+    put_lookup(&b, AT_POSITIONS, POSITIONS_LOOKUP, AT_LOOKUPS + 0x3000u, 16, 0x27d4eb2fu, 0xffffffffu, 2, keys, POSITIONS);
+    put32(&b, syn_local_unit() + UNIT_KEY, key);
+    put32(&b, syn_local_avatar() + AVATAR_COMPONENT + COMPONENT_OWNER, key);
+    put32(&b, syn_local_weapon(), key);
+    return b.ok;
 }
 
 bool syn_registry_probe(uint32_t capacity, int position, int empty_at)

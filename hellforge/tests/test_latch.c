@@ -88,6 +88,25 @@ static uintptr_t fake_scramble_query(uintptr_t effects, uint32_t* out, uint32_t 
 
 static void fake_log(const char* line) {}
 
+/* latch's own log lines. */
+#define MAX_LINES 32
+static char g_lines[MAX_LINES][160];
+static int g_line_count;
+
+static void latch_log(const char* line)
+{
+    if (g_line_count < MAX_LINES) snprintf(g_lines[g_line_count], sizeof g_lines[0], "%s", line);
+    g_line_count++;
+}
+
+/* How many of latch's lines since start() contain `text`. */
+static int lines_with(const char* text)
+{
+    int n = 0;
+    for (int i = 0; i < g_line_count && i < MAX_LINES; i++) n += strstr(g_lines[i], text) != NULL;
+    return n;
+}
+
 static const NativePort NATIVE = { syn_input_handler, syn_open_input, syn_close_input, syn_request_slot, NULL,
                                    fake_scramble_query, fake_log };
 
@@ -107,7 +126,8 @@ static bool start_with(const SynScene* s)
     native_set_base(SYN_GAME_BASE);
     codes_init(NULL);
     game_init(SYN_GAME_BASE, SYN_IMAGE_SIZE);
-    latch_init();
+    latch_init(SYN_GAME_BASE, latch_log);
+    g_line_count = 0;
     syn_input_reset();
     syn_input_expect(118, CODE, 4);
     syn_menu_reset();
@@ -225,6 +245,20 @@ static bool originals(void)
     return ok && !latch_held();
 }
 
+/* After a release for another player (R46 menu_latch.lua:38): every record and the controls' dword original, the old
+ * player's actions dword left as the latch left it (0), and nothing of the latch's in the journal. */
+static bool originals_but_old_trigger(void)
+{
+    bool ok = record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]);
+    ok = record_is(syn_menu_bucket(), 1, SYN_MENU_RECORDS[1]) && ok;
+    ok = record_is(syn_menu_bucket(), 2, SYN_MENU_RECORDS[2]) && ok;
+    ok = record_is(syn_other_bucket(), 0, SYN_OTHER_RECORD) && ok;
+    ok = dword_is("the controls' menu trigger", syn_controls_menu_trigger(), 2) && ok;
+    ok = dword_is("the old player's menu trigger", syn_local_menu_trigger(), 0) && ok;
+    ok = journal_is(0, 0) && ok;
+    return ok && !latch_held();
+}
+
 /* The latch is on: the Hold and LongHold records patched, the Press record and the other action's Hold untouched, both
  * trigger dwords 0. */
 static bool latched(void)
@@ -327,6 +361,14 @@ static void hook_new_session(void)
 {
     syn_change_peer(0x5151515151515151ull);
 }
+static void hook_respawn(void)
+{
+    syn_respawn_local(syn_local_key() ^ 0x100u);
+}
+static void hook_menu_closes(int call)
+{
+    if (call == g_hook_call) set_menu_active(false);
+}
 
 /* A paced shortcut for slot 1 on a closed menu, its four directions in at 0, 70, 140 and 210 ms. */
 static void run_to_done(EntryJob* job)
@@ -349,15 +391,15 @@ static void test_acquire_and_release(void)
     CHECK(u8_at(syn_controls_menu_action()) == 0, "  the controls' menu action byte is read, not written");
     CHECK(!acquire() && reason_is("menu latch already held") && g_writes == 4 && journal_is(4, 0),
           "a second acquire is refused and writes nothing");
-    CHECK(latch_release() == 0 && originals(), "release: every record and dword is back, the journal empty");
-    CHECK(latch_release() == 0 && originals() && g_writes == 8, "a second release has nothing to do");
+    CHECK(latch_release(true) == 0 && originals(), "release: every record and dword is back, the journal empty");
+    CHECK(latch_release(true) == 0 && originals() && g_writes == 8, "a second release has nothing to do");
 
     /* A trigger dword that already reads 0 is not journaled. */
     start();
     syn_poke_u32(syn_local_menu_trigger(), 0);
     CHECK(acquire() && journal_is(3, 0) && dword_is("the local trigger", syn_local_menu_trigger(), 0),
           "a dword already 0 at acquire: left alone, three entries");
-    CHECK(latch_release() == 0 && dword_is("the local trigger", syn_local_menu_trigger(), 0)
+    CHECK(latch_release(true) == 0 && dword_is("the local trigger", syn_local_menu_trigger(), 0)
               && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]) && journal_is(0, 0),
           "  release: the records back, the dword still 0");
 
@@ -366,7 +408,7 @@ static void test_acquire_and_release(void)
     poke_record(syn_menu_bucket(), 0, SYN_MENU_RECORDS[1]);
     CHECK(acquire() && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED) && journal_is(3, 0),
           "only a LongHold record: it is latched");
-    latch_release();
+    latch_release(true);
 }
 
 static void test_refresh(void)
@@ -385,7 +427,7 @@ static void test_refresh(void)
     syn_poke_u32(syn_local_menu_trigger(), 2);
     poke_record(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]);
     CHECK(refresh() && journal_is(4, 0) && latched(), "a record back at its original: patched again, no new entry");
-    CHECK(latch_release() == 0 && originals(), "  and release gives everything back");
+    CHECK(latch_release(true) == 0 && originals(), "  and release gives everything back");
 
     /* A dword that reads 0 at acquire and later 9 is zeroed then, and release gives back the 9 (R46's refresh). */
     start();
@@ -394,7 +436,8 @@ static void test_refresh(void)
     syn_poke_u32(syn_local_menu_trigger(), 9);
     CHECK(refresh() && journal_is(4, 0) && dword_is("the local trigger", syn_local_menu_trigger(), 0),
           "a dword first seen nonzero at a refresh: zeroed and journaled");
-    CHECK(latch_release() == 0 && dword_is("the local trigger", syn_local_menu_trigger(), 9),
+    CHECK(refresh() && journal_is(4, 0), "  the next refresh counts that entry as the latch's own");
+    CHECK(latch_release(true) == 0 && dword_is("the local trigger", syn_local_menu_trigger(), 9),
           "  release puts back the value it saw");
 
     start();
@@ -408,7 +451,7 @@ static void test_refresh(void)
     theirs[4] = 0x5a; /* the player bound another key meanwhile */
     poke_record(syn_menu_bucket(), 0, theirs);
     CHECK(!refresh() && reason_is("menu binding changed"), "a record someone else changed: refused");
-    CHECK(latch_release() == 1 && record_is(syn_menu_bucket(), 0, theirs)
+    CHECK(latch_release(true) == 1 && record_is(syn_menu_bucket(), 0, theirs)
               && record_is(syn_menu_bucket(), 2, SYN_MENU_RECORDS[2]) && journal_is(0, 0) && !latch_held(),
           "  release leaves their record, puts the rest back and counts the one");
 
@@ -436,7 +479,7 @@ static void test_refresh(void)
         snprintf(want, sizeof want, "%s: witness wheel_action_sound differs", adm_feature_name(FEAT_LATCH));
         CHECK(!refresh() && reason_is(want), "LATCH refused: refused with admission's reason");
     }
-    CHECK(latch_release() == 0 && originals(), "  release still restores");
+    CHECK(latch_release(true) == 0 && originals(), "  release still restores");
 
     start();
     acquire();
@@ -446,6 +489,28 @@ static void test_refresh(void)
           "the journal restored elsewhere: refused, no longer held, nothing latched again");
     CHECK(!refresh() && reason_is("menu latch not held"), "not held: refused");
     CHECK(!latch_refresh(NULL, NULL, 0), "a NULL context and reason: refused");
+
+    /* A restore_all elsewhere that could not write everything back still ends the latch: the refresh must not patch
+     * again what was put back, as new entries. */
+    start();
+    acquire();
+    fail_writes(0, 1); /* newest first: the local dword's write fails, the rest are put back */
+    mem_restore_all();
+    g_writes = 0;
+    CHECK(!refresh() && reason_is("menu latch restored elsewhere") && !latch_held() && g_writes == 0 && journal_is(1, 0)
+              && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]) && record_is(syn_menu_bucket(), 2, SYN_MENU_RECORDS[2]),
+          "restore_all elsewhere left one entry: refused, nothing patched again, the one entry left for release");
+    CHECK(latch_release(true) == 0 && originals(), "  release puts the last one back");
+
+    /* A re-assert whose write fails says so. */
+    start();
+    acquire();
+    poke_record(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]);
+    view();
+    fail_writes(0, 1);
+    CHECK(!latch_refresh(&g_view.local, g_why, sizeof g_why) && reason_is("menu binding could not be latched"),
+          "a record's re-assert write fails: \"menu binding could not be latched\"");
+    CHECK(latch_release(true) == 0 && originals(), "  release puts everything back");
 }
 
 /* latch_release is mem_restore(MEM_OWNER_LATCH) with memory's rules (Task 10's rulings). */
@@ -456,7 +521,7 @@ static void test_release(void)
     acquire();
     syn_poke_u32(syn_local_menu_trigger(), 2); /* the game writes its original back, as it does every frame */
     g_writes = 0;
-    CHECK(latch_release() == 0 && g_writes == 3 && originals(),
+    CHECK(latch_release(true) == 0 && g_writes == 3 && originals(),
           "release while the game rewrote a dword's original: counted as restored, nothing written there");
 
     start();
@@ -464,7 +529,7 @@ static void test_release(void)
     memcpy(theirs, SYN_MENU_RECORDS[2], 20);
     theirs[12] = 0x99;
     poke_record(syn_menu_bucket(), 2, theirs);
-    CHECK(latch_release() == 1 && record_is(syn_menu_bucket(), 2, theirs)
+    CHECK(latch_release(true) == 1 && record_is(syn_menu_bucket(), 2, theirs)
               && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0])
               && dword_is("the controls' trigger", syn_controls_menu_trigger(), 2)
               && dword_is("the local trigger", syn_local_menu_trigger(), 2) && journal_is(0, 0),
@@ -473,25 +538,75 @@ static void test_release(void)
     start();
     acquire();
     fail_writes(0, 1); /* newest first: the local dword's write fails */
-    CHECK(latch_release() == 1 && !latch_held() && journal_is(1, 0)
+    CHECK(latch_release(true) == 1 && !latch_held() && journal_is(1, 0)
               && dword_is("the local trigger", syn_local_menu_trigger(), 0),
           "a release write that fails: counted, its entry kept, the latch no longer held");
-    CHECK(latch_release() == 0 && originals(), "  the next release retries it");
+    CHECK(latch_release(true) == 0 && originals(), "  the next release retries it");
 
     start();
     acquire();
     fail_writes(0, 1);
-    latch_release();
+    latch_release(true);
     CHECK(acquire() && journal_is(4, 0) && latched(), "acquire retries a leftover entry first, then latches");
-    latch_release();
+    latch_release(true);
     start();
     acquire();
     fail_writes(0, 1);
-    latch_release();
+    latch_release(true);
     fail_writes(0, 1); /* and acquire's retry of it fails too */
     CHECK(!acquire() && reason_is("the last menu latch is not restored yet") && journal_is(1, 0) && !latch_held(),
           "acquire while the leftover cannot be written back: refused");
-    CHECK(latch_release() == 0 && originals(), "  a later release puts it back");
+    CHECK(latch_release(true) == 0 && originals(), "  a later release puts it back");
+
+    /* R46's owner checks (menu_latch.lua:26-44). Another player: the actions dword is dropped, the rest restored. */
+    start();
+    acquire();
+    g_writes = 0;
+    CHECK(latch_release(false) == 1 && g_writes == 3 && originals_but_old_trigger()
+              && lines_with("trigger was left alone") == 1,
+          "release for another player: the records and the controls' dword back, the old actions dword left (one line)");
+
+    /* Another controls object, or none: nothing is written. */
+    for (int which = 0; which < 2; which++) {
+        start();
+        acquire();
+        syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, which == 0 ? syn_controls() + 0x10000u : 0u);
+        g_writes = 0;
+        CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(0, 0) && !latch_held()
+                  && record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && dword_is("the old trigger", syn_controls_menu_trigger(), 0)
+                  && lines_with("controls object changed") == 1,
+              which == 0 ? "release after the controls object changed: every entry dropped, nothing written, one line"
+                         : "release with no controls pointer: the same");
+        CHECK(latch_release(true) == 0 && lines_with("controls object changed") == 1, "  a second release: nothing, no line");
+    }
+
+    /* The checks are made again on a retry. */
+    start();
+    acquire();
+    fail_writes(0, 1);
+    latch_release(true); /* the local dword is kept */
+    g_writes = 0;
+    CHECK(latch_release(false) == 1 && g_writes == 0 && originals_but_old_trigger(),
+          "a retry for another player: the kept actions dword dropped without writing");
+    start();
+    acquire();
+    fail_writes(0, 1);
+    latch_release(true);
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls() + 0x10000u);
+    g_writes = 0;
+    CHECK(latch_release(true) == 1 && g_writes == 0 && journal_is(0, 0) && lines_with("controls object changed") == 1,
+          "a retry after the controls object changed: dropped without writing");
+    start();
+    acquire();
+    fail_writes(0, 1);
+    latch_release(true);
+    syn_respawn_local(syn_local_key() ^ 0x100u);
+    CHECK(acquire() && journal_is(3, 0) && lines_with("trigger was left alone") == 1
+              && dword_is("the local trigger", syn_local_menu_trigger(), 0),
+          "acquire for a respawned player: the old player's kept dword dropped, then the latch taken (that dword is 0)");
+    CHECK(latch_release(true) == 0 && dword_is("the local trigger", syn_local_menu_trigger(), 0)
+              && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]) && journal_is(0, 0),
+          "  and released");
 }
 
 static bool refused_acquire(const char* reason)
@@ -557,6 +672,15 @@ static void test_acquire_refusals(void)
     start();
     CHECK(!latch_acquire(NULL, g_why, sizeof g_why) && reason_is("local player unavailable") && g_writes == 0,
           "a NULL context: refused");
+    start();
+    latch_init(0, latch_log);
+    CHECK(refused_acquire("controls unreadable"), "no game.dll base to read the controls pointer: refused");
+    start();
+    view();
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls() + 0x10000u);
+    CHECK(!latch_acquire(&g_view.local, g_why, sizeof g_why) && reason_is("controls changed") && g_writes == 0
+              && journal_is(0, 0),
+          "the controls pointer no longer the context's: refused");
 
     /* A swap that fails puts back what was swapped before it. */
     start();
@@ -703,8 +827,18 @@ static void test_shortcut_fails_after_open(void)
     start();
     menu_closes();
     syn_open_on_call(hook_new_session);
-    CHECK(!shortcut(&job, 1, 70, false, 0) && reason_is("local player unavailable") && calls_are(1, 0, 1) && originals(),
-          "a new session inside the open call: refused on the view read again, closed, the originals back");
+    CHECK(!shortcut(&job, 1, 70, false, 0) && reason_is("local player unavailable") && calls_are(1, 0, 0)
+              && originals_but_old_trigger() && lines_with("left open") == 1,
+          "a new session inside the open call: refused on the view read again, not closed (logged), the records back, "
+          "the old player's dword left alone");
+
+    start();
+    menu_closes();
+    syn_open_on_call(hook_respawn);
+    CHECK(!shortcut(&job, 1, 70, false, 0) && reason_is("player changed") && calls_are(1, 0, 0)
+              && originals_but_old_trigger() && lines_with("left open") == 1 && lines_with("trigger was left alone") == 1,
+          "the player respawns with another key inside the open call: \"player changed\", not closed, the old "
+          "player's dword left alone");
 
     start();
     menu_closes();
@@ -773,8 +907,8 @@ static void test_shortcut_fails_after_open(void)
     view();
     syn_change_peer(0x5151515151515151ull);
     tick(&job, 70, false, false);
-    CHECK(job_is(&job, ENTRY_FAILED, "local player unavailable") && calls_are(1, 1, 0) && originals(),
-          "a new session mid-code: failed, the latch restored, no close for a player that is gone");
+    CHECK(job_is(&job, ENTRY_FAILED, "local player unavailable") && calls_are(1, 1, 0) && originals_but_old_trigger(),
+          "a new session mid-code: failed, the records back, the old player's dword left alone (R46), no close");
 
     for (int which = 0; which < 3; which++) {
         GameView other;
@@ -787,8 +921,9 @@ static void test_shortcut_fails_after_open(void)
         if (which == 1) other.local.manager += 0x1000u;
         if (which == 2) other.local.component += 0x1238u;
         entry_step_shortcut(&job, &other, 70, false, false);
-        CHECK(job_is(&job, ENTRY_FAILED, "player changed") && calls_are(1, 1, 0) && originals(),
-              which == 0   ? "another key mid-code (the menu still active): failed, restored, the old menu not closed"
+        CHECK(job_is(&job, ENTRY_FAILED, "player changed") && calls_are(1, 1, 0) && originals_but_old_trigger(),
+              which == 0   ? "another key mid-code (the menu still active): failed, the records back, the old player's "
+                             "dword left alone, the old menu not closed"
               : which == 1 ? "another avatar manager mid-code: the same"
                            : "another input component mid-code: the same");
     }
@@ -798,15 +933,42 @@ static void test_shortcut_fails_after_open(void)
         GameView other = *view();
         other.local.key ^= 1u;
         entry_step_shortcut(&job, &other, 300, false, false);
-        CHECK(job_is(&job, ENTRY_FAILED, "player changed") && calls_are(1, 1, 0) && originals(),
-              "another key after the code: cancelled, restored, not closed");
+        CHECK(job_is(&job, ENTRY_FAILED, "player changed") && calls_are(1, 1, 0) && originals_but_old_trigger(),
+              "another key after the code: cancelled, the records back, the old player's dword left alone, not closed");
     }
     start();
     run_to_done(&job);
     syn_change_peer(0x5151515151515151ull);
     tick(&job, 300, false, false);
-    CHECK(job_is(&job, ENTRY_FAILED, "local player unavailable") && calls_are(1, 1, 0) && originals(),
-          "a new session after the code: cancelled, restored, not closed");
+    CHECK(job_is(&job, ENTRY_FAILED, "local player unavailable") && calls_are(1, 1, 0) && originals_but_old_trigger(),
+          "a new session after the code: cancelled, the records back, the old player's dword left alone, not closed");
+
+    start();
+    menu_closes();
+    shortcut(&job, 1, 70, false, 0);
+    tick(&job, 0, false, false);
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls() + 0x10000u); /* a new controls object */
+    g_writes = 0;
+    tick(&job, 70, false, false);
+    CHECK(job_is(&job, ENTRY_FAILED, "controls changed") && g_writes == 0 && journal_is(0, 0) && !latch_held()
+              && calls_are(1, 1, 1) && lines_with("controls object changed") == 1,
+          "the controls object changes mid-code: failed, nothing written into the old object, the journal empty, one "
+          "log line, the menu DBF opened closed");
+    CHECK(record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED)
+              && dword_is("the old controls' trigger", syn_controls_menu_trigger(), 0)
+              && dword_is("the local trigger", syn_local_menu_trigger(), 0),
+          "  the old object keeps what the latch wrote there (R46 restores nothing then)");
+
+    /* The game closes the menu inside a handler call of an Instant step: the failure is "menu inactive", and DBF does
+     * not close a menu that is already closed (the tick's view still said it was open). */
+    start();
+    menu_closes();
+    syn_input_on_call(hook_menu_closes);
+    g_hook_call = 0;
+    shortcut(&job, 1, 70, true, 0);
+    tick(&job, 0, true, false);
+    CHECK(job_is(&job, ENTRY_FAILED, "menu inactive") && job.sent == 1 && calls_are(1, 1, 0) && originals(),
+          "Instant, the menu closed inside direction 1's call: failed, not closed, the originals back");
 
     start();
     menu_closes();
@@ -880,8 +1042,8 @@ static void test_shortcut_confirm(void)
     menu_closes();
     shortcut(&job, 1, 70, false, 0);
     entry_cancel_shortcut(&job, NULL, "HUD gone");
-    CHECK(job_is(&job, ENTRY_FAILED, "HUD gone") && calls_are(1, 1, 0) && originals(),
-          "  with no view: no close, the originals back");
+    CHECK(job_is(&job, ENTRY_FAILED, "HUD gone") && calls_are(1, 1, 0) && originals_but_old_trigger(),
+          "  with no view: no close, the records back, the actions dword left alone (no player to vouch for it)");
     start();
     run_to_done(&job);
     entry_cancel_shortcut(&job, view(), "mission ended");

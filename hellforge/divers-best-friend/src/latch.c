@@ -31,11 +31,15 @@ _Static_assert(DBF_OFF_BINDING_ENTRY_TRIGGER_OFFSET + 4 <= DBF_OFF_BINDING_ENTRY
 _Static_assert(DBF_VAL_SLOT_MAX + DBF_VAL_PAYLOAD_SLOT_BASE < DBF_VAL_PAYLOAD_SLOTS_MIN,
                "every equipped slot's entry is below the payload count required");
 
-/* The lease (menu_latch.lua:23-25: the controls, the actions, the records it patched). */
+/* The lease (menu_latch.lua:23-25: the controls, the actions, the records it patched). Kept until its last journal
+ * entry is gone, so a release that retries an entry still knows whose it was. */
 static struct {
     bool held;
     uintptr_t controls, actions;
+    uintptr_t manager, component; /* the player it was taken for */
+    uint32_t key;
     uintptr_t table, bucket; /* the bucket table and Display Stratagem List's bucket in it */
+    int entries;             /* the LATCH journal entries it made */
     uint32_t records;
     uint32_t index[DBF_VAL_BINDING_COUNT_MAX];
     uint8_t original[DBF_VAL_BINDING_COUNT_MAX][RECORD_SIZE];
@@ -48,9 +52,12 @@ static struct {
     bool opened;     /* DBF opened the menu (input.lua:317-322) */
     bool finishing;  /* the job is done: waiting for the game to close the menu */
     uint64_t finish_by;
-    uintptr_t manager, component;
+    uintptr_t manager, component, avatar;
     uint32_t key;
 } g_shortcut;
+
+static uintptr_t g_base;               /* game.dll: the controls pointer is at + DBF_RVA_CONTROLS */
+static void (*g_log)(const char* line); /* NULL: no log */
 
 static const uint32_t PRESS = DBF_VAL_TRIGGER_PRESS;
 
@@ -81,7 +88,24 @@ static bool admitted(Feature f, char* out, size_t n)
     return say(out, n, name, why && *why ? why : "not admitted");
 }
 
+static void log_line(const char* line)
+{
+    if (g_log) g_log(line);
+}
+
 /* --- the lease ------------------------------------------------------------------------------------------------- */
+
+/* The controls object the game points at now (R46 menu_latch.lua:10, 27: b.pointer(base + 0x347cf18)). */
+static bool controls_now(uintptr_t* controls)
+{
+    return g_base != 0 && mem_ptr(g_base + DBF_RVA_CONTROLS, controls);
+}
+
+/* `l` is the player the latch was taken for. */
+static bool latch_player(const GameLocal* l)
+{
+    return l && l->manager == g_latch.manager && l->key == g_latch.key && l->component == g_latch.component;
+}
 
 static uint32_t le32(const uint8_t* p)
 {
@@ -137,33 +161,35 @@ static bool read_trigger(uintptr_t at, uint32_t* value, char* out, size_t n)
     return true;
 }
 
-/* Puts back what acquire swapped; false with `why`, for `return undo(...)`. */
+/* Puts back what acquire swapped (the same tick, the same objects); false with `why`, for `return undo(...)`. */
 static bool undo(char* out, size_t n, const char* why)
 {
-    memset(&g_latch, 0, sizeof g_latch);
-    (void)mem_restore(MEM_OWNER_LATCH);
+    (void)latch_release(true);
     return say(out, n, why, NULL);
 }
 
-void latch_init(void)
+void latch_init(uintptr_t game_dll, void (*log)(const char* line))
 {
     memset(&g_latch, 0, sizeof g_latch);
     memset(&g_shortcut, 0, sizeof g_shortcut);
+    g_base = game_dll;
+    g_log = log;
 }
 
 bool latch_acquire(const GameLocal* l, char* reason, size_t n)
 {
-    uintptr_t table, bucket, dword[2];
+    uintptr_t table, bucket, dword[2], controls;
     uint32_t count, records = 0, value[2];
     uint8_t action;
     say(reason, n, "", NULL);
     if (g_latch.held) return say(reason, n, "menu latch already held", NULL);
     /* An earlier release that could not write everything back: retry it before anything new is changed. */
-    if (mem_journal_count(MEM_OWNER_LATCH) > 0) (void)mem_restore(MEM_OWNER_LATCH);
+    if (mem_journal_count(MEM_OWNER_LATCH) > 0) (void)latch_release(latch_player(l));
     if (mem_journal_count(MEM_OWNER_LATCH) > 0) return say(reason, n, "the last menu latch is not restored yet", NULL);
     if (!admitted(FEAT_LATCH, reason, n)) return false;
     if (!l) return say(reason, n, "local player unavailable", NULL);
-    if (l->controls == 0) return say(reason, n, "controls unreadable", NULL);
+    if (l->controls == 0 || !controls_now(&controls)) return say(reason, n, "controls unreadable", NULL);
+    if (controls != l->controls) return say(reason, n, "controls changed", NULL);
     if (!l->unobstructed) return say(reason, n, "UI obstructed", NULL);
     /* input.lua:314-315: the controls' menu action byte. */
     if (!mem_u8(l->controls + DBF_OFF_CONTROLS_MENU_ACTION_OFFSET, &action))
@@ -201,6 +227,9 @@ bool latch_acquire(const GameLocal* l, char* reason, size_t n)
     /* The writes (menu_latch.lua:73, 58), each restorable. */
     g_latch.controls = l->controls;
     g_latch.actions = l->actions;
+    g_latch.manager = l->manager;
+    g_latch.component = l->component;
+    g_latch.key = l->key;
     g_latch.table = table;
     g_latch.bucket = bucket;
     g_latch.records = records;
@@ -212,6 +241,7 @@ bool latch_acquire(const GameLocal* l, char* reason, size_t n)
     for (int d = 0; d < 2; d++)
         if (value[d] != PRESS && mem_swap(dword[d], &value[d], &PRESS, sizeof PRESS, MEM_OWNER_LATCH) != MEM_SWAPPED)
             return undo(reason, n, "menu trigger could not be latched");
+    g_latch.entries = mem_journal_count(MEM_OWNER_LATCH);
     g_latch.held = true;
     return true;
 }
@@ -222,10 +252,10 @@ bool latch_refresh(const GameLocal* l, char* reason, size_t n)
     uint32_t capacity, key, count, value;
     say(reason, n, "", NULL);
     if (!g_latch.held) return say(reason, n, "menu latch not held", NULL);
-    if (mem_journal_count(MEM_OWNER_LATCH) == 0) {
-        /* Someone restored the journal (mem_restore_all): re-asserting now would latch again with nothing to undo
-         * it. */
-        memset(&g_latch, 0, sizeof g_latch);
+    if (mem_journal_count(MEM_OWNER_LATCH) != g_latch.entries) {
+        /* Someone restored the journal (mem_restore_all), perhaps not all of it: re-asserting now would patch again
+         * what was put back, as new entries. What is left is latch_release's. */
+        g_latch.held = false;
         return say(reason, n, "menu latch restored elsewhere", NULL);
     }
     if (!admitted(FEAT_LATCH, reason, n)) return false;
@@ -244,6 +274,7 @@ bool latch_refresh(const GameLocal* l, char* reason, size_t n)
         if (g_latch.index[r] >= count) return say(reason, n, "menu binding changed", NULL);
         swap = mem_swap(record_at(g_latch.bucket, g_latch.index[r]), g_latch.original[r], g_latch.patched[r],
                         RECORD_SIZE, MEM_OWNER_LATCH);
+        if (swap == MEM_FAILED) return say(reason, n, "menu binding could not be latched", NULL);
         if (swap != MEM_ALREADY && swap != MEM_SWAPPED) return say(reason, n, "menu binding changed", NULL);
     }
     /* The frame in flight may still carry the Hold trigger (menu_latch.lua:51-60). */
@@ -253,16 +284,35 @@ bool latch_refresh(const GameLocal* l, char* reason, size_t n)
         if (!read_trigger(dword[d], &value, reason, n)) return false;
         if (value == PRESS) continue;
         swap = mem_swap(dword[d], &value, &PRESS, sizeof PRESS, MEM_OWNER_LATCH);
+        g_latch.entries = mem_journal_count(MEM_OWNER_LATCH); /* a dword first seen nonzero is a new entry */
         if (swap == MEM_DIFFERENT) return say(reason, n, "menu trigger changed", NULL);
         if (swap != MEM_SWAPPED) return say(reason, n, "menu trigger could not be latched", NULL);
     }
     return true;
 }
 
-int latch_release(void)
+int latch_release(bool avatar_valid)
 {
-    memset(&g_latch, 0, sizeof g_latch);
-    return mem_restore(MEM_OWNER_LATCH);
+    uintptr_t controls;
+    int lost = 0;
+    g_latch.held = false;
+    if (mem_journal_count(MEM_OWNER_LATCH) > 0) {
+        if (!controls_now(&controls) || controls != g_latch.controls) {
+            /* menu_latch.lua:27: another controls object (or none): nothing of the old one is written. */
+            lost = mem_forget_all(MEM_OWNER_LATCH);
+            log_line("latch: the controls object changed; the menu latch was dropped without writing it back");
+        } else {
+            /* menu_latch.lua:38: the actions dword only for the player the latch was taken for. */
+            if (!avatar_valid && mem_forget(MEM_OWNER_LATCH, g_latch.actions + DBF_OFF_ACTION_TRIGGER_OFFSET)) {
+                lost++;
+                log_line("latch: the player changed; the old player's menu trigger was left alone");
+            }
+            lost += mem_restore(MEM_OWNER_LATCH);
+        }
+    }
+    if (mem_journal_count(MEM_OWNER_LATCH) == 0) memset(&g_latch, 0, sizeof g_latch);
+    else g_latch.entries = mem_journal_count(MEM_OWNER_LATCH);
+    return lost;
 }
 
 bool latch_held(void)
@@ -288,13 +338,17 @@ static bool refuse(EntryJob* job, char* reason, size_t n, const char* why)
     return say(reason, n, why, NULL);
 }
 
-/* A failure after the latch was taken (R46 begin_latched, 342-345): release, then close the menu DBF opened. */
-static bool abort_begin(EntryJob* job, char* reason, size_t n, const char* why, bool opened, uintptr_t component)
+/* A failure after the latch was taken (R46 begin_latched, 342-345): release, then close the menu DBF opened. `valid`:
+ * the player is still the one the shortcut began for (after the view was read again, it says so); otherwise the old
+ * player's actions dword is left alone and its component not closed. */
+static bool abort_begin(EntryJob* job, char* reason, size_t n, const char* why, bool opened, uintptr_t component,
+                        bool valid)
 {
     char kept[DBF_REASON_SIZE];
     say(kept, sizeof kept, why, NULL); /* why may be job->reason */
-    (void)latch_release();
-    if (opened) (void)nat_close_input(component);
+    (void)latch_release(valid);
+    if (opened && valid) (void)nat_close_input(component);
+    if (opened && !valid) log_line("latch: the menu DBF opened was left open: the player changed while it opened");
     return refuse(job, reason, n, kept);
 }
 
@@ -379,31 +433,31 @@ bool entry_begin_shortcut(EntryJob* job, const GameView* v, int slot, uint32_t i
     if (!latch_acquire(l, why, sizeof why)) return refuse(job, reason, n, why);
     if (!l->menu_active) {
         if (!nat_open_input(l->component, &answer))
-            return abort_begin(job, reason, n, "the menu could not be opened", false, 0);
-        if (answer == 0) return abort_begin(job, reason, n, "the game did not open the menu", false, 0);
+            return abort_begin(job, reason, n, "the menu could not be opened", false, 0, true);
+        if (answer == 0) return abort_begin(job, reason, n, "the game did not open the menu", false, 0, true);
         opened = true;
     }
     game_read(&fresh); /* the view passed in still says the menu is closed */
-    if (!fresh.local_ok) return abort_begin(job, reason, n, "local player unavailable", opened, l->component);
+    if (!fresh.local_ok) return abort_begin(job, reason, n, "local player unavailable", opened, l->component, false);
     if (fresh.local.manager != l->manager || fresh.local.key != l->key || fresh.local.component != l->component)
-        return abort_begin(job, reason, n, "player changed", opened, l->component);
-    if (!fresh.menu_open) return abort_begin(job, reason, n, "menu closed", opened, l->component);
-    if (!fresh.local.menu_active) return abort_begin(job, reason, n, "menu inactive", opened, l->component);
+        return abort_begin(job, reason, n, "player changed", opened, l->component, false);
+    if (!fresh.menu_open) return abort_begin(job, reason, n, "menu closed", opened, l->component, true);
+    if (!fresh.local.menu_active) return abort_begin(job, reason, n, "menu inactive", opened, l->component, true);
     weapon = fresh.local.avatar + DBF_OFF_WEAPON_OFFSET;
     if (!mem_u32(weapon, &owner) || !mem_u32(weapon + DBF_OFF_WEAPON_SLOT_OFFSET, &requested))
-        return abort_begin(job, reason, n, "weapon unreadable", opened, l->component);
-    if (owner != fresh.local.key) return abort_begin(job, reason, n, "weapon owner mismatch", opened, l->component);
+        return abort_begin(job, reason, n, "weapon unreadable", opened, l->component, true);
+    if (owner != fresh.local.key) return abort_begin(job, reason, n, "weapon owner mismatch", opened, l->component, true);
     if (requested < DBF_VAL_WEAPON_SLOT_MIN || requested > DBF_VAL_WEAPON_SLOT_MAX)
-        return abort_begin(job, reason, n, "invalid weapon slot", opened, l->component);
+        return abort_begin(job, reason, n, "invalid weapon slot", opened, l->component, true);
     if (requested != DBF_VAL_STRATAGEM_SLOT) {
         /* The opener skips its own slot request while the beacon is still the weapon (input.lua:325-328). */
         if (!nat_request_slot(weapon, DBF_VAL_STRATAGEM_SLOT))
-            return abort_begin(job, reason, n, "stratagem slot could not be requested", opened, l->component);
+            return abort_begin(job, reason, n, "stratagem slot could not be requested", opened, l->component, true);
         if (!mem_u32(weapon + DBF_OFF_WEAPON_SLOT_OFFSET, &requested) || requested != DBF_VAL_STRATAGEM_SLOT)
-            return abort_begin(job, reason, n, "the game did not select the stratagem slot", opened, l->component);
+            return abort_begin(job, reason, n, "the game did not select the stratagem slot", opened, l->component, true);
     }
     if (!entry_begin(job, &fresh, kind, interval_ms, instant, true, now))
-        return abort_begin(job, reason, n, job->reason, opened, l->component);
+        return abort_begin(job, reason, n, job->reason, opened, l->component, true);
 
     memset(&g_shortcut, 0, sizeof g_shortcut);
     g_shortcut.active = true;
@@ -411,16 +465,26 @@ bool entry_begin_shortcut(EntryJob* job, const GameView* v, int slot, uint32_t i
     g_shortcut.manager = l->manager;
     g_shortcut.key = l->key;
     g_shortcut.component = l->component;
+    g_shortcut.avatar = l->avatar;
     return true;
 }
 
-/* Ends the shortcut (R46 end_release, input.lua:374-379): the latch back, then the menu DBF opened closed while the view
- * shows it active for the same player. A done shortcut ends only once the menu is inactive, so it never closes it. */
+/* The menu-active bit, read now (R46's end_release reads the context again, input.lua:375): the tick's view is stale
+ * once entry_step ran, since the game may close the menu inside a handler call. */
+static bool menu_active_now(void)
+{
+    uint32_t word;
+    return mem_u32(g_shortcut.avatar + DBF_OFF_AVATAR_MENU_OFFSET, &word) && (word & DBF_VAL_MENU_ACTIVE_MASK) != 0;
+}
+
+/* Ends the shortcut (R46 end_release, input.lua:374-379): the latch back (the actions dword only for the same player),
+ * then the menu DBF opened closed while the view shows the same player and the menu-active bit, read now, is set. A
+ * done shortcut ends only once the menu is inactive, so it never closes it. */
 static void end_shortcut(const GameView* v)
 {
-    bool close = g_shortcut.opened && same_player(v) && v->local.menu_active;
+    bool same = same_player(v), close = g_shortcut.opened && same && menu_active_now();
     uintptr_t component = g_shortcut.component;
-    (void)latch_release();
+    (void)latch_release(same);
     if (close) (void)nat_close_input(component);
     memset(&g_shortcut, 0, sizeof g_shortcut);
 }

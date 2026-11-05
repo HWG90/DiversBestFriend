@@ -96,6 +96,15 @@ int mem_restore(MemOwner owner);
 /* The same for every owner, in one newest-first pass over the whole journal (a failed write keeps its entry here too). */
 int mem_restore_all(void);
 
+/* Drops `owner`'s entry for `address` (whatever its size) from the journal without reading or writing anything: the
+ * bytes stay as they are, and no restore will touch them. For an owner whose change may now sit in an object that is no
+ * longer the one it changed (the latch, after the controls object or the player changed: R46 menu_latch.lua:27, 38).
+ * True when there was one. */
+bool mem_forget(MemOwner owner, uintptr_t address);
+
+/* The same for every entry of `owner`; how many it dropped. */
+int mem_forget_all(MemOwner owner);
+
 /* How many entries `owner` has in the journal (0 for an owner out of range). For tests and status: code entry's must be
  * 0 after every step. */
 int mem_journal_count(MemOwner owner);

@@ -676,6 +676,50 @@ static void test_failed_rollback(void)
           "failed re-assert: its entry holds the bytes read back, so restore puts the original back");
 }
 
+/* mem_forget / mem_forget_all drop an owner's entries without writing (the latch, when the object it changed is no
+ * longer the one it latched). */
+static void test_forget(void)
+{
+    const uint8_t value[4] = { 0x71, 0x72, 0x73, 0x74 };
+    uint8_t a[4], b[4], c[4];
+    uintptr_t at = RAM_BASE + 0xd00;
+    reset();
+    memcpy(a, ram_at(at), 4);
+    memcpy(b, ram_at(at + 0x10), 4);
+    memcpy(c, ram_at(at + 0x20), 4);
+    mem_swap(at, a, value, 4, MEM_OWNER_LATCH);
+    mem_swap(at + 0x10, b, value, 1, MEM_OWNER_LATCH);
+    mem_swap(at + 0x20, c, value, 4, MEM_OWNER_ENTRY);
+    g_writes = 0;
+    g_reads = 0;
+    CHECK(mem_forget(MEM_OWNER_LATCH, at) && mem_journal_count(MEM_OWNER_LATCH) == 1 && g_writes == 0 && g_reads == 0,
+          "forget: the owner's entry at the address leaves the journal, nothing read or written");
+    CHECK(memcmp(ram_at(at), value, 4) == 0, "  the bytes stay as the mod left them");
+    CHECK(!mem_forget(MEM_OWNER_LATCH, at) && !mem_forget(MEM_OWNER_LATCH, at + 0x20) && !mem_forget(MEM_OWNER_ENTRY, at + 0x10)
+              && mem_journal_count(MEM_OWNER_LATCH) == 1 && mem_journal_count(MEM_OWNER_ENTRY) == 1,
+          "  false for an address the owner has no entry at, and nothing else leaves");
+    CHECK(mem_forget(MEM_OWNER_LATCH, at + 0x10) && mem_journal_count(MEM_OWNER_LATCH) == 0,
+          "  an entry of another size goes the same way");
+    CHECK(!mem_forget(MEM_OWNER_COUNT, at + 0x20) && mem_journal_count(MEM_OWNER_ENTRY) == 1, "  an owner out of range: false");
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && memcmp(ram_at(at + 0x20), c, 4) == 0, "  the other owner's entry still restores");
+
+    reset();
+    memcpy(a, ram_at(at), 4);
+    memcpy(b, ram_at(at + 0x10), 4);
+    memcpy(c, ram_at(at + 0x20), 4);
+    mem_swap(at, a, value, 4, MEM_OWNER_LATCH);
+    mem_swap(at + 0x10, b, value, 4, MEM_OWNER_ENTRY);
+    mem_swap(at + 0x20, c, value, 4, MEM_OWNER_LATCH);
+    g_writes = 0;
+    CHECK(mem_forget_all(MEM_OWNER_LATCH) == 2 && mem_journal_count(MEM_OWNER_LATCH) == 0 && g_writes == 0
+              && memcmp(ram_at(at), value, 4) == 0 && memcmp(ram_at(at + 0x20), value, 4) == 0,
+          "forget_all: both of the owner's entries leave, nothing written");
+    CHECK(mem_journal_count(MEM_OWNER_ENTRY) == 1 && mem_restore(MEM_OWNER_ENTRY) == 0
+              && memcmp(ram_at(at + 0x10), b, 4) == 0,
+          "  the other owner's entry (between them) is untouched and restores");
+    CHECK(mem_forget_all(MEM_OWNER_LATCH) == 0 && mem_forget_all(MEM_OWNER_COUNT) == 0, "  nothing left: 0; out of range: 0");
+}
+
 static void test_init_clears_the_journal(void)
 {
     const uint8_t value[4] = { 9, 9, 9, 9 };
@@ -739,6 +783,7 @@ int main(void)
     test_restore_finds_the_original();
     test_restore_retries_a_failed_write();
     test_failed_rollback();
+    test_forget();
     test_init_clears_the_journal();
     test_journal_count();
     TEST_MAIN_END

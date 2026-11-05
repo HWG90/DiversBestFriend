@@ -126,6 +126,13 @@ MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_
     return MEM_SWAPPED;
 }
 
+/* Drops journal entry i, keeping the others in order. */
+static void drop(size_t i)
+{
+    memmove(&g_journal[i], &g_journal[i + 1], (g_count - i - 1) * sizeof g_journal[0]);
+    g_count--;
+}
+
 typedef enum { PUT_BACK, PUT_GONE, PUT_RETRY } PutBack;
 
 /* Puts one entry's original back (see mem_restore): PUT_BACK when the original is there now (already, or written),
@@ -159,8 +166,7 @@ static int restore_entries(bool every_owner, MemOwner owner)
         result = put_back(&g_journal[i]);
         if (result != PUT_BACK) not_restored++;
         if (result == PUT_RETRY) continue;
-        memmove(&g_journal[i], &g_journal[i + 1], (g_count - i - 1) * sizeof g_journal[0]);
-        g_count--;
+        drop(i);
     }
     return not_restored;
 }
@@ -173,6 +179,29 @@ int mem_restore(MemOwner owner)
 int mem_restore_all(void)
 {
     return restore_entries(true, MEM_OWNER_LIST);
+}
+
+bool mem_forget(MemOwner owner, uintptr_t address)
+{
+    for (size_t i = 0; i < g_count; i++) {
+        if (g_journal[i].owner != owner || g_journal[i].address != address) continue;
+        drop(i);
+        return true;
+    }
+    return false;
+}
+
+int mem_forget_all(MemOwner owner)
+{
+    int dropped = 0;
+    size_t i = g_count;
+    while (i > 0) {
+        i--;
+        if (g_journal[i].owner != owner) continue;
+        drop(i);
+        dropped++;
+    }
+    return dropped;
 }
 
 int mem_journal_count(MemOwner owner)

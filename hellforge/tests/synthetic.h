@@ -257,6 +257,12 @@ uintptr_t syn_alternate_definition(uint32_t kind, int n, const uint8_t* code);
 /* A new session for the same player: the session, the player manager and the local mission entry all get `peer`. */
 bool syn_change_peer(uint64_t peer);
 
+/* The local player comes back with another key in the same avatar slot and session (a respawn): the registry, the
+ * avatars' and the positions' lookups, the unit, the input component's owner and the weapon block all carry `key`, so
+ * the code-entry chain still holds with the same manager and component. syn_local_key() says `key` from then on (until
+ * the next syn_build). False for the other player's key, the empty key, or before a build. */
+bool syn_respawn_local(uint32_t key);
+
 /* Lays the registry's lookup out again with `capacity` slots (a power of two up to 1024), every slot holding some other
  * key except the local player's network index at probe `position` (from its hash; -1: not there) and the empty key at
  * probe `empty_at` (-1: none). False when the arguments are out of range or a write fails. */
