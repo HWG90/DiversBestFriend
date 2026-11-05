@@ -243,6 +243,11 @@ local function wheel_blur()
         if lease then lease.release();lease=nil end
         signature=nil
     end
+    local function reject_material(now)
+        unavailable_until[material]=now+5000
+        material,probe_after=nil,now
+        self.hide()
+    end
     function self.draw(source,count,expanded,alpha,now)
         if not source.list_geometry or count<=0 or alpha<=0 then self.hide();return end
         local sr=rawget(_G,'stingray')
@@ -295,8 +300,11 @@ local function wheel_blur()
             end
             -- 25480438 EXE +3E1427 resolves the material; +3E144B reads three UVs.
             local function triangle(a,b,d)
-                assert(G.triangle(gui,a[1],b[1],d[1],0x225,tint,material,a[2],b[2],d[2]),
-                    'Wheel blur triangle unavailable')
+                local ok,id=pcall(G.triangle,gui,a[1],b[1],d[1],0x225,tint,material,a[2],b[2],d[2])
+                if not ok or not id then
+                    reject_material(now)
+                    error(ok and 'Wheel blur triangle unavailable' or id)
+                end
             end
             local inner,outer
             for j=0,6 do
@@ -313,9 +321,7 @@ local function wheel_blur()
         -- primitives exist. Never show a mesh whose blur binding failed.
         local bound,handle=pcall(G.material,gui,material)
         if not bound or not handle then
-            unavailable_until[material]=now+5000
-            material,probe_after=nil,now
-            self.hide();return
+            reject_material(now);return
         end
         lease.show();signature=key
     end

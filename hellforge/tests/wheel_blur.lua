@@ -10,7 +10,8 @@ local preferred='content/ui/shared/material/gui_blur'
 local fallback='content/ui/shared/material/blur_background'
 local available,world,probes,creates,next_id=nil,{},0,0,0
 local triangles,vertices={},{}
-local fail_at,visible,reject
+local fail_at,visible,reject,return_nil,last_material
+local function available_material(name) return available=="both" or available==name end
 local sr={Gui={},Application={},World={}}
 scope._G.stingray=sr
 sr.Application.worlds=function() return {world} end
@@ -18,24 +19,28 @@ sr.Application.main_world=function() return world end
 sr.Application.can_get=function(kind,name)
     assert(kind=='material' and (name==preferred or name==fallback))
     probes=probes+1
-    return name==available
+    return available_material(name)
 end
 sr.World.create_screen_gui=function(w) assert(w==world);creates=creates+1;return {} end
 sr.Gui.set_visible=function(_,v) visible=v end
-sr.Gui.material=function(_,name) assert(name==available and next(triangles));return name~=reject end
+sr.Gui.material=function(_,name) assert(available_material(name) and next(triangles));last_material=name;return name~=reject end
 sr.Gui.resolution=function() return 1920,1080 end
 sr.Gui.reset=function() assert(next(triangles)==nil) end
 sr.Vector2=function(x,y) return {x,y} end
 sr.Vector3=function(x,y,z) return {x,y,z} end
 sr.Color=function(a,r,g,b) return {a,r,g,b} end
 sr.Gui.triangle=function(_,a,b,c,z,tint,name,ua,ub,uc)
-    assert(z==0x225 and name==available)
+    assert(z==0x225 and available_material(name))
     for i,vertex in ipairs({a,b,c}) do
         local uv=({ua,ub,uc})[i]
         assert(vertex[2]==0 and uv[1]==vertex[1]/1920 and uv[2]==vertex[3]/1080)
     end
     next_id=next_id+1
-    if next_id==fail_at then error('GPU probe failed') end
+    if next_id==fail_at then
+        assert(name==preferred)
+        if return_nil then return nil end
+        error('GPU probe failed')
+    end
     vertices[#vertices+1]={a,b,c,tint[1]}
     triangles[next_id]=true
     return next_id
@@ -89,16 +94,20 @@ for _,count in ipairs({1,8,9,16}) do
     end
 end
 blur.hide();assert(not visible and next(triangles)==nil)
-world={};available=preferred;vertices={}
-fail_at=next_id+5
-assert(not pcall(draw,8,false,1,5100))
-blur.hide();assert(not visible and next(triangles)==nil,'partial construction remains owned')
-draw(8,false,1,5101)
-assert(visible and probes==5,'new world uses the preferred material')
-blur.hide();blur.hide();assert(not visible and next(triangles)==nil)
+available='both'
+for _,missing_id in ipairs({false,true}) do
+    world={};return_nil=missing_id;fail_at=next_id+5
+    local before=probes
+    assert(not pcall(draw,8,false,1,5100))
+    assert(not visible and next(triangles)==nil,'partial preferred mesh must be removed')
+    draw(8,false,1,6100)
+    assert(visible and probes==before+2 and last_material==fallback,'retry must use the secondary material')
+    blur.hide();blur.hide();assert(not visible and next(triangles)==nil)
+end
+local before=probes
 world={};reject=preferred
 draw(8,false,1,5200);assert(not visible and next(triangles)==nil,'unbound triangles must stay hidden')
 available=fallback
-draw(8,false,1,5201);assert(visible and probes==7,'alternate material after GUI binding failure')
+draw(8,false,1,5201);assert(visible and probes==before+2,'alternate material after GUI binding failure')
 blur.hide()
 print('Retained textured wedge blur, material fallback, transformed clipping, opacity and teardown passed')
