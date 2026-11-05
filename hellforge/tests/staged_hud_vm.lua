@@ -13,6 +13,7 @@ for cycle = 1, 3 do
     loader = loader or ffi.load("./hellforge_modloader.dll")
     record.on_update(0.51) -- pass the absent-companion retry interval
     assert(companion.dbf_hud_base() == 0, "expected a game-free host")
+    assert(companion.dbf_hud_terminal_active(nil) == 0, "terminal bridge granted without an owner")
     assert(record.on_disable() == true)
     assert(rawget(_G, "DBF_HellForge_HUD_Owner") == nil)
 end
