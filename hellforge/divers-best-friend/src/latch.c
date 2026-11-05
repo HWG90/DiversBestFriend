@@ -40,6 +40,7 @@ static struct {
     uint32_t key;
     uintptr_t table, bucket; /* the bucket table and Display Stratagem List's bucket in it */
     int entries;             /* the LATCH journal entries it made */
+    bool unreadable_logged;  /* a release found the controls pointer unreadable and said so */
     uint32_t records;
     uint32_t index[DBF_VAL_BINDING_COUNT_MAX];
     uint8_t original[DBF_VAL_BINDING_COUNT_MAX][RECORD_SIZE];
@@ -297,11 +298,19 @@ int latch_release(bool avatar_valid)
     int lost = 0;
     g_latch.held = false;
     if (mem_journal_count(MEM_OWNER_LATCH) > 0) {
-        if (!controls_now(&controls) || controls != g_latch.controls) {
-            /* menu_latch.lua:27: another controls object (or none): nothing of the old one is written. */
+        if (!controls_now(&controls)) {
+            /* Unreadable, 0 or not a pointer: maybe only for now. R46 returned here (menu_latch.lua:27) and never came
+             * back; DBF retries, so everything is kept, unwritten, until the pointer can be checked again. */
+            lost = mem_journal_count(MEM_OWNER_LATCH);
+            if (!g_latch.unreadable_logged)
+                log_line("latch: the controls pointer cannot be read; the menu latch is kept for a retry");
+            g_latch.unreadable_logged = true;
+        } else if (controls != g_latch.controls) {
+            /* menu_latch.lua:27: another controls object: nothing of the old one is written. */
             lost = mem_forget_all(MEM_OWNER_LATCH);
             log_line("latch: the controls object changed; the menu latch was dropped without writing it back");
         } else {
+            g_latch.unreadable_logged = false;
             /* menu_latch.lua:38: the actions dword only for the player the latch was taken for. */
             if (!avatar_valid && mem_forget(MEM_OWNER_LATCH, g_latch.actions + DBF_OFF_ACTION_TRIGGER_OFFSET)) {
                 lost++;

@@ -245,6 +245,16 @@ static bool originals(void)
     return ok && !latch_held();
 }
 
+/* What acquire wrote is still in place (the patched records and both dwords 0), whether or not the latch is held. */
+static bool latched_bytes(void)
+{
+    bool ok = record_is(syn_menu_bucket(), 0, HOLD_PATCHED);
+    ok = record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED) && ok;
+    ok = dword_is("the controls' menu trigger", syn_controls_menu_trigger(), 0) && ok;
+    ok = dword_is("the local menu trigger", syn_local_menu_trigger(), 0) && ok;
+    return ok;
+}
+
 /* After a release for another player (R46 menu_latch.lua:38): every record and the controls' dword original, the old
  * player's actions dword left as the latch left it (0), and nothing of the latch's in the journal. */
 static bool originals_but_old_trigger(void)
@@ -567,18 +577,62 @@ static void test_release(void)
           "release for another player: the records and the controls' dword back, the old actions dword left (one line)");
 
     /* Another controls object, or none: nothing is written. */
+    /* (b) Another controls object (a different, plausible pointer): every entry dropped, nothing written. */
+    start();
+    acquire();
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls() + 0x10000u);
+    g_writes = 0;
+    CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(0, 0) && !latch_held()
+              && record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && dword_is("the old trigger", syn_controls_menu_trigger(), 0)
+              && lines_with("controls object changed") == 1,
+          "release after the controls object changed: every entry dropped, nothing written, one line");
+    CHECK(latch_release(true) == 0 && lines_with("controls object changed") == 1, "  a second release: nothing, no line");
+
+    /* (a) The pointer is 0, or cannot be read: everything kept for a retry, then restored once it reads the latched
+     * object again. */
     for (int which = 0; which < 2; which++) {
+        const char* text = which == 0 ? "release with the controls pointer 0" : "release with the controls pointer unreadable";
+        char line[160];
         start();
         acquire();
-        syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, which == 0 ? syn_controls() + 0x10000u : 0u);
+        if (which == 0) syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+        else syn_unmap(SYN_GAME_BASE + RVA_CONTROLS);
         g_writes = 0;
-        CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(0, 0) && !latch_held()
-                  && record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && dword_is("the old trigger", syn_controls_menu_trigger(), 0)
-                  && lines_with("controls object changed") == 1,
-              which == 0 ? "release after the controls object changed: every entry dropped, nothing written, one line"
-                         : "release with no controls pointer: the same");
-        CHECK(latch_release(true) == 0 && lines_with("controls object changed") == 1, "  a second release: nothing, no line");
+        snprintf(line, sizeof line, "%s: every entry kept and counted, nothing written, one line", text);
+        CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(4, 0) && !latch_held() && latched_bytes()
+                  && lines_with("controls pointer cannot be read") == 1 && lines_with("controls object changed") == 0,
+              line);
+        CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(4, 0)
+                  && lines_with("controls pointer cannot be read") == 1,
+              "  the next retry while it still cannot be read: kept, no second line");
+        syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
+        CHECK(latch_release(true) == 0 && originals(), "  the pointer back: the retry restores every record and dword");
     }
+    /* A second unreadable spell, after one that ended with a write still failing, gets its own line. */
+    start();
+    acquire();
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+    latch_release(true);
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
+    fail_writes(0, 1);
+    CHECK(latch_release(true) == 1 && journal_is(1, 0), "the pointer back but one write fails: that entry kept");
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+    CHECK(latch_release(true) == 1 && journal_is(1, 0) && lines_with("controls pointer cannot be read") == 2,
+          "  unreadable again: kept, and a line for this spell too");
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
+    CHECK(latch_release(true) == 0 && originals(), "  readable: restored");
+
+    start();
+    acquire();
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+    latch_release(true);
+    view();
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, 0);
+    CHECK(!latch_acquire(&g_view.local, g_why, sizeof g_why) && reason_is("the last menu latch is not restored yet")
+              && journal_is(4, 0),
+          "acquire while the kept entries still cannot be checked: refused, nothing new taken");
+    syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
+    CHECK(latch_release(true) == 0 && originals(), "  and the pointer back: restored");
 
     /* The checks are made again on a retry. */
     start();

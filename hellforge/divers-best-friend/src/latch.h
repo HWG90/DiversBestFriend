@@ -38,8 +38,11 @@
  *
  * latch_release(avatar_valid) gives the lease back with R46's owner checks (menu_latch.lua:26-44), made again on every
  * call, so a retry honours them too:
- *   - when the pointer at game.dll + DBF_RVA_CONTROLS is no longer the latched controls object (or cannot be read),
- *     every LATCH entry is dropped without writing (mem_forget_all; R46 restores nothing then), with one log line;
+ *   - when the pointer at game.dll + DBF_RVA_CONTROLS cannot be read, is 0 or is not a plausible pointer, every LATCH
+ *     entry is kept, nothing is written and all of them count as not put back, with one log line until the pointer
+ *     reads again: the next call retries (R46 returned here, menu_latch.lua:27, but never retried);
+ *   - when it reads as another controls object, every LATCH entry is dropped without writing (mem_forget_all; R46
+ *     restores nothing then), with one log line;
  *   - otherwise, when avatar_valid is false (the player is not the one the latch was taken for), the actions + 24
  *     dword's entry is dropped without writing (mem_forget, one log line), and the rest restored;
  *   - otherwise everything is restored: mem_restore(MEM_OWNER_LATCH) (memory.h): each record and dword gets its original
@@ -121,7 +124,8 @@ bool latch_acquire(const GameLocal* l, char* reason, size_t n);
 bool latch_refresh(const GameLocal* l, char* reason, size_t n);
 
 /* Gives the lease back (see the top): `avatar_valid` when the player is still the one the latch was taken for. How many
- * entries were not put back. Call it again (each tick) while LATCH entries are left, as for a failed write. */
+ * entries were not put back. Call it again (each tick) while LATCH entries are left: after a failed write, or while the
+ * controls pointer cannot be read. */
 int latch_release(bool avatar_valid);
 
 /* The lease is held (acquired, not yet released). */
