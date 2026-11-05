@@ -126,12 +126,18 @@ static void tick(uint64_t ms)
     adm_tick(ms);
 }
 
+/* Any read that touches the game.dll RVAs [lo, hi) fails until the clock reaches `until`. */
+static void blind_range(uint32_t lo, uint32_t hi, uint64_t until)
+{
+    g_blind_lo = lo;
+    g_blind_hi = hi;
+    g_blind_until = until;
+}
+
 /* The reads of the witness `name` fail until the clock reaches `until`. */
 static void blind_witness(const char* name, uint64_t until)
 {
-    g_blind_lo = wit(name)->rva;
-    g_blind_hi = g_blind_lo + wit(name)->size;
-    g_blind_until = until;
+    blind_range(wit(name)->rva, wit(name)->rva + wit(name)->size, until);
 }
 
 static void flip(const char* name, unsigned index)
@@ -358,6 +364,75 @@ static void test_unreadable(void)
     CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet"), "an unreadable witness is never refused for time");
 }
 
+/* charlie spans two 64-byte read chunks: [rva, rva+64) and [rva+64, rva+100). Only the second is unreadable here, so the
+ * first read succeeds and a failure of a later chunk must still make the whole witness unreadable (never a match). */
+static void test_unreadable_later_chunk(void)
+{
+    const DbfWitness* charlie = wit("charlie");
+    const uint32_t second = charlie->rva + 64;
+    reset();
+    blind_range(second, charlie->rva + charlie->size, 1000000);
+    start(0);
+    CHECK(g_witness_reads == 5, "all of alpha, bravo, charlie (twice: its first chunk reads, its second fails) and delta are read");
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet"),
+          "only the second chunk unreadable: the witness is pending, not matched");
+    CHECK(is(FEAT_HUD_READ, ADMIT_PENDING, "witness charlie not readable yet"), "in every feature of its mask");
+    CHECK(is(FEAT_STATE, ADMIT_OK, "") && is(FEAT_STRATAGEMS, ADMIT_OK, "") && is(FEAT_SOUND, ADMIT_OK, ""),
+          "and the other features are admitted meanwhile");
+    tick(31000);
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet"), "still pending after the 30000 ms grace period");
+    tick(120000);
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet") &&
+              is(FEAT_HUD_READ, ADMIT_PENDING, "witness charlie not readable yet"),
+          "and never refused for time");
+
+    reset();
+    blind_range(second, charlie->rva + charlie->size, 3000);
+    start(0);
+    tick(2000);
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet"), "pending while the second chunk is unreadable");
+    tick(3000);
+    CHECK(is(FEAT_POINTING, ADMIT_OK, "") && is(FEAT_HUD_READ, ADMIT_OK, ""), "ok once the second chunk reads and matches");
+}
+
+static void test_unreadable_beats_differs(void)
+{
+    const DbfWitness* charlie = wit("charlie");
+    reset();
+    flip("charlie", 10); /* in the first chunk, which reads */
+    blind_range(charlie->rva + 64, charlie->rva + charlie->size, 1000000);
+    start(0);
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet"),
+          "a changed byte in the first chunk and an unreadable second chunk: not readable yet, not differs");
+    tick(31000);
+    CHECK(is(FEAT_POINTING, ADMIT_PENDING, "witness charlie not readable yet") &&
+              is(FEAT_HUD_READ, ADMIT_PENDING, "witness charlie not readable yet"),
+          "and after the grace period too: an unreadable witness is not refused for a difference it only half read");
+    g_blind_until = 0; /* the second chunk becomes readable */
+    tick(32000);
+    CHECK(is(FEAT_POINTING, ADMIT_REFUSED, "witness charlie differs"),
+          "once everything reads, the first chunk's difference counts (the grace period is over: refused)");
+}
+
+/* The second header read, of the 12 bytes at e_lfanew, fails while the first (the DOS header) succeeds. */
+static void test_nt_header_unreadable(void)
+{
+    const char* r = NULL;
+    reset();
+    blind_range(LFANEW, LFANEW + 12, 1000000);
+    start(0);
+    CHECK(g_reads == 2 && g_witness_reads == 0, "the DOS header reads and the NT header fails, no witness is read");
+    CHECK(!adm_build_ok(&r) && r != NULL && !strcmp(r, "game.dll header not readable yet"),
+          "an unreadable NT header: the build is not ok, header not readable yet");
+    CHECK(all_are(ADMIT_PENDING, "game.dll header not readable yet"), "and every feature is pending, none refused");
+    tick(31000);
+    CHECK(all_are(ADMIT_PENDING, "game.dll header not readable yet") && g_witness_reads == 0,
+          "still pending after the grace period, and still no witness read");
+    g_blind_until = 0;
+    tick(32000);
+    CHECK(adm_build_ok(NULL) && is(FEAT_STATE, ADMIT_OK, "") && is(FEAT_SOUND, ADMIT_OK, ""), "readable later: admitted");
+}
+
 static void test_retry_cadence(void)
 {
     int reads;
@@ -516,6 +591,9 @@ int main(void)
     test_one_witness_differs();
     test_grace();
     test_unreadable();
+    test_unreadable_later_chunk();
+    test_unreadable_beats_differs();
+    test_nt_header_unreadable();
     test_retry_cadence();
     test_priority_and_order();
     test_rewrites();
