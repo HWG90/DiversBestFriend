@@ -28,6 +28,8 @@ typedef struct Throttle {
 
 static NativePort g_port;
 static uintptr_t g_base; /* game.dll; 0 when not set */
+static const char* g_last_checkpoint; /* the function the last line native logged names; NULL: that line was not a
+                                         checkpoint (or nothing was logged yet) */
 static bool g_sound_skip_logged, g_base_unset_logged, g_scramble_skip_logged;
 static Throttle g_sound_throttle, g_scramble_throttle;
 
@@ -55,9 +57,12 @@ static size_t put_hex(char* line, size_t at, uint64_t value)
     return at;
 }
 
-static void log_line(const char* line)
+/* Logs one line; `checkpoint_of` is the function a checkpoint line names, NULL for any other line. */
+static void log_line(const char* line, const char* checkpoint_of)
 {
-    if (g_port.log) g_port.log(line);
+    if (!g_port.log) return;
+    g_port.log(line);
+    g_last_checkpoint = checkpoint_of;
 }
 
 /* "call <name>(<arg>, <arg>, ...)" through the port's log, before the call it announces. */
@@ -73,16 +78,18 @@ static void checkpoint(const char* name, const uint64_t* args, size_t count)
     }
     at = put_text(line, at, ")");
     line[at] = '\0';
-    log_line(line);
+    log_line(line, name);
 }
 
-/* A per-tick call's checkpoint: logged when there is no clock, on the session's first call, and when PER_TICK_LOG_MS
- * have passed since the last one it logged. */
+/* A per-tick call's checkpoint: logged when there is no clock, on the session's first call, when PER_TICK_LOG_MS have
+ * passed since the last one it logged, and whenever the last line native logged was not this function's checkpoint
+ * (another function's, or a skip line): then the last line names the call in progress even when calls interleave. */
 static void throttled_checkpoint(Throttle* t, const char* name, const uint64_t* args, size_t count)
 {
     if (g_port.now_ms) {
         uint64_t now = g_port.now_ms();
-        if (t->logged && now - t->at < PER_TICK_LOG_MS) return;
+        bool last_is_mine = g_last_checkpoint && strcmp(g_last_checkpoint, name) == 0;
+        if (t->logged && now - t->at < PER_TICK_LOG_MS && last_is_mine) return;
         t->logged = true;
         t->at = now;
     }
@@ -94,7 +101,7 @@ static void log_once(bool* latch, const char* line)
 {
     if (*latch) return;
     *latch = true;
-    log_line(line);
+    log_line(line, NULL);
 }
 
 static bool admitted(Feature f)
@@ -111,6 +118,7 @@ void native_init(const NativePort* port)
     else
         memset(&g_port, 0, sizeof g_port);
     g_base = 0;
+    g_last_checkpoint = NULL;
     g_sound_skip_logged = g_base_unset_logged = g_scramble_skip_logged = false;
     memset(&g_sound_throttle, 0, sizeof g_sound_throttle);
     memset(&g_scramble_throttle, 0, sizeof g_scramble_throttle);

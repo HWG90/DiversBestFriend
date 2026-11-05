@@ -20,10 +20,13 @@
  *      returns true. The checkpoint comes first so that, if the game crashes inside the call, the last line of the log
  *      names the step that was running. The user-triggered calls (input handler, open, close, request slot) log every
  *      call. The per-tick calls (ui_sound on selection moves, scramble_query for every row each tick) log their first call
- *      of the session and then at most once per 1000 ms each, by the port's now_ms clock (NULL: every call logs), so a
- *      crash inside one of them is still named by the last line, though that line may be from an earlier call of the
- *      same function. The line is "call <name>(<arguments>)", every argument as 0x followed by
- *      lowercase hex digits without leading zeros (0 is "0x0"), separated by ", ". For example:
+ *      of the session, then at most once per 1000 ms each by the port's now_ms clock (NULL: every call logs), and also
+ *      whenever the last line native logged was not that function's own checkpoint (another function's checkpoint, or
+ *      one of the lines below). So the last line native logged always names the call in progress, even when calls
+ *      interleave (scramble queries around an input handler call); for a per-tick call it may be the checkpoint of an
+ *      earlier call of the same function, with other arguments. Lines that other units log (admission, codes) go
+ *      through their own ports, which native does not see. The line is "call <name>(<arguments>)", every argument as
+ *      0x followed by lowercase hex digits without leading zeros (0 is "0x0"), separated by ", ". For example:
  *          call request_slot(0x2c0000100, 0x5)
  *      The arguments logged are the ones the caller chose, plus the effects pointer the scramble wrapper reads itself:
  *      input_handler(component), open_input(component), close_input(component), request_slot(weapon, slot), ui_sound(id),

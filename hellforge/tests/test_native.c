@@ -546,9 +546,11 @@ static void test_per_tick_checkpoints_throttled(void)
           "the sound has its own limit: its first call is logged");
     g_event_count = 0;
     g_now = 6500;
-    CHECK(nat_ui_sound(1) && nat_scramble_query(1, 5, &answer) && g_event_count == 2 && event_has(0, "call: ui_sound")
-              && event_has(1, "call: scramble_query"),
-          "500 ms later: sound and query called, neither logged");
+    CHECK(nat_ui_sound(1) && nat_scramble_query(1, 5, &answer)
+              && events_are(3, "call: ui_sound 0x0 0x1", "log: call scramble_query(0x2d000000000, 0x1, 0x5)",
+                            "call: scramble_query 0x2d000000000 out 0x1 0x5"),
+          "500 ms later: both called; the sound not logged (the last line named it), the query logged (the last line "
+          "named the sound)");
     g_event_count = 0;
     g_now = 7000;
     CHECK(nat_ui_sound(2) && events_are(2, "log: call ui_sound(0x2)", "call: ui_sound 0x0 0x2"),
@@ -579,6 +581,62 @@ static void test_per_tick_checkpoints_throttled(void)
     start(&PORT);
     CHECK(nat_scramble_query(1, 2, &answer) && nat_scramble_query(1, 2, &answer) && g_event_count == 4,
           "without a clock every call is logged");
+}
+
+/* A throttled checkpoint is also logged when the last line native logged was not that function's own checkpoint (another
+ * function's, or a skip line), so the last line names the call in progress when calls interleave (Plan 2, Task 6's
+ * review). */
+static void test_interleaved_checkpoints(void)
+{
+    uint32_t answer = 0;
+    start(&CLOCKED);
+    g_now = 0;
+    CHECK(nat_scramble_query(1, 2, &answer) && events_are(2, "log: call scramble_query(0x2d000000000, 0x1, 0x2)",
+                                                          "call: scramble_query 0x2d000000000 out 0x1 0x2"),
+          "scramble query at 0 ms: logged");
+    g_event_count = 0;
+    g_now = 10;
+    CHECK(nat_input_handler(COMPONENT) && events_are(2, "log: call input_handler(0x2e0000040)", "call: input_handler 0x2e0000040"),
+          "input handler at 10 ms: logged");
+    g_event_count = 0;
+    g_now = 20;
+    CHECK(nat_scramble_query(1, 3, &answer) && events_are(2, "log: call scramble_query(0x2d000000000, 0x1, 0x3)",
+                                                          "call: scramble_query 0x2d000000000 out 0x1 0x3"),
+          "scramble query at 20 ms: logged again, the last line named the input handler");
+    g_event_count = 0;
+    g_now = 30;
+    CHECK(nat_scramble_query(1, 4, &answer) && events_are(1, "call: scramble_query 0x2d000000000 out 0x1 0x4"),
+          "scramble query at 30 ms: not logged, the last line names it");
+    g_event_count = 0;
+    g_now = 40;
+    CHECK(nat_ui_sound(7) && nat_ui_sound(8) && nat_scramble_query(1, 5, &answer) && nat_scramble_query(1, 6, &answer)
+              && events_are(6, "log: call ui_sound(0x7)", "call: ui_sound 0x0 0x7", "call: ui_sound 0x0 0x8",
+                            "log: call scramble_query(0x2d000000000, 0x1, 0x5)",
+                            "call: scramble_query 0x2d000000000 out 0x1 0x5",
+                            "call: scramble_query 0x2d000000000 out 0x1 0x6"),
+          "sound, sound, query, query at 40 ms: the first of each run is logged");
+
+    /* A skip line in between counts as the last line too. */
+    start(&CLOCKED);
+    g_now = 0;
+    CHECK(nat_scramble_query(1, 2, &answer) && g_event_count == 2, "a query at 0 ms: logged");
+    syn_poke_u64(AT_ENGINE + OFF_ENGINE_CALL, 0);
+    g_event_count = 0;
+    g_now = 10;
+    CHECK(!nat_ui_sound(1) && events_are(1, "log: sound skipped: audio call pointer (engine+0x288)"),
+          "a skipped sound at 10 ms logs its skip line");
+    g_event_count = 0;
+    g_now = 20;
+    CHECK(nat_scramble_query(1, 3, &answer) && events_are(2, "log: call scramble_query(0x2d000000000, 0x1, 0x3)",
+                                                          "call: scramble_query 0x2d000000000 out 0x1 0x3"),
+          "the query at 20 ms: logged again, the last line was the skip line");
+
+    /* Without a log function nothing is logged and nothing breaks. */
+    start(&(NativePort){ fake_input_handler, NULL, NULL, NULL, NULL, fake_scramble_query, NULL, fake_now });
+    g_now = 0;
+    CHECK(nat_scramble_query(1, 2, &answer) && nat_input_handler(COMPONENT) && nat_scramble_query(1, 2, &answer)
+              && g_event_count == 3,
+          "no log function: the calls are made, nothing logged");
 }
 
 static void test_scramble_arguments(void)
@@ -670,6 +728,7 @@ int main(void)
     test_sound_not_admitted_logs_nothing();
     test_no_base();
     test_per_tick_checkpoints_throttled();
+    test_interleaved_checkpoints();
     test_scramble_arguments();
     test_scramble_effects_missing();
     test_scramble_refused_leaves_out_alone();
