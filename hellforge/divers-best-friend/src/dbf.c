@@ -300,6 +300,7 @@ static void start(uint64_t now)
         codes_init(&codes);
         game_init(game_dll, (uint32_t)size);
         latch_init(game_dll, log_line);
+        native_list_init(game_dll, log_line);
     }
     sound_init(&g_sound, nat_ui_sound, log_line);
     memset(&g_job, 0, sizeof g_job);
@@ -636,6 +637,8 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     if (ov == NULL)
         g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a settings window; key and controller "
                          "bindings still work, wheel bindings do nothing");
+    else if (ov->version < 8)
+        g_hf->log(g_mod, "Update Goose Overlay Host to 0.6.0 to use gameplay bindings while the host is loaded");
     g_ov = ov;
     if (!register_tick()) {
         g_hf->log(g_mod, DBF_TITLE " could not get a game-thread tick");
