@@ -35,15 +35,14 @@
  *      [positions + 0x68] + index * 0x308 + 0x2e0), else "scramble position unavailable"; then nat_scramble_query(key,
  *      kind). An answer of 0xffffffff, or a query that did not run (native.h says when), leaves the kind's own code.
  *      Another answer remaps: kind' = ((kind + u32[avatar + 0x11b8]) mod 2^32) mod 149 + 1, and kind' is read by rules 1
- *      to 3 (scrambled true). With HellForge's moved table (kinds above 149) the game's modulus may not be 149 any more,
- *      so a remap is refused, "scrambled codes with mod stratagems are not supported yet".
+ *      to 3 (scrambled true). Registered mod kinds use the same remap into slots 1..149 of the current table.
  * Whatever fails leaves no code and says why in `reason`. Reasons: "not initialised", "<feature name>: <admission's
  * reason>", "definition table unreadable", "definition table unrecognised", "no definition table" (codes_read before an
  * accepted codes_table), "unknown stratagem kind" (0, or above the table's kinds), "settings unreadable", "invalid
  * definition", "mod stratagems unavailable" (kinds 150 and up without a stratagem_row), "mod stratagem not loaded"
  * (stratagem_row says 0), "invalid code array", "code outside the game and HellForge", "code array unreadable", "code
  * changed while reading", "invalid direction", "shared code array", "too many HellForge code arrays", "scramble position
- * unavailable", "scramble seed unreadable", "scrambled codes with mod stratagems are not supported yet".
+ * unavailable", "scramble seed unreadable".
  *
  * Every read goes through memory.h, every game call through native.h (nat_scramble_query only), and every number is the
  * generated header's, except HellForge's own limits, which are named constants in codes.c citing their HF lines.

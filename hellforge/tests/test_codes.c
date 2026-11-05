@@ -619,7 +619,7 @@ static void test_scramble(void)
     table(149);
     CHECK(reads(118, &local, s.stratagems[0].code, 3, 118, false), "SCRAMBLE refused: the positions are not needed either");
 
-    /* With HellForge's moved table the modulus 149 may not hold. */
+    /* HellForge moves the table; the native scramble still selects one of its first 149 kinds. */
     start(&s);
     local = local_context();
     syn_move_table(ABOVE);
@@ -630,9 +630,21 @@ static void test_scramble(void)
               && g_query_kind == 151,
           "moved table, no scramble effect: own codes, a mod kind asked about too");
     g_answer = 3;
-    CHECK(refused(118, &local, "scrambled codes with mod stratagems are not supported yet")
-              && refused(151, &local, "scrambled codes with mod stratagems are not supported yet"),
-          "moved table, scramble effect on: refused, vanilla and mod kinds alike");
+    syn_poke_u32(syn_local_avatar() + AVATAR_SEED, 32);
+    CHECK(reads_made_up(118, &local, 2, true), "moved table: a vanilla kind wraps at 149");
+    syn_poke_u32(syn_local_avatar() + AVATAR_SEED, 0);
+    CHECK(reads_made_up(151, &local, 3, true) && g_query_kind == 151,
+          "moved table: query the registered mod kind, read its scrambled vanilla slot");
+    syn_poke_u32(syn_local_avatar() + AVATAR_SEED, 0xffffffffu);
+    /* Make slot 2 differ between the moved and original tables to catch a stale vanilla-table lookup. */
+    uintptr_t moved_target = syn_definition(34);
+    CHECK(syn_poke_u64(syn_table() + 2u * 8u, moved_target) && syn_poke_u32(moved_target, 2)
+              && syn_set_code(moved_target, syn_loader_spare(0), 4, MOD_CODE), "set a moved-table target override");
+    CHECK(reads(151, &local, MOD_CODE, 4, 2, true),
+          "moved table: wrapped addition precedes modulo; read the current loader override on the target");
+    CHECK(refused(152, &local, "mod stratagem not loaded"), "scrambling cannot admit an unregistered source");
+    syn_set_code(moved_target, AT_ELSEWHERE, 4, NULL);
+    CHECK(refused(151, &local, "code outside the game and HellForge"), "validate the remapped target array");
 
     /* game_read follows the scramble. */
     syn_default(&s);

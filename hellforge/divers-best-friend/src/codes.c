@@ -356,10 +356,9 @@ bool codes_read(uint32_t kind, const GameLocal* local, DbfCode* out, char* reaso
         if (nat_scramble_query(local->key, kind, &answer)) {
             g_scramble_asked = true;
             if (answer != DBF_VAL_SCRAMBLE_NONE) {
-                /* R46 input.lua:156-157 remaps modulo the 149 vanilla kinds; HellForge raises the game's bounds by its
-                 * new types (HF stratagems.c:448-461), so with its table the game's modulus may differ. */
-                if (g_max_kind > DBF_VAL_VANILLA_KINDS)
-                    return refuse(reason, n, "scrambled codes with mod stratagems are not supported yet");
+                /* Build 25480438: the matcher's fixed /149 reciprocal and remainder at 0x66ddab..0x66ddc1
+                 * also appear in the code lookup at 0xa1079d. HF d8a8b46 relocates the table references at
+                 * 0x66dde9 and 0xa107ca; neither arithmetic sequence is a stratagem_bounds.h patch. */
                 if (!mem_u32(local->avatar + DBF_OFF_AVATAR_SCRAMBLE_SEED_OFFSET, &seed))
                     return refuse(reason, n, "scramble seed unreadable");
                 code.kind_used = (uint32_t)(kind + seed) % DBF_VAL_VANILLA_KINDS + 1u; /* the sum wraps mod 2^32 */
