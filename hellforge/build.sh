@@ -216,14 +216,27 @@ run_wine_tests() {
 running() { # the game or HellForge (by process name, or by the Windows exe in a Wine/Proton command line, or the
   # native Linux launcher of HellForge 0.4, whose process name is cut to "HellForge.Launc")
   local pgrep=${HF_PGREP:-pgrep}
-  "$pgrep" -xi 'helldivers2\.exe|HellForge\.exe|HellForge\.Launc(her)?' >/dev/null 2>&1 \
-    || "$pgrep" -fi '(^|[\\/ ])(helldivers2|HellForge(\.Launcher)?)\.exe( |$)' >/dev/null 2>&1
+  local pid matches option pattern
+  for option in -xi -fi; do
+    if [ "$option" = -xi ]; then pattern='helldivers2\.exe|HellForge\.exe|HellForge\.Launc(her)?'
+    else pattern='(^|[\\/ ])(helldivers2|HellForge(\.Launcher)?)\.exe( |$)'; fi
+    if matches=$("$pgrep" "$option" "$pattern"); then
+      [ -n "$matches" ] || return 0
+      # An unreadable process, launcher or ambiguous installation still blocks.
+      while IFS= read -r pid; do
+        python3 -I "$here/tools/retail_process.py" "$pid" "$1" || return 0
+      done <<< "$matches"
+    else
+      [ "$?" -eq 1 ] || return 0
+    fi
+  done
+  return 1
 }
 
 install_mod() {
   local install=${1:?usage: build.sh install <HellForge installation>}
   [ -f "$install/hellforge-install.json" ] && [ -d "$install/mods" ] || die "$install is not a HellForge installation."
-  if running; then die "helldivers2.exe or HellForge.exe is running. Close the game and HellForge, then install again."; fi
+  if running "$install"; then die "helldivers2.exe or HellForge.exe is running. Close the game and HellForge, then install again."; fi
   [ -f "$mod/$dllName" ] || die "$mod/$dllName is not built yet (./build.sh dll)."
   if [ -n "$(find "$mod/src" "$mod/hellforge-mod.json" "$sdk" -newer "$mod/$dllName" -print -quit)" ]; then
     die "The sources, the manifest or the SDK headers are newer than $dllName (./build.sh dll)."
