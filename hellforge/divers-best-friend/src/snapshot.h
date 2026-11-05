@@ -90,17 +90,20 @@ typedef struct DbfSnapshot {
     char build_reason[DBF_SNAP_REASON_SIZE];
     uint32_t host_version; /* the Overlay Host's OvApi.version; 0 when there is none */
     ListView list; /* snap_fill_list fills it; until then it is all zero and not valid */
+    uint16_t editor_pad; /* current controller buttons for binding capture */
+    bool settings_save_failed;
     DbfSettings options; /* game-thread copy of the currently applied preferences */
     char hud_status[192]; /* last engine-side HUD diagnostic */
     bool hud_owned;      /* native HUD bridge currently owns the display */
 } DbfSnapshot;
 
-enum { UI_HUD_OPTION = 1 }; /* a: hud_option_descriptor index, b: requested value */
+enum { UI_HUD_OPTION = 1, UI_BINDING, UI_BLACKLIST }; /* a: option index / bind action / stratagem kind. Binding b packs kind:code (upper/lower 16 bits). */
 
 typedef struct UiEvent {
     uint32_t kind;
     int32_t a, b;
     float x, y;
+    uint64_t changed_rows, hidden_rows; /* one atomic blacklist edit; bits index dbf_blacklist_kinds */
 } UiEvent;
 
 void snap_init(void);

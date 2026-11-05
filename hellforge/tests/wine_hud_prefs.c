@@ -10,8 +10,9 @@
 #include "hud_prefs.h"
 
 static const wchar_t path[] = L".\\DBF\\HellForge\\settings.ini";
+static const wchar_t backup[] = L".\\DBF\\HellForge\\settings.ini.bak";
 static const wchar_t lock[] = L".\\DBF\\HellForge\\settings.ini.dbf.lock";
-static char data[70000], before[70000];
+static char data[70000], before[70000], prior_backup[70000];
 
 static void write_bytes(const wchar_t* name, const char* p, size_t n)
 {
@@ -52,6 +53,7 @@ int main(void)
     s.enabled = false;
     assert(hud_prefs_save(path, &s));
     round_trip(&s);
+    assert(GetFileAttributesW(backup) == INVALID_FILE_ATTRIBUTES);
     const char original[] = "\xef\xbb\xbf# mine\r\n[ HuD ] ; header\r\n\tWeApon_status_strip = true \t# note\r\n"
                             "vertical_offset =  ; empty\r\nenabled = 1\r\n"
                             "[bindings]\nnext = key:r\n[blacklist]\nkind_41 = true\n"
@@ -59,6 +61,7 @@ int main(void)
                             "[external]\nweapon_status_strip = custom\nunknown=42";
     write_bytes(path, original, sizeof original - 1);
     assert(hud_prefs_save(path, &s));
+    assert(read_bytes(backup) == sizeof original - 1 && !memcmp(data, original, sizeof original - 1));
     round_trip(&s);
     assert(!memcmp(data, original, strlen("\xef\xbb\xbf# mine\r\n[ HuD ] ; header\r\n")));
     assert(strstr(data, "\tWeApon_status_strip = 0 \t# note\r\n"));
@@ -67,6 +70,46 @@ int main(void)
     size_t n = read_bytes(path);
     memcpy(before, data, n);
     assert(hud_prefs_save(path, &s) && read_bytes(path) == n && !memcmp(before, data, n));
+
+    assert(read_bytes(backup) == sizeof original - 1 && !memcmp(data, original, sizeof original - 1));
+
+    /* A first-start import cannot overwrite an existing user's file. */
+    assert(!hud_prefs_create(path, &s) && read_bytes(path) == n && !memcmp(before, data, n));
+    assert(DeleteFileW(path));
+    s.bind[BIND_SLOT2] = (Binding){.kind = BIND_PAD, .code = BIND_PAD_RB};
+    s.blacklist_kind[5] = true;
+    s.hide_sos = true;
+    s.terminal_input = 2;
+    assert(hud_prefs_create(path, &s));
+    DbfSettings imported;
+    n = read_bytes(path);
+    assert(!settings_parse(&imported, data, n, NULL, 0));
+    assert(imported.bind[BIND_SLOT2].code == BIND_PAD_RB && imported.blacklist_kind[5] &&
+           imported.hide_sos && imported.terminal_input == 2);
+
+    /* Simulate edits by a text editor after DBF read its baseline. A UI change
+     * updates every matching token, and copies unrelated keys and comments verbatim. */
+    const char mixed[] = "\xef\xbb\xbf[bindings]\r\n NEXT = key:r   # external\r\n"
+        "slot2=pad:rb\n[bindings] ; dup\nSlot2 = pad:a ; second\n"
+        "[blacklist]\nkind_5=true\nKind_005=1 # alias\nkind_42=true\n"
+        "[dbf]\nhide_sos=true ; migration\n[external]\nslot2=private";
+    write_bytes(path, mixed, sizeof mixed - 1);
+    DbfSettings updated = s;
+    updated.bind[BIND_SLOT2] = (Binding){.kind=BIND_MOUSE,.code=5};
+    assert(settings_set_blacklisted(&updated, 5, 0) && settings_set_blacklisted(&updated, DBF_VAL_HIDE_SOS_KIND, 0));
+    assert(hud_prefs_apply(path, &s, &updated));
+    assert(read_bytes(backup) == sizeof mixed - 1 && !memcmp(data, mixed, sizeof mixed - 1));
+    n = read_bytes(path);
+    settings_parse(&imported, data, n, NULL, 0);
+    assert(imported.bind[BIND_NEXT].code == 'R' && imported.bind[BIND_SLOT2].code == 5);
+    assert(!imported.blacklist_kind[5] && imported.blacklist_kind[42] && !imported.hide_sos);
+    assert(strstr(data," NEXT = key:r   # external\r\n") && strstr(data,"slot2=mouse5\n") &&
+           strstr(data,"Slot2 = mouse5 ; second") && strstr(data,"Kind_005=false # alias") &&
+           strstr(data,"hide_sos=false ; migration") && strstr(data,"[external]\nslot2=private"));
+    memcpy(before, data, n);
+    assert(hud_prefs_apply(path, &s, &updated) && read_bytes(path) == n && !memcmp(data,before,n));
+    /* Restore a full configuration for the remaining atomic publication cases. */
+    assert(DeleteFileW(path) && hud_prefs_create(path, &s));
 
     /* Debris from a killed process (including a reused PID) is never opened for writing. */
     wchar_t abandoned[128];
@@ -84,6 +127,8 @@ int main(void)
 
     n = read_bytes(path);
     memcpy(before, data, n);
+    size_t prior_len = read_bytes(backup);
+    memcpy(prior_backup, data, prior_len);
     HANDLE editor = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     assert(editor != INVALID_HANDLE_VALUE && !hud_prefs_save(path, &s) && CloseHandle(editor));
@@ -93,6 +138,7 @@ int main(void)
     s.weapon_status_strip = false;
     assert(editor != INVALID_HANDLE_VALUE && !hud_prefs_save(path, &s) && CloseHandle(editor));
     assert(read_bytes(path) == n && !memcmp(data, before, n));
+    assert(read_bytes(backup) == prior_len && !memcmp(data, prior_backup, prior_len));
     s.vertical_offset = INT_MAX;
     assert(!hud_prefs_save(path, &s) && read_bytes(path) == n && !memcmp(data, before, n));
     s.vertical_offset = -125;
@@ -108,7 +154,7 @@ int main(void)
     }
     write_bytes(path, "a\0b", 3);
     assert(!hud_prefs_save(path, &s) && read_bytes(path) == 3 && !memcmp(data, "a\0b", 3));
-    assert(DeleteFileW(path) && RemoveDirectoryW(L"DBF\\HellForge") && RemoveDirectoryW(L"DBF"));
+    assert(DeleteFileW(backup) && DeleteFileW(path) && RemoveDirectoryW(L"DBF\\HellForge") && RemoveDirectoryW(L"DBF"));
     write_bytes(L"DBF", "keep", 4);
     assert(!hud_prefs_save(path, &s) && read_bytes(L"DBF") == 4 && !strcmp(data, "keep"));
     assert(DeleteFileW(L"DBF") && SetCurrentDirectoryW(base) && RemoveDirectoryW(work));

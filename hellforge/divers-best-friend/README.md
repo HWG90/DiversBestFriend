@@ -4,6 +4,8 @@ This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the enti
 
 Press F7, select **Diver’s Best Friend**, and open **Settings** to choose the wedge wheel, native wheel or list, adjust the wheel and icon sizes, choose the cooldown layout, and toggle the weapon strip. The strip reflects the changeable controls on the equipped weapon. The Status tab shows build checks, HUD ownership and the latest message from the engine addon.
 
+In **Controls**, select the action, capture an input or type its INI spelling, then choose **Apply**. **Clear** and **Apply** unbind the action. In **Blacklist**, check the stratagems to exclude and choose **Apply** to save the group. A successful replacement keeps the previous settings file as `settings.ini.bak`.
+
 With the default bindings, scroll down for Next, scroll up for Previous and press the left mouse button to confirm. Slot shortcuts start unbound. To use Select on Release, choose a Hold menu binding in the game. Point at the centre before releasing to cancel.
 
 ## In-mission verification

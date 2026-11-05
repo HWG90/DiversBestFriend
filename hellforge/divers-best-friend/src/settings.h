@@ -47,6 +47,8 @@
 
 typedef struct DbfSettings {
     bool enabled, selection_sounds, randomize_input_delay, instant_stratagems, hide_sos, hide_eagle_rearm;
+    bool auto_terminal_complete;
+    int terminal_input;
     int input_interval_ms;                   /* 0..250 */
     bool blacklist_kind[DBF_BLACKLIST_SLOTS]; /* by kind; true: hidden */
     Binding bind[BIND_COUNT];
@@ -93,6 +95,10 @@ int settings_parse(DbfSettings* s, const char* text, size_t len, char* problems,
  * outside 1 to 0xFE, a pad mask that is not exactly one named button: bind_init takes these as BIND_NONE too) and a NULL
  * `b` read none. The text is cut to fit n and always terminated; a NULL `out` or n of 0 does nothing. A wheel binding's
  * code is not looked at. */
+const char* settings_action_key(unsigned action);
+bool settings_parse_binding(const char* text, Binding* binding);
+bool settings_set_binding(DbfSettings* s, unsigned action, Binding binding);
+bool settings_set_blacklisted(DbfSettings* s, unsigned kind, int hidden);
 void bind_describe(const Binding* b, char* out, size_t n);
 
 #endif

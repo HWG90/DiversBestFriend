@@ -270,6 +270,43 @@ static bool parse_binding(Span v, Binding* out)
     return false;
 }
 
+const char* settings_action_key(unsigned action)
+{
+    return action < BIND_COUNT ? k_action_names[action] : NULL;
+}
+
+bool settings_parse_binding(const char* text, Binding* binding)
+{
+    Binding parsed;
+    if (!text || !binding || !parse_binding(trim(text, text + strlen(text)), &parsed)) return false;
+    *binding = parsed;
+    return true;
+}
+
+bool settings_set_binding(DbfSettings* s, unsigned action, Binding binding)
+{
+    if (!s || action >= BIND_COUNT) return false;
+    char text[24];
+    Binding parsed;
+    bind_describe(&binding, text, sizeof text);
+    if (!settings_parse_binding(text, &parsed) || parsed.kind != binding.kind || parsed.code != binding.code) return false;
+    s->bind[action] = parsed;
+    return true;
+}
+
+bool settings_set_blacklisted(DbfSettings* s, unsigned kind, int hidden)
+{
+    if (!s || kind >= DBF_BLACKLIST_SLOTS || (hidden != 0 && hidden != 1)) return false;
+    for (int i = 0; i < dbf_blacklist_kind_count; ++i) {
+        if (dbf_blacklist_kinds[i].kind != kind) continue;
+        s->blacklist_kind[kind] = hidden != 0;
+        if (kind == DBF_VAL_HIDE_SOS_KIND) s->hide_sos = hidden != 0;
+        if (kind == DBF_VAL_HIDE_EAGLE_REARM_KIND) s->hide_eagle_rearm = hidden != 0;
+        return true;
+    }
+    return false;
+}
+
 /* The binding as a [bindings] value (settings.h). A value is at most "pad:dpad_right", 14 bytes. */
 void bind_describe(const Binding* b, char* out, size_t n)
 {

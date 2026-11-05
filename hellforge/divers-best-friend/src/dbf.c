@@ -56,10 +56,10 @@
 #include "native_list.h"
 #include "ui_settings.h"
 #include "hud_bridge.h"
-#include "hud_options.h"
+#include "settings_editor.h"
 #include "hud_prefs.h"
-
 #include "migration.h"
+
 #define DBF_VERSION "R50-hellforge.4"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
@@ -636,6 +636,8 @@ static void update_owners(DbfSnapshot* s, uint64_t now)
     hud_bridge_status(s->hud_status, sizeof s->hud_status);
 }
 
+static bool settings_save_failed;
+
 static void apply_settings(void)
 {
     UiEvent events[UI_QUEUE_SLOTS];
@@ -644,14 +646,21 @@ static void apply_settings(void)
     DbfSettings updated = g_settings;
     bool changed = false;
     for (int i = 0; i < count; ++i) {
-        if (events[i].kind == UI_HUD_OPTION && events[i].a >= 0 &&
-            hud_option_set(&updated, (unsigned)events[i].a, events[i].b)) changed = true;
+        if (editor_apply(&updated, &events[i])) changed = true;
     }
     if (!changed) return;
-    if (g_settings_path[0] && hud_prefs_save(g_settings_path, &updated)) {
-        g_settings = updated;
-        g_settings_read = true;
-    } else log_line("Could not save HUD settings to settings.ini; retained the previous settings");
+    settings_save_failed = !g_settings_path[0] || !hud_prefs_apply(g_settings_path, &g_settings, &updated);
+    if (settings_save_failed) {
+        log_line("Could not save settings to settings.ini; retained the previous settings");
+        return;
+    }
+    bool rebind = false;
+    for (int i = 0; i < BIND_COUNT; ++i)
+        if (g_settings.bind[i].kind != updated.bind[i].kind || g_settings.bind[i].code != updated.bind[i].code)
+            rebind = true;
+    g_settings = updated;
+    g_settings_read = true;
+    if (rebind && g_bind_ready) bind_init(&g_bind_port, g_settings.bind);
 }
 
 static void Tick(HfMod* mod, float dt, void* user)
@@ -684,6 +693,11 @@ static void Tick(HfMod* mod, float dt, void* user)
     snap_fill_list(&s, &s.game, &g_settings, &g_list, &g_job, g_bind_status, g_settings_read ? DBF_SETTINGS_NAME : NULL,
                    g_settings_problems);
     s.options = g_settings;
+    s.settings_save_failed = settings_save_failed;
+    if (g_front && g_bind_port.pad_buttons && g_ov && g_ov->version >= 8 &&
+        g_ov->size >= offsetof(OvApi, input_captured) + sizeof g_ov->input_captured &&
+        g_ov->input_captured && g_ov->input_captured())
+        g_bind_port.pad_buttons(&s.editor_pad);
     s.host_version = g_ov != NULL ? g_ov->version : 0;
     snap_publish(&s); /* every tick: a publish skipped while the window holds a buffer is made good by the next */
 }

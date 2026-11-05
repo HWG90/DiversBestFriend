@@ -4,6 +4,7 @@
 #include <string.h>
 #include "text.h"
 #include "hud_options.h"
+#include "settings_editor.h"
 #include "ui_settings.h"
 
 /* "^ > v <" for the row's code (1 up, 2 right, 3 down, 4 left, anything else "?"), "no code" when it has none. */
@@ -210,6 +211,7 @@ static void draw_options(const OvApi* ov, const DbfSnapshot* s)
 void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s)
 {
     if (ov == NULL) return;
+    if (s && s->settings_save_failed) ov->text("Could not save settings.ini. Your previous settings are active.");
     if (!ov->begin_tab_bar("dbf-tabs")) return;
     if (ov->begin_tab_item("Status")) {
         draw_status(ov, s);
@@ -220,5 +222,6 @@ void ui_settings_draw(const OvApi* ov, const DbfSnapshot* s)
         draw_options(ov, s);
         ov->end_tab_item();
     }
+    editor_tabs(ov, s);
     ov->end_tab_bar();
 }

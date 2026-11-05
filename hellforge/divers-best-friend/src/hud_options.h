@@ -13,7 +13,7 @@ typedef struct {
     size_t offset;             /* bool for toggles, int otherwise */
 } HudOption;
 
-enum { HUD_OPTION_COUNT = 31 };
+enum { HUD_OPTION_COUNT = 33 };
 unsigned hud_option_count(void);
 const HudOption* hud_option_descriptor(unsigned index);
 const char* hud_option_key(unsigned index); /* NULL outside the table */

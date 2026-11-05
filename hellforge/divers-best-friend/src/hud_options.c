@@ -11,6 +11,8 @@ static const char* const cooldown_display_choices[] = { "Icon dock", "Compact ov
 static const char* const short_status_placement_choices[] = { "Together", "Left of dock", "Right of dock", "Below stamina bar" };
 static const char* const release_selection_mode_choices[] = { "Automatic (controller)", "On", "Off" };
 
+static const char* const terminal_choices[] = { "Instant", "Enter arrows" };
+
 #define OPTION(field, label, group, widget, initial, min, max, step, choices) \
     { #field, label, group, widget, initial, min, max, step, choices, offsetof(DbfSettings, field) }
 static const HudOption options[] = {
@@ -42,6 +44,8 @@ static const HudOption options[] = {
     OPTION(short_status_placement, "Short status placement", "COOLDOWN DISPLAY", HUD_CHOICE, 3, 1, 4, 1, short_status_placement_choices),
     OPTION(track_unavailable, "Track unavailable / ineligible", "COOLDOWN DISPLAY", HUD_TOGGLE, false, 0, 1, 1, NULL),
     OPTION(balance_separated_dock, "Center Cooldown Separator", "COOLDOWN DISPLAY", HUD_TOGGLE, true, 0, 1, 1, NULL),
+    OPTION(auto_terminal_complete, "Auto Terminal Complete", "TERMINALS", HUD_TOGGLE, true, 0, 1, 1, NULL),
+    OPTION(terminal_input, "Terminal input", "TERMINALS", HUD_CHOICE, 1, 1, 2, 1, terminal_choices),
     OPTION(input_interval_ms, "Input interval (ms)", "ADVANCED", HUD_SLIDER, DBF_INTERVAL_DEFAULT_MS, 0, DBF_INTERVAL_MAX_MS, 5, NULL),
     OPTION(randomize_input_delay, "Randomize input delay", "ADVANCED", HUD_TOGGLE, false, 0, 1, 1, NULL),
     OPTION(instant_stratagems, "Instant complete Stratagems", "ADVANCED", HUD_TOGGLE, false, 0, 1, 1, NULL),
@@ -100,9 +104,11 @@ bool hud_option_available(const DbfSettings* s, unsigned index)
     bool custom = s->appearance_preset == 1;
     bool dock = s->cooldown_icons && s->cooldown_display == 1;
 #define FIELD(name) offsetof(DbfSettings, name)
+    bool paced = !s->instant_stratagems || (s->auto_terminal_complete && s->terminal_input == 2);
     switch (d->offset) {
-    case FIELD(input_interval_ms): return !s->randomize_input_delay && !s->instant_stratagems;
-    case FIELD(randomize_input_delay): return !s->instant_stratagems;
+    case FIELD(input_interval_ms): return !s->randomize_input_delay && paced;
+    case FIELD(randomize_input_delay): return paced;
+    case FIELD(terminal_input): return s->auto_terminal_complete;
     case FIELD(experimental_layout): return wedge;
     case FIELD(wedge_darkness): case FIELD(wedge_opacity): return expanded;
     case FIELD(native_opacity): return native;
