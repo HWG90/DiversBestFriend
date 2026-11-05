@@ -152,7 +152,7 @@ static void setup(void)
     host.pop_color=pop_color;
 }
 
-static const char* const tabs[]={"BROWSE","CHANGES","CONTROLS","BLACKLIST","STATUS"};
+static const char* const tabs[]={"SETTINGS","KEY BINDINGS","EXCLUSIONS","REVIEW","DIAGNOSTICS"};
 
 static void draw(const DbfSnapshot* data)
 {
@@ -244,7 +244,7 @@ int main(void)
     for (int i=1; i<=5; ++i) {
         keyboard(0x75,false);
         expect_tab(i%5);
-        if (i==2) {
+        if (i==1) {
             CHECK(fake_ov_count_prefix("text:Current binding:")>0,"Controls shows binding editor");
             click="Slot 2";
             draw(&snapshot);
@@ -256,7 +256,7 @@ int main(void)
                   editor_apply(&snapshot.options,&e) && snapshot.options.bind[BIND_SLOT2].code=='Q',
                   "Controls posts the selected slot binding");
         }
-        if (i==3) {
+        if (i==2) {
             edit="SOS Beacon";
             draw(&snapshot);
             UiEvent e;
@@ -273,7 +273,7 @@ int main(void)
     UiEvent staged;
     CHECK(ui_drain(&staged,1)==0 && snapshot.options.enabled,"a Browse edit stays staged until Apply");
     keyboard('E',true);
-    expect_tab(1);
+    expect_tab(3);
     CHECK(fake_ov_find("text_wrapped:Enable Mod",0)>=0,"Changes lists the staged setting");
     click="DISCARD";
     draw(&snapshot);
@@ -295,10 +295,16 @@ int main(void)
     draw(&snapshot);
     expect_tab(2);
     region_width=1000;
+    keyboard('F',true);
+    expect_tab(2); /* Search stays within exclusions. */
+    click_view=0;
+    draw(&snapshot);
 
     keyboard('F',true);
     snapshot.options.cooldown_display=3;
-    click="RESET TO DEFAULTS";
+    click="REVIEW CHANGES";
+    draw(&snapshot);
+    click="RESTORE DEFAULTS";
     draw(&snapshot);
     UiEvent event[2];
     CHECK(ui_drain(event,2)==0,"reset stages a draft without changing live settings");

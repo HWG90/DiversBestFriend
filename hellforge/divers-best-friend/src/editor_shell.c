@@ -5,8 +5,8 @@
 #include "text.h"
 #include "ui_settings.h"
 
-enum View { BROWSE, CHANGES, CONTROLS, BLACKLIST, STATUS, VIEW_COUNT };
-static const char* const labels[] = {"BROWSE", "CHANGES", "CONTROLS", "BLACKLIST", "STATUS"};
+enum View { BROWSE, CONTROLS, BLACKLIST, CHANGES, STATUS, VIEW_COUNT };
+static const char* const labels[] = {"SETTINGS", "KEY BINDINGS", "EXCLUSIONS", "REVIEW", "DIAGNOSTICS"};
 static enum View view;
 
 bool editor_shell_available(const OvApi* ov)
@@ -86,7 +86,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     if (escape && view==BROWSE && editor_browse_escape()) escape=false;
     if (!editing && focused) {
         if (ov->key_pressed(0x75) || (ov->key_down(0x10) && ov->key_pressed(0x09))) view = (enum View)((view+1)%VIEW_COUNT);
-        if (ov->key_down(0x11) && ov->key_pressed('F')) { view=BROWSE; search=true; }
+        if (view != BLACKLIST && ov->key_down(0x11) && ov->key_pressed('F')) { view=BROWSE; search=true; }
         if (ov->key_down(0x11) && ov->key_pressed('E')) view=CHANGES;
         if (s && (view==BROWSE || view==CHANGES) && ov->key_pressed(0x78)) editor_apply_changes(ov,s);
         if (panel && escape) { ov->set_open(panel,0); return; }
@@ -114,27 +114,42 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
         ov->draw_rect_filled(x,status_y,x+w,status_y+34*k,ov->theme(OV_THEME_PANEL_ALT),0);
         ov->draw_line(x,status_y,x+w,status_y,ov->theme(OV_THEME_LINE),k);
         DbfLine state;
-        dbf_line_begin(&state, "Pending settings  ");
-        dbf_line_add_uint(&state,s ? editor_change_count(s) : 0);
-        if (s && s->settings_save_failed) dbf_line_add(&state,"    Save failed. Check settings.ini and retry.");
-        else if (s) dbf_line_add(&state,s->hud_owned ? "    Native HUD connected" : "    Waiting for native HUD");
+        unsigned pending = s ? editor_change_count(s) : 0;
+        bool preferences = view == BROWSE || view == CHANGES;
+        dbf_line_begin(&state, NULL);
+        if (s && s->settings_save_failed) dbf_line_add(&state,"Save failed. Check settings.ini and retry.");
+        else if (preferences && pending) {
+            dbf_line_add_uint(&state,pending);
+            dbf_line_add(&state,pending == 1 ? " pending change" : " pending changes");
+        } else if (preferences && s) dbf_line_add(&state,"No pending settings changes");
+        else if (view == CONTROLS) dbf_line_add(&state,"Choose an action to change its binding.");
+        else if (view == BLACKLIST) dbf_line_add(&state,"Checked stratagems are hidden from selection.");
+        else if (s) dbf_line_add(&state,s->hud_owned ? "Native HUD connected" : "Waiting for native HUD");
         ov->draw_text(x+12*k,status_y+7*k,ov->theme(s && s->settings_save_failed ? OV_THEME_DANGER : OV_THEME_TEXT_DIM),
                       1,16*k,state.text);
         ov->set_cursor_screen_pos(x+8*k,status_y+38*k);
-        ov->key_cap("F6"); ov->same_line(); ov->text_disabled("Next view");
-        if (w >= 710*k) { ov->same_line(); ov->key_cap("Ctrl+F"); ov->same_line(); ov->text_disabled("Search"); }
-        if (s && (view==BROWSE || view==CHANGES)) {
+        if (view == BROWSE || view == BLACKLIST) {
+            ov->key_cap("Ctrl+F"); ov->same_line(); ov->text_disabled("Search");
+        } else {
+            ov->key_cap("F6"); ov->same_line(); ov->text_disabled("Next view");
+        }
+        if (s && preferences) {
             if (w >= 710*k) {
-                float button_width = width_of(ov,ov->bold_font(),16*k,"APPLY  F9DISCARDRESET TO DEFAULTS") + 132*k;
-                ov->set_cursor_screen_pos(x+w-button_width,status_y+39*k);
+                float reserve = width_of(ov,ov->bold_font(),16*k,
+                    view == CHANGES ? "RESTORE DEFAULTSDISCARDAPPLY  F9" : "REVIEW CHANGESAPPLY  F9") + 132*k;
+                ov->set_cursor_screen_pos(x+w-reserve,status_y+39*k);
             }
-            ov->begin_disabled(editor_change_count(s)==0);
+            if (view == CHANGES) {
+                if (ov->button("RESTORE DEFAULTS")) editor_reset_defaults(s);
+                ov->same_line();
+                ov->begin_disabled(!pending);
+                if (ov->button("DISCARD")) editor_discard_changes();
+                ov->end_disabled();
+            } else if (ov->button("REVIEW CHANGES")) view = CHANGES;
+            ov->same_line();
+            ov->begin_disabled(!pending);
             if (ov->button_primary("APPLY  F9")) editor_apply_changes(ov,s);
-            ov->same_line();
-            if (ov->button("DISCARD")) editor_discard_changes();
             ov->end_disabled();
-            ov->same_line();
-            if (ov->button("RESET TO DEFAULTS")) editor_reset_defaults(s);
         }
     }
     ov->draw_layer(OV_LAYER_BACKGROUND);
