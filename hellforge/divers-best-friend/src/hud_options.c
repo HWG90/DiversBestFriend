@@ -93,36 +93,55 @@ bool hud_option_set(DbfSettings* s, unsigned index, int value)
     return true;
 }
 
-bool hud_option_available(const DbfSettings* s, unsigned index)
+const char* hud_option_requirement(const DbfSettings* s, unsigned index)
 {
     const HudOption* d = hud_option_descriptor(index);
-    if (!s || !d) return false;
+    if (!s || !d) return "Setting unavailable.";
     bool wedge = s->selection_mode_ordered == 1;
     bool list = s->selection_mode_ordered == 2;
     bool native = s->selection_mode_ordered == 3;
     bool expanded = wedge && s->experimental_layout == 2;
     bool custom = s->appearance_preset == 1;
-    bool dock = s->cooldown_icons && s->cooldown_display == 1;
+    const char* display = s->cooldown_icons ? NULL : "Enable Show cooldown display.";
+    const char* dock = display ? display : s->cooldown_display == 1 ? NULL : "Choose Icon dock as the cooldown display style.";
 #define FIELD(name) offsetof(DbfSettings, name)
     bool paced = !s->instant_stratagems || (s->auto_terminal_complete && s->terminal_input == 2);
     switch (d->offset) {
-    case FIELD(input_interval_ms): return !s->randomize_input_delay && paced;
-    case FIELD(randomize_input_delay): return paced;
-    case FIELD(terminal_input): return s->auto_terminal_complete;
-    case FIELD(experimental_layout): return wedge;
-    case FIELD(wedge_darkness): case FIELD(wedge_opacity): return expanded;
-    case FIELD(native_opacity): return native;
-    case FIELD(wheel_size): return !list && custom;
-    case FIELD(icon_size): case FIELD(label_size): return (expanded || native) && custom;
-    case FIELD(vertical_offset): return !list;
-    case FIELD(dim_unselected): case FIELD(hide_blacklisted_list): case FIELD(hide_cooldown_list): return list;
+    case FIELD(input_interval_ms):
+        if (s->randomize_input_delay) return "Turn off Randomize input delay.";
+        /* fall through */
+    case FIELD(randomize_input_delay):
+        return paced ? NULL : "Use arrow entry for stratagems or terminals.";
+    case FIELD(terminal_input): return s->auto_terminal_complete ? NULL : "Enable Auto Terminal Complete.";
+    case FIELD(experimental_layout): return wedge ? NULL : "Choose Wedge Wheel mode.";
+    case FIELD(wedge_darkness): case FIELD(wedge_opacity):
+        return expanded ? NULL : "Choose Wedge Wheel mode and the Expanded wedges layout.";
+    case FIELD(native_opacity): return native ? NULL : "Choose Native wheel mode.";
+    case FIELD(wheel_size):
+        if (list) return "Choose a wheel mode.";
+        return custom ? NULL : "Choose the Custom preset.";
+    case FIELD(icon_size): case FIELD(label_size):
+        if (!expanded && !native) return "Choose Native wheel or Expanded wedges.";
+        return custom ? NULL : "Choose the Custom preset.";
+    case FIELD(vertical_offset): return list ? "Choose a wheel mode." : NULL;
+    case FIELD(dim_unselected): case FIELD(hide_blacklisted_list): case FIELD(hide_cooldown_list):
+        return list ? NULL : "Choose List Select mode.";
     case FIELD(cooldown_display): case FIELD(dock_gap): case FIELD(track_unavailable):
-    case FIELD(cooldown_timers): case FIELD(brief_timer_limit): return s->cooldown_icons;
+    case FIELD(cooldown_timers): case FIELD(brief_timer_limit): return display;
     case FIELD(short_status_placement): return dock;
     case FIELD(balance_separated_dock):
-        return dock && (s->short_status_placement == 2 || s->short_status_placement == 3);
-    case FIELD(cooldown_timer): case FIELD(short_timer_style): return s->cooldown_icons && s->cooldown_timers;
-    default: return true;
+        if (dock) return dock;
+        return s->short_status_placement == 2 || s->short_status_placement == 3
+            ? NULL : "Place short status left or right of the dock.";
+    case FIELD(cooldown_timer): case FIELD(short_timer_style):
+        if (display) return display;
+        return s->cooldown_timers ? NULL : "Enable Show cooldown timers.";
+    default: return NULL;
     }
 #undef FIELD
+}
+
+bool hud_option_available(const DbfSettings* s, unsigned index)
+{
+    return hud_option_requirement(s, index) == NULL;
 }

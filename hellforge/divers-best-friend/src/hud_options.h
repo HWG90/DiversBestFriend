@@ -19,5 +19,6 @@ const HudOption* hud_option_descriptor(unsigned index);
 const char* hud_option_key(unsigned index); /* NULL outside the table */
 int hud_option_get(const DbfSettings* s, const char* key); /* INT_MIN on unknown key or NULL */
 bool hud_option_set(DbfSettings* s, unsigned index, int value); /* false leaves s unchanged */
+const char* hud_option_requirement(const DbfSettings* s, unsigned index); /* NULL when editable */
 bool hud_option_available(const DbfSettings* s, unsigned index); /* R50 menu dependencies */
 #endif
