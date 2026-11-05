@@ -339,7 +339,14 @@ static int pending_changes(void)
 static const char* input_blocked(const GameView* v)
 {
     if (!g_settings.enabled) return "DBF is off in its settings";
-    if (snap_capturing()) return "an Overlay Host window is open";
+    /* Hidden HUD panels receive no DrawList callbacks. API 8 reports the host's live state from this thread. */
+    bool capturing;
+    if (g_ov && g_ov->version >= 8 && g_ov->size >= offsetof(OvApi, input_captured) + sizeof g_ov->input_captured
+        && g_ov->input_captured)
+        capturing = g_ov->input_captured() != 0;
+    else
+        capturing = snap_capturing();
+    if (capturing) return "an Overlay Host window is open";
     if (!v->local_ok) return "local player unavailable";
     if (!v->local.unobstructed) return "UI obstructed";
     return NULL;

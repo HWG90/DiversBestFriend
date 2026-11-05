@@ -8,7 +8,7 @@
 #ifndef STUB_API
 #error "build with -DSTUB_API=3, 4 or 5"
 #endif
-_Static_assert(STUB_API >= 3 && STUB_API <= 5, "STUB_API is 3, 4 or 5");
+_Static_assert(STUB_API >= 3 && (STUB_API <= 5 || STUB_API == 8), "STUB_API is 3, 4 or 5");
 
 #define EXPORT __declspec(dllexport)
 #define MAX_PANELS 8
@@ -71,6 +71,10 @@ static int stub_on_game_thread(struct HfMod* mod, OvTickFn callback, void* user)
 }
 #endif
 
+#if STUB_API >= 8
+static int stub_input_captured(void) { return g_capturing > 0; }
+#endif
+
 EXPORT const OvApi* ov_api(uint32_t version)
 {
     g_requests++;
@@ -78,6 +82,9 @@ EXPORT const OvApi* ov_api(uint32_t version)
         g_table = *fake_ov_api(); /* the drawing calls; everything else stays NULL */
         g_table.version = STUB_API;
         g_table.register_panel = stub_register_panel;
+#if STUB_API >= 8
+        g_table.input_captured = stub_input_captured;
+#endif
 #if STUB_API >= 5
         g_table.size = sizeof(OvApi);
         g_table.on_game_thread = stub_on_game_thread;

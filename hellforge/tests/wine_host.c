@@ -1817,8 +1817,10 @@ static void run_shortcut_blocked(void)
           "failed: an Overlay Host window is open");
     CHECK(originals(), "the menu binding is Hold again, both dwords 2");
     CHECK(g_calls[FN_CLOSE] == 1 && checkpoints(), "the menu DBF opened is closed");
-    s_set_capturing(-1);
-    s_draw(1);
+    s_set_capturing(0); /* The HUD was hidden while capturing. It never draws the release frame. */
+    entry_tick();
+    press_slot1(1);
+    key(KEY_SLOT1, false);
     end_keys();
 }
 

@@ -121,7 +121,7 @@ run_wine_tests() {
   "$zig" cc "${flags[@]}" -I "$mod/src" -I "$here/tests" -I "$sdk" "$here/tests/wine_host.c" "$here/tests/synthetic.c" \
       -o "$out/wine_host.exe" || die "The Wine host did not compile."
   local api
-  for api in 3 4 5; do
+  for api in 3 4 5 8; do
     mkdir -p "$out/overlay-api$api"
     "$zig" cc "${flags[@]}" -shared -DSTUB_API=$api -I "$mod/src" -I "$here/tests" "$here/tests/wine_overlay_stub.c" \
         "$here/tests/fake_ov.c" -o "$out/overlay-api$api/goose_overlay.dll" || die "The API $api stub Overlay Host did not compile."
@@ -153,8 +153,9 @@ run_wine_tests() {
     case $name in
       no-host) stubs=() ;;
       host-api5|list-confirm|instant|menu-close|mission-end|shortcut|shortcut-hud|mod-stratagem|scramble|no-entry-admission|\
-      release-retry|card-gone|shortcut-blocked|latch-retry)
+      release-retry|card-gone|latch-retry)
         stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      shortcut-blocked) stubs=("$(w "$out/overlay-api8/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       no-host-entry) stubs=("$(w "$out/modloader/hellforge_modloader.dll")") ;;
       masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       host-api3|host-api4) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;

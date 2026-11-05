@@ -46,7 +46,7 @@
 extern "C" {
 #endif
 
-#define OV_API_VERSION 7
+#define OV_API_VERSION 8
 #define OV_HOST_DLL "goose_overlay.dll"
 
 #define OV_RGBA(r, g, b, a) ((uint32_t)(r) | ((uint32_t)(g) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(a) << 24))
@@ -306,6 +306,8 @@ typedef struct OvApi
      * the host started, in WHEEL_DELTA units (120 per notch, + up). Never reset: each client keeps its own last value
      * and takes the difference, so clients never take notches from each other. Any thread. */
     int64_t (*passive_wheel_total)(void);
+    /* API 8 (host 0.6.0): a window or look capture owns game input. Any thread, even with every HUD hidden. */
+    int (*input_captured)(void);
 } OvApi;
 
 enum OvLayer { OV_LAYER_BACKGROUND = 0, OV_LAYER_WINDOW = 1, OV_LAYER_FOREGROUND = 2 };
