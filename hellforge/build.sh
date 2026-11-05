@@ -9,17 +9,17 @@
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
 # Zig is the native Linux 0.17.0, HellForge's pinned version (Wine cannot run zig.exe: its cache locking calls NtLockFile
 # in a way Wine does not implement). Settings: HF_INSTALL (the HellForge installation the toolchain and SDK come from;
-# default ~/Applications/HellForge), HF_ZIG (default the installation's migration/toolchain Linux Zig), HF_SDK (the mod
-# SDK headers; default the installation's app/sdk), HF_PGREP (the pgrep install asks whether the game or HellForge runs;
-# default pgrep).
+# default HellForge 0.4's Linux install, ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge),
+# HF_ZIG (default the installation's tools/zig-linux Zig), HF_SDK (the mod SDK headers; default the installation's
+# app/sdk), HF_PGREP (the pgrep install asks whether the game or HellForge runs; default pgrep).
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo="$(dirname "$here")"
 mod="$here/divers-best-friend"
 dllName=divers_best_friend.dll
 gameBuild=25480438
-hf="${HF_INSTALL:-$HOME/Applications/HellForge}"
-zig="${HF_ZIG:-$hf/migration/toolchain/zig-x86_64-linux-0.17.0/zig}"
+hf="${HF_INSTALL:-$HOME/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge}"
+zig="${HF_ZIG:-$hf/tools/zig-linux/zig}"
 sdk="${HF_SDK:-$hf/app/sdk}"
 export ZIG_GLOBAL_CACHE_DIR="$here/build/zig-cache" ZIG_LOCAL_CACHE_DIR="$here/build/zig-cache"
 
@@ -84,9 +84,10 @@ run_wine_tests() {
   echo "no wine tests yet"
 }
 
-running() { # the game or HellForge (by process name, or by the Windows exe in a Wine/Proton command line)
+running() { # the game or HellForge (by process name, or by the Windows exe in a Wine/Proton command line, or the
+  # native Linux launcher of HellForge 0.4, whose process name is cut to "HellForge.Launc")
   local pgrep=${HF_PGREP:-pgrep}
-  "$pgrep" -xi 'helldivers2\.exe|HellForge\.exe' >/dev/null 2>&1 \
+  "$pgrep" -xi 'helldivers2\.exe|HellForge\.exe|HellForge\.Launc(her)?' >/dev/null 2>&1 \
     || "$pgrep" -fi '(^|[\\/ ])(helldivers2|HellForge(\.Launcher)?)\.exe( |$)' >/dev/null 2>&1
 }
 

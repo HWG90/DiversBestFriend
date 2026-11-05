@@ -7,8 +7,8 @@
 set -euo pipefail
 dll=${1:?usage: check_imports.sh <dll>}
 [ -f "$dll" ] || { echo "check_imports: $dll does not exist" >&2; exit 2; }
-hf="${HF_INSTALL:-$HOME/Applications/HellForge}"
-zig="${HF_ZIG:-$hf/migration/toolchain/zig-x86_64-linux-0.17.0/zig}"
+hf="${HF_INSTALL:-$HOME/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge}"
+zig="${HF_ZIG:-$hf/tools/zig-linux/zig}"
 
 try_objdump() { # try_objdump <objdump command...>: sets $imports to the imported DLL names, one per line; fails when it cannot
   imports=$("$@" -p "$dll" 2>/dev/null | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p') || imports=""

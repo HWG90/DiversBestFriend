@@ -4,8 +4,9 @@ Run from the repository root:
     DBF_R46_DIR=<R46 native-selection-poc folder> python3 -I -B -m unittest discover -s hellforge/tools -p 'test_*.py'
 
 The synthetic tests always run. The tests on the real inputs need DBF_R46_DIR (R46's HellForge native-selection-poc
-folder) and HellForge's game copy and SDK (HF_INSTALL, default ~/Applications/HellForge); without them they are skipped
-and say why. The compile tests also need HellForge's Zig (HF_ZIG).
+folder) and HellForge's game copy and SDK (HF_INSTALL, default HellForge 0.4's Linux install,
+~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge); without them they are skipped and
+say why. The compile tests also need HellForge's Zig (HF_ZIG).
 """
 import json
 import os
@@ -26,7 +27,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HELLFORGE = os.path.dirname(HERE)
 SRC = os.path.join(HELLFORGE, "divers-best-friend", "src")
 RECEIPTS = os.path.join(HELLFORGE, "receipts")
-HF_INSTALL = os.environ.get("HF_INSTALL", os.path.expanduser("~/Applications/HellForge"))
+HF_INSTALL = os.environ.get("HF_INSTALL", os.path.expanduser(
+    "~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge"))
 GAME_DLL = os.path.join(HF_INSTALL, "game", "data", "game", "game.dll")
 CONTENT_H = os.path.join(os.environ.get("HF_SDK", os.path.join(HF_INSTALL, "app", "sdk")), "hellforge_content.h")
 ZIG = os.environ.get("HF_ZIG", os.path.join(HF_INSTALL, "migration", "toolchain", "zig-x86_64-linux-0.17.0", "zig"))

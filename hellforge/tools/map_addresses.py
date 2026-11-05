@@ -6,8 +6,8 @@ Usage (from hellforge/):
         divers-best-friend/src/addresses_25480438.h receipts/addresses-25480438.json \\
         [--table tools/addresses_25480438.json] [--content-header hellforge_content.h] \\
         [--kind-names divers-best-friend/src/kind_names_25480438.h]
-The defaults: the table beside this script, $HF_SDK (or $HF_INSTALL/app/sdk, ~/Applications/HellForge by default)
-for hellforge_content.h, and kind_names_25480438.h beside the address header.
+The defaults: the table beside this script, $HF_SDK (or $HF_INSTALL/app/sdk; HF_INSTALL defaults to HellForge 0.4's
+Linux install, ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge) for hellforge_content.h, and kind_names_25480438.h beside the address header.
 
 R46 (the last Lua DBF built for 25480438, its HellForge native-selection-poc folder) holds the build's addresses inline
 in its Lua. tools/addresses_25480438.json names the ones the C port uses, each with the R46 line it comes from, and
@@ -629,7 +629,8 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
 
 def main(argv=None):
     here = os.path.dirname(os.path.abspath(__file__))
-    install = os.environ.get("HF_INSTALL", os.path.expanduser("~/Applications/HellForge"))
+    install = os.environ.get("HF_INSTALL", os.path.expanduser(
+        "~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge"))
     sdk = os.environ.get("HF_SDK", os.path.join(install, "app", "sdk"))
     parser = argparse.ArgumentParser(description="Generate DBF's address table for game build %s." % BUILD)
     parser.add_argument("r46", help="R46's native-selection-poc folder (holds guards.lua)")
