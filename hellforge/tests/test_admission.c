@@ -3,6 +3,7 @@
  * stamp and the witness bytes of tests/test_witnesses.h (admission.c uses that small table under -DDBF_TEST_WITNESSES; the
  * generated table is covered by test_admission_table.c). Admission keeps its state in statics, so every test starts with
  * start(), which calls adm_init again; test_before_init must run first, while nothing has been started. */
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include "addresses_25480438.h"
@@ -27,7 +28,8 @@ static uint64_t g_blind_until;
 static uint32_t g_rw_lo, g_rw_hi; /* game.dll RVAs [lo, hi) that the fake HellForge may rewrite */
 static int g_reads;               /* read_code calls */
 static int g_witness_reads;       /* read_code calls above the header of game.dll */
-static int g_rw_calls, g_rw_misuse;
+static int g_rw_calls, g_rw_misuse; /* every rewrites call; the ones that are neither one byte nor one whole witness */
+static int g_rw_single, g_rw_whole; /* rewrites calls about one byte, and about exactly one witness' span */
 #define MAX_LOGS 16
 static char g_logs[MAX_LOGS][160]; /* what admission logged through the port, in order */
 static int g_log_count;            /* log calls, counted past MAX_LOGS too */
@@ -76,8 +78,13 @@ static int fake_read_code(uintptr_t address, void* out, size_t size)
 
 static int fake_rewrites(uint32_t rva, uint32_t size)
 {
+    bool whole = false;
     g_rw_calls++;
-    if (size != 1) g_rw_misuse++;
+    for (int i = 0; i < dbf_witness_count; i++)
+        if (dbf_witnesses[i].rva == rva && dbf_witnesses[i].size == size) whole = true;
+    if (size == 1) g_rw_single++;
+    else if (whole) g_rw_whole++;
+    else g_rw_misuse++;
     return rva < g_rw_hi && rva + size > g_rw_lo;
 }
 
@@ -125,7 +132,7 @@ static void reset(void)
     g_blind_lo = g_blind_hi = 0;
     g_blind_until = 0;
     g_rw_lo = g_rw_hi = 0;
-    g_reads = g_witness_reads = g_rw_calls = g_rw_misuse = 0;
+    g_reads = g_witness_reads = g_rw_calls = g_rw_misuse = g_rw_single = g_rw_whole = 0;
     g_log_count = 0;
 }
 
@@ -507,7 +514,7 @@ static void test_rewrites(void)
     g_rw_hi = g_rw_lo + 1;
     start(0);
     CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, ""), "a changed byte that HellForge may rewrite is not compared: ok at once");
-    CHECK(g_rw_calls > 0 && g_rw_misuse == 0, "rewrites is asked about single bytes");
+    CHECK(g_rw_calls > 0 && g_rw_misuse == 0, "rewrites is asked about single bytes and whole witnesses only");
 
     reset();
     flip("bravo", 2);
@@ -555,6 +562,47 @@ static void mask_witness(const char* name, unsigned first, unsigned count)
     g_rw_hi = g_rw_lo + count;
 }
 
+/* Plan 2, Task 12: the loader is asked about the whole witness first, and about its bytes only when it says yes (the first
+ * pass used to make a call per witness byte, ~2572 on the generated table, on the game thread). */
+static void test_rewrites_whole_witness(void)
+{
+    const DbfWitness* bravo = wit("bravo");
+    reset();
+    start(0);
+    CHECK(is(FEAT_STATE, ADMIT_OK, "") && is(FEAT_STRATAGEMS, ADMIT_OK, "") && is(FEAT_HUD_READ, ADMIT_OK, "") && g_rw_whole == dbf_witness_count && g_rw_single == 0 && g_rw_misuse == 0,
+          "nothing rewritten: one question per witness, about its whole span, and none about single bytes");
+    tick(1000);
+    CHECK(g_rw_whole == dbf_witness_count && g_rw_single == 0, "a matched witness is not asked about again");
+
+    reset();
+    flip("bravo", 2);
+    mask_witness("bravo", 2, 1);
+    start(0);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, "") && g_rw_whole == dbf_witness_count && g_rw_single == 1 && g_rw_misuse == 0,
+          "a witness HellForge rewrites: the whole question says yes, then only its differing byte is asked about");
+
+    reset();
+    flip("bravo", 2);
+    mask_witness("bravo", 2, 1);
+    start_logging(0);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, "") && g_rw_single == (int)bravo->size && g_rw_misuse == 0,
+          "with a log, every byte of that witness is asked about once, to count them");
+
+    reset();
+    flip("bravo", 2);
+    start_logging(0);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_PENDING, "witness bravo differs (retrying)") && g_rw_single == 0 && g_log_count == 0,
+          "the whole question says no: a differing byte is compared without a byte question, and nothing is logged");
+    tick(1000);
+    CHECK(g_rw_whole == dbf_witness_count + 1 && g_rw_single == 0, "a retry asks about that witness' span again");
+
+    reset();
+    flip("charlie", 80);
+    mask_witness("charlie", 80, 1);
+    start(0);
+    CHECK(is(FEAT_POINTING, ADMIT_OK, "") && g_rw_single == 1, "the bytes of a later chunk are masked after a yes too");
+}
+
 static void test_mask_log(void)
 {
     reset();
@@ -564,7 +612,7 @@ static void test_mask_log(void)
     CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, ""), "a witness whose only changed byte is masked is ok");
     CHECK(logged("witness bravo: 1 of 8 bytes rewritten by HellForge") == 1 && g_log_count == 1,
           "a witness compared with a masked byte logs how many of its bytes HellForge rewrites, once");
-    CHECK(g_rw_misuse == 0, "and rewrites was still asked about single bytes");
+    CHECK(g_rw_misuse == 0, "and rewrites was still asked about single bytes and whole witnesses only");
 
     reset();
     mask_witness("charlie", 62, 5); /* none of the five differs; they lie on both sides of the 64-byte read chunk */
@@ -740,6 +788,7 @@ int main(void)
     test_retry_cadence();
     test_priority_and_order();
     test_rewrites();
+    test_rewrites_whole_witness();
     test_mask_log();
     test_chunks();
     test_restart();

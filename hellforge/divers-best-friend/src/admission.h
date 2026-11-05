@@ -56,8 +56,8 @@ typedef struct AdmPort {
     uintptr_t (*module_base)(const char* module, size_t* size);
     /* Reads game code as it was before any hook; 0 on success, non-zero when the range cannot be read. */
     int (*read_code)(uintptr_t address, void* out, size_t size);
-    /* 1 when HellForge may rewrite the module bytes at [rva, rva + size) (a byte of a witness it patches). NULL: none.
-     * Admission asks about single bytes (size 1). */
+    /* 1 when HellForge may rewrite any of the module bytes at [rva, rva + size) (a byte of a witness it patches). NULL:
+     * none. Admission asks about a witness' whole span first, then, only when that says 1, about single bytes (size 1). */
     int (*rewrites)(uint32_t rva, uint32_t size);
     /* Optional (NULL: admission logs nothing): takes one line of text, without a line end, from the game thread. Added
      * last, so an initialiser that stops at `rewrites` stays valid. */

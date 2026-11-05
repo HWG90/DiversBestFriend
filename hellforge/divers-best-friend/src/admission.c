@@ -221,24 +221,28 @@ static void log_masked(const DbfWitness* w, uint32_t masked)
 
 /* Reads the witness' span of game.dll and compares it with the table's bytes. A byte that HellForge may rewrite (the
  * port's `rewrites`) is left out of the comparison. An unreadable chunk makes the whole witness unreadable, whatever the
- * other chunks hold. When the port can log and this witness was not logged yet, `rewrites` is asked about every byte, so
- * that the count of masked bytes is the witness' whole count, matching or not; the count is logged once the whole witness
- * was read. Otherwise it is asked only about the bytes that differ. */
+ * other chunks hold. `rewrites` is asked about the witness' whole span first (Plan 2, Task 12: one call per witness on
+ * the game thread instead of one per byte); when it says no byte of it is rewritten, it is not asked about single bytes.
+ * When it says yes: if the port can log and this witness was not logged yet, it is asked about every byte, so that the
+ * count of masked bytes is the witness' whole count, matching or not, and the count is logged once the whole witness was
+ * read; otherwise it is asked only about the bytes that differ. */
 static Compare compare_witness(size_t index)
 {
     const DbfWitness* w = &dbf_witnesses[index];
     uint8_t buf[CHUNK];
     bool differs = false;
-    bool counting = g_port.rewrites && g_port.log && !g_mask_logged[index];
+    bool may_rewrite, counting;
     uint32_t masked = 0;
     if (w->size > 0 && w->bytes == NULL) return CMP_DIFFERS;
+    may_rewrite = g_port.rewrites && w->size > 0 && g_port.rewrites(w->rva, w->size) != 0;
+    counting = may_rewrite && g_port.log && !g_mask_logged[index];
     for (uint32_t off = 0; off < w->size; off += CHUNK) {
         uint32_t n = w->size - off < CHUNK ? w->size - off : CHUNK;
         if (g_port.read_code(g_game_base + w->rva + off, buf, n) != 0) return CMP_UNREADABLE;
         for (uint32_t i = 0; i < n; i++) {
             bool same = buf[i] == w->bytes[off + i];
             bool rewritten = false;
-            if (counting || (!same && g_port.rewrites)) rewritten = g_port.rewrites(w->rva + off + i, 1) != 0;
+            if (counting || (!same && may_rewrite)) rewritten = g_port.rewrites(w->rva + off + i, 1) != 0;
             if (rewritten) masked++;
             if (!same && !rewritten) differs = true;
         }
