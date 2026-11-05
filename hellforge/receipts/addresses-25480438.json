@@ -1,0 +1,2262 @@
+{
+  "generator": "tools/map_addresses.py",
+  "game_build": "25480438",
+  "game_dll": {
+    "file": "game.dll",
+    "sha256": "2e2c3b7c2500646dadd5f2b4c6e0504dbb7e7896139f64cddc0d1813c718f51e",
+    "bytes": 15522408,
+    "time_date_stamp": "0x6ab3b43f",
+    "image_size": "0x4744000"
+  },
+  "inputs": {
+    "addresses_25480438.json": "19c18eacc17c3c7b837c60e6155e96bc1fa2ba54037bd164b252a409980453d2",
+    "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
+    "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
+    "duplicate.lua": "9e4a0b555f8dd37632b5d28e1f0b26edc264d07a77eda2e059b3a22811919452",
+    "emote.lua": "154fc5bd49aaad31981f3b01da1dd421b63a73a35291e15df56914f75b8f5542",
+    "expanded.lua": "f17b2bce0542a97af46ff1081e20054026544b9fc082dd3b50e392f3c9d42e09",
+    "guards.lua": "40990097e6a56957468086c8c2fb6e8910eac0fafa9c22011c9b94d566e5e498",
+    "hellforge_content.h": "2e8006cf56c6582ba2fe9f84e1df03bacdde7ffb48eb945c7f4c68cb34533b03",
+    "icon_colors.lua": "22a76d3322c900aa4d4cdd30342b19b522f7a3ebead36db48ef08e2e79307143",
+    "input.lua": "d4a98758587ac19d6e576467be9682c09d1c6a8139e60643c6c0079272006301",
+    "native.lua": "892313940ffa332a904be1baa8069403aefb6905bdd4033abfd1585490682916",
+    "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
+  },
+  "outputs": {
+    "addresses_25480438.h": "a05feca6f99398723499c81e931705754448686141fd573426de5d5da743c4a6",
+    "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
+  },
+  "tally": {
+    "witnesses": 92,
+    "emitted": 61,
+    "dropped": 31,
+    "emitted_checks": {
+      "expect_differs": 6,
+      "unreadable": 55
+    },
+    "dropped_checks": {
+      "empty": 2,
+      "unreadable": 29
+    },
+    "emitted_per_feature": {
+      "STATE": 9,
+      "STRATAGEMS": 12,
+      "HUD_READ": 17,
+      "LIST_OPACITY": 1,
+      "ENTRY": 11,
+      "SCRAMBLE": 4,
+      "POINTING": 8,
+      "CAMERA": 3,
+      "LATCH": 9,
+      "SOUND": 4,
+      "DOCK": 4,
+      "WEAPON": 0,
+      "TERMINAL": 0
+    },
+    "addresses": 37,
+    "kind_names": 149
+  },
+  "sections": [
+    {
+      "section": "#1",
+      "va": "0x1000",
+      "virtual_size": "0x210fa93",
+      "raw_size": "0x850800",
+      "raw_entropy": 7.99998,
+      "x64_prologues": 0,
+      "packed_on_disk": true
+    },
+    {
+      "section": "#2",
+      "va": "0x2111000",
+      "virtual_size": "0x52aa0c",
+      "raw_size": "0xc9a00"
+    },
+    {
+      "section": "#3",
+      "va": "0x263c000",
+      "virtual_size": "0x119b5fc",
+      "raw_size": "0x21c00"
+    },
+    {
+      "section": "#4",
+      "va": "0x37d8000",
+      "virtual_size": "0x1bf570",
+      "raw_size": "0x86800"
+    },
+    {
+      "section": "#5",
+      "va": "0x3998000",
+      "virtual_size": "0x2308",
+      "raw_size": "0x800"
+    },
+    {
+      "section": "#6",
+      "va": "0x399b000",
+      "virtual_size": "0x488",
+      "raw_size": "0x200"
+    },
+    {
+      "section": "#7",
+      "va": "0x399c000",
+      "virtual_size": "0x365c4",
+      "raw_size": "0x2a00"
+    },
+    {
+      "section": "#8 .debug",
+      "va": "0x39d3000",
+      "virtual_size": "0x1000",
+      "raw_size": "0x600"
+    },
+    {
+      "section": "#9 .edata",
+      "va": "0x39d4000",
+      "virtual_size": "0x1000",
+      "raw_size": "0x200"
+    },
+    {
+      "section": "#10 .vm_sec",
+      "va": "0x39d5000",
+      "virtual_size": "0x14000",
+      "raw_size": "0x14000"
+    },
+    {
+      "section": "#11 .idata",
+      "va": "0x39e9000",
+      "virtual_size": "0x1000",
+      "raw_size": "0x200"
+    },
+    {
+      "section": "#12 .tls",
+      "va": "0x39ea000",
+      "virtual_size": "0x2000",
+      "raw_size": "0x1200"
+    },
+    {
+      "section": "#13 .rsrc",
+      "va": "0x39ec000",
+      "virtual_size": "0x1000",
+      "raw_size": "0x600"
+    },
+    {
+      "section": "#14 .winlice",
+      "va": "0x39ed000",
+      "virtual_size": "0x866000",
+      "raw_size": "0x0"
+    },
+    {
+      "section": "#15 .boot",
+      "va": "0x4253000",
+      "virtual_size": "0x48d800",
+      "raw_size": "0x48d800"
+    },
+    {
+      "section": "#16 .reloc",
+      "va": "0x46e1000",
+      "virtual_size": "0x63000",
+      "raw_size": "0x61810"
+    }
+  ],
+  "addresses": [
+    {
+      "name": "HUD_ROOT",
+      "kind": "rva",
+      "value": "0x346d538",
+      "define": "DBF_RVA_HUD_ROOT",
+      "source": "R46 native.lua:77, input.lua:98"
+    },
+    {
+      "name": "HUD_READY_OFFSET",
+      "kind": "offset",
+      "value": "0x24e334",
+      "define": "DBF_OFF_HUD_READY_OFFSET",
+      "source": "R46 native.lua:78"
+    },
+    {
+      "name": "GAME_STATE",
+      "kind": "rva",
+      "value": "0x3326340",
+      "define": "DBF_RVA_GAME_STATE",
+      "source": "R46 native.lua:81, input.lua:96"
+    },
+    {
+      "name": "GAME_MODE_OFFSET",
+      "kind": "offset",
+      "value": "0xac21c",
+      "define": "DBF_OFF_GAME_MODE_OFFSET",
+      "source": "R46 native.lua:82, input.lua:97"
+    },
+    {
+      "name": "HUD_PANEL_OFFSET",
+      "kind": "offset",
+      "value": "0x395100",
+      "define": "DBF_OFF_HUD_PANEL_OFFSET",
+      "source": "R46 native.lua:87, input.lua:100",
+      "expr": "0x24e340+0x146dc0"
+    },
+    {
+      "name": "LIST_OFFSET",
+      "kind": "offset",
+      "value": "0x1040",
+      "define": "DBF_OFF_LIST_OFFSET",
+      "source": "R46 native.lua:88"
+    },
+    {
+      "name": "OPEN_BYTE_OFFSET",
+      "kind": "offset",
+      "value": "0x38769",
+      "define": "DBF_OFF_OPEN_BYTE_OFFSET",
+      "source": "R46 native.lua:214, input.lua:100"
+    },
+    {
+      "name": "NODE_PARENT_OFFSET",
+      "kind": "offset",
+      "value": "0xf0",
+      "define": "DBF_OFF_NODE_PARENT_OFFSET",
+      "source": "R46 native.lua:95, native.lua:98"
+    },
+    {
+      "name": "CARD_FIRST",
+      "kind": "offset",
+      "value": "0x110",
+      "define": "DBF_OFF_CARD_FIRST",
+      "source": "R46 native.lua:98, native.lua:266"
+    },
+    {
+      "name": "CARD_STRIDE",
+      "kind": "offset",
+      "value": "0x3760",
+      "define": "DBF_OFF_CARD_STRIDE",
+      "source": "R46 native.lua:98, native.lua:266"
+    },
+    {
+      "name": "CARD_ACTIVE_OFFSET",
+      "kind": "offset",
+      "value": "0x36f0",
+      "define": "DBF_OFF_CARD_ACTIVE_OFFSET",
+      "source": "R46 native.lua:267"
+    },
+    {
+      "name": "CARD_ENTRY_OFFSET",
+      "kind": "offset",
+      "value": "0x3748",
+      "define": "DBF_OFF_CARD_ENTRY_OFFSET",
+      "source": "R46 native.lua:276"
+    },
+    {
+      "name": "CARD_TIMER_OFFSET",
+      "kind": "offset",
+      "value": "0x3718",
+      "define": "DBF_OFF_CARD_TIMER_OFFSET",
+      "source": "R46 input.lua:25"
+    },
+    {
+      "name": "CARD_TIMER_SIZE",
+      "kind": "offset",
+      "value": "0x44",
+      "define": "DBF_OFF_CARD_TIMER_SIZE",
+      "source": "R46 input.lua:25"
+    },
+    {
+      "name": "PLAYERS",
+      "kind": "rva",
+      "value": "0x3326468",
+      "define": "DBF_RVA_PLAYERS",
+      "source": "R46 input.lua:102"
+    },
+    {
+      "name": "REGISTRY",
+      "kind": "rva",
+      "value": "0x346bf98",
+      "define": "DBF_RVA_REGISTRY",
+      "source": "R46 input.lua:106"
+    },
+    {
+      "name": "REGISTRY_KEYS_OFFSET",
+      "kind": "offset",
+      "value": "0xf32f20",
+      "define": "DBF_OFF_REGISTRY_KEYS_OFFSET",
+      "source": "R46 input.lua:107"
+    },
+    {
+      "name": "REGISTRY_LOOKUP_OFFSET",
+      "kind": "offset",
+      "value": "0xf22ec8",
+      "define": "DBF_OFF_REGISTRY_LOOKUP_OFFSET",
+      "source": "R46 input.lua:107"
+    },
+    {
+      "name": "AVATARS",
+      "kind": "rva",
+      "value": "0x3326d20",
+      "define": "DBF_RVA_AVATARS",
+      "source": "R46 input.lua:108"
+    },
+    {
+      "name": "AVATAR_FIRST",
+      "kind": "offset",
+      "value": "0x53d8b0",
+      "define": "DBF_OFF_AVATAR_FIRST",
+      "source": "R46 input.lua:114"
+    },
+    {
+      "name": "AVATAR_STRIDE",
+      "kind": "offset",
+      "value": "0x1238",
+      "define": "DBF_OFF_AVATAR_STRIDE",
+      "source": "R46 input.lua:114"
+    },
+    {
+      "name": "ACTIONS_STRIDE",
+      "kind": "offset",
+      "value": "0xa7aec",
+      "define": "DBF_OFF_ACTIONS_STRIDE",
+      "source": "R46 input.lua:137"
+    },
+    {
+      "name": "ACTIONS_OFFSET",
+      "kind": "offset",
+      "value": "0x4118",
+      "define": "DBF_OFF_ACTIONS_OFFSET",
+      "source": "R46 input.lua:137"
+    },
+    {
+      "name": "SESSION",
+      "kind": "rva",
+      "value": "0x347cef0",
+      "define": "DBF_RVA_SESSION",
+      "source": "R46 input.lua:125, input.lua:218"
+    },
+    {
+      "name": "SESSION_PEER_OFFSET",
+      "kind": "offset",
+      "value": "0xb398",
+      "define": "DBF_OFF_SESSION_PEER_OFFSET",
+      "source": "R46 input.lua:126, input.lua:218"
+    },
+    {
+      "name": "MISSION",
+      "kind": "rva",
+      "value": "0x347ce50",
+      "define": "DBF_RVA_MISSION",
+      "source": "R46 input.lua:127, input.lua:220"
+    },
+    {
+      "name": "MISSION_PEER_COUNT_OFFSET",
+      "kind": "offset",
+      "value": "0x2d200",
+      "define": "DBF_OFF_MISSION_PEER_COUNT_OFFSET",
+      "source": "R46 input.lua:128, input.lua:221"
+    },
+    {
+      "name": "MISSION_ENTRY_STRIDE",
+      "kind": "offset",
+      "value": "0x1690",
+      "define": "DBF_OFF_MISSION_ENTRY_STRIDE",
+      "source": "R46 input.lua:132, input.lua:133"
+    },
+    {
+      "name": "MISSION_PAYLOAD_OFFSET",
+      "kind": "offset",
+      "value": "0x38",
+      "define": "DBF_OFF_MISSION_PAYLOAD_OFFSET",
+      "source": "R46 input.lua:133"
+    },
+    {
+      "name": "SETTINGS",
+      "kind": "rva",
+      "value": "0x348e8f8",
+      "define": "DBF_RVA_SETTINGS",
+      "source": "R46 input.lua:146, input.lua:160"
+    },
+    {
+      "name": "DEFINITION_DISPLACEMENT",
+      "kind": "rva",
+      "value": "0x66d550",
+      "define": "DBF_RVA_DEFINITION_DISPLACEMENT",
+      "source": "R46 native.lua:51"
+    },
+    {
+      "name": "DEFINITION_TABLE_VANILLA",
+      "kind": "rva",
+      "value": "0x37cb600",
+      "define": "DBF_RVA_DEFINITION_TABLE_VANILLA",
+      "source": "R46 native.lua:52"
+    },
+    {
+      "name": "UI",
+      "kind": "rva",
+      "value": "0x347ce28",
+      "define": "DBF_RVA_UI",
+      "source": "R46 input.lua:294"
+    },
+    {
+      "name": "CONTROLS",
+      "kind": "rva",
+      "value": "0x347cf18",
+      "define": "DBF_RVA_CONTROLS",
+      "source": "R46 input.lua:313"
+    },
+    {
+      "name": "CAMERA_OWNER",
+      "kind": "rva",
+      "value": "0x346d560",
+      "define": "DBF_RVA_CAMERA_OWNER",
+      "source": "R46 camera.lua:7, camera.lua:13"
+    },
+    {
+      "name": "AUDIO",
+      "kind": "rva",
+      "value": "0x3326318",
+      "define": "DBF_RVA_AUDIO",
+      "source": "R46 native.lua:328"
+    },
+    {
+      "name": "STAMINA_OFFSET",
+      "kind": "offset",
+      "value": "0x253ab8",
+      "define": "DBF_OFF_STAMINA_OFFSET",
+      "source": "R46 native.lua:244",
+      "expr": "0x24e340+0x5778"
+    }
+  ],
+  "bound_functions": [
+    {
+      "name": "scramble_effect",
+      "rva": "0xa10820",
+      "features": [
+        "SCRAMBLE"
+      ],
+      "source": "R46 native.lua:303"
+    },
+    {
+      "name": "open_input",
+      "rva": "0xa8e850",
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "source": "R46 native.lua:300"
+    },
+    {
+      "name": "close_input",
+      "rva": "0xa8fb50",
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "source": "R46 native.lua:301"
+    },
+    {
+      "name": "input_handler",
+      "rva": "0xa900d0",
+      "features": [
+        "ENTRY"
+      ],
+      "source": "R46 native.lua:298"
+    },
+    {
+      "name": "request_slot",
+      "rva": "0xa93e90",
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "source": "R46 native.lua:304"
+    },
+    {
+      "name": "push_context",
+      "rva": "0x12ef4b0",
+      "dropped": true,
+      "reason": "HUD resource context push; no game widgets",
+      "source": "R46 duplicate.lua:12"
+    },
+    {
+      "name": "pop_context",
+      "rva": "0x12ef4d0",
+      "dropped": true,
+      "reason": "HUD resource context pop; no game widgets",
+      "source": "R46 duplicate.lua:13"
+    },
+    {
+      "name": "binding_query",
+      "rva": "0x12f9540",
+      "features": [
+        "POINTING"
+      ],
+      "source": "R46 pointing.lua:35"
+    },
+    {
+      "name": "ui_sound",
+      "rva": "0x1327f50",
+      "features": [
+        "SOUND"
+      ],
+      "source": "R46 native.lua:302"
+    },
+    {
+      "name": "timer_label",
+      "rva": "0x143bf90",
+      "dropped": true,
+      "reason": "timer label setter; the port formats its own timers",
+      "source": "R46 emote.lua:12"
+    },
+    {
+      "name": "timer_number",
+      "rva": "0x143c9d0",
+      "dropped": true,
+      "reason": "timer number setter; the port formats its own timers",
+      "source": "R46 emote.lua:13"
+    },
+    {
+      "name": "sprite",
+      "rva": "0x143eab0",
+      "dropped": true,
+      "reason": "sprite constructor; no game widgets",
+      "source": "R46 expanded.lua:25"
+    },
+    {
+      "name": "uv",
+      "rva": "0x143eef0",
+      "dropped": true,
+      "reason": "arrow atlas UV setter; no game widgets",
+      "source": "R46 expanded.lua:35"
+    },
+    {
+      "name": "label",
+      "rva": "0x1441720",
+      "dropped": true,
+      "reason": "label setter; no game widgets",
+      "source": "R46 emote.lua:11"
+    },
+    {
+      "name": "widget_init",
+      "rva": "0x1446840",
+      "dropped": true,
+      "reason": "widget constructor; the port draws with ImGui",
+      "source": "R46 duplicate.lua:4"
+    },
+    {
+      "name": "size",
+      "rva": "0x1447160",
+      "features": [
+        "HUD_READ"
+      ],
+      "source": "R46 native.lua:57"
+    },
+    {
+      "name": "position",
+      "rva": "0x14476a0",
+      "features": [
+        "HUD_READ"
+      ],
+      "source": "R46 native.lua:57"
+    },
+    {
+      "name": "scale",
+      "rva": "0x1447ed0",
+      "features": [
+        "HUD_READ"
+      ],
+      "source": "R46 native.lua:58"
+    },
+    {
+      "name": "rotation_pivot",
+      "rva": "0x14481a0",
+      "dropped": true,
+      "reason": "rotation pivot setter; no game widgets",
+      "source": "R46 expanded.lua:31"
+    },
+    {
+      "name": "colour",
+      "rva": "0x1448690",
+      "dropped": true,
+      "reason": "the port does not recolour the game's list text",
+      "source": "R46 native.lua:136"
+    },
+    {
+      "name": "opacity",
+      "rva": "0x1448ad0",
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "source": "R46 native.lua:103"
+    },
+    {
+      "name": "rotation",
+      "rva": "0x1448ef0",
+      "dropped": true,
+      "reason": "rotation setter; no game widgets",
+      "source": "R46 emote.lua:10"
+    },
+    {
+      "name": "order",
+      "rva": "0x14491f0",
+      "dropped": true,
+      "reason": "draw-order setter; no game widgets",
+      "source": "R46 cooldown_dock.lua:218"
+    },
+    {
+      "name": "parameter",
+      "rva": "0x14498c0",
+      "dropped": true,
+      "reason": "material parameter setter; icons are tinted in ImGui",
+      "source": "R46 icon_colors.lua:11"
+    },
+    {
+      "name": "finish",
+      "rva": "0x144c2c0",
+      "dropped": true,
+      "reason": "widget finish; no game widgets",
+      "source": "R46 duplicate.lua:8"
+    },
+    {
+      "name": "attach",
+      "rva": "0x144c5c0",
+      "dropped": true,
+      "reason": "widget attach; no game widgets",
+      "source": "R46 duplicate.lua:7"
+    },
+    {
+      "name": "visible",
+      "rva": "0x144cfb0",
+      "dropped": true,
+      "reason": "visibility setter; the port only reads the bit",
+      "source": "R46 duplicate.lua:9"
+    },
+    {
+      "name": "release_ui",
+      "rva": "0x144dd70",
+      "dropped": true,
+      "reason": "the port creates no game widgets to release",
+      "source": "R46 native.lua:289"
+    },
+    {
+      "name": "pivot",
+      "rva": "0x144f0d0",
+      "features": [
+        "HUD_READ"
+      ],
+      "source": "R46 native.lua:59"
+    },
+    {
+      "name": "anchor",
+      "rva": "0x144f160",
+      "features": [
+        "HUD_READ"
+      ],
+      "source": "R46 native.lua:58"
+    },
+    {
+      "name": "material",
+      "rva": "0x144f6e0",
+      "dropped": true,
+      "reason": "material getter; icons come from game-icons.bin",
+      "source": "R46 icon_colors.lua:10"
+    },
+    {
+      "name": "asset",
+      "rva": "0x144f800",
+      "dropped": true,
+      "reason": "sprite asset setter; no game widgets",
+      "source": "R46 expanded.lua:34"
+    },
+    {
+      "name": "texture",
+      "rva": "0x1450230",
+      "dropped": true,
+      "reason": "texture setter; icons come from game-icons.bin",
+      "source": "R46 icon_colors.lua:9"
+    },
+    {
+      "name": "wheel_ctor",
+      "rva": "0x18298f0",
+      "dropped": true,
+      "reason": "native wheel constructor; the port draws its own wheel",
+      "source": "R46 emote.lua:5"
+    },
+    {
+      "name": "pointing_reader",
+      "rva": "0x182b5c0",
+      "features": [
+        "POINTING"
+      ],
+      "source": "R46 pointing.lua:34"
+    },
+    {
+      "name": "card_init",
+      "rva": "0x18358d0",
+      "dropped": true,
+      "reason": "card constructor; the port draws its own cards",
+      "source": "R46 duplicate.lua:5"
+    },
+    {
+      "name": "card_update",
+      "rva": "0x1836510",
+      "dropped": true,
+      "reason": "card setter; the port draws its own cards",
+      "source": "R46 duplicate.lua:6"
+    },
+    {
+      "name": "dock_create",
+      "rva": "0x1839520",
+      "dropped": true,
+      "reason": "dock tile constructor; the port draws its own dock",
+      "source": "R46 cooldown_dock.lua:213"
+    },
+    {
+      "name": "dock_tick",
+      "rva": "0x1839fd0",
+      "dropped": true,
+      "reason": "dock tile tick; the port draws its own dock",
+      "source": "R46 cooldown_dock.lua:214"
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "dock_charge_group_layout",
+      "rva": "0x1839b15",
+      "size": 7,
+      "guards_line": 3,
+      "features": [
+        "DOCK"
+      ],
+      "reason": "dock tile's charge group at +0x920 (dock tile constructor); proves the tile layout the charge badges read",
+      "nearest_bound_function": {
+        "name": "dock_create",
+        "rva": "0x1839520",
+        "distance": "0x5f5"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "dock_charge_text_layout",
+      "rva": "0x1839c8e",
+      "size": 7,
+      "guards_line": 4,
+      "features": [
+        "DOCK"
+      ],
+      "reason": "dock tile's charge count text at +0xce0 (dock tile constructor); proves the tile layout the charge badges read",
+      "nearest_bound_function": {
+        "name": "dock_create",
+        "rva": "0x1839520",
+        "distance": "0x76e"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "position",
+      "rva": "0x14476a0",
+      "size": 32,
+      "guards_line": 5,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "position setter; its body reads node +4, the field the HUD reads use (the port never calls it)",
+      "nearest_bound_function": {
+        "name": "position",
+        "rva": "0x14476a0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "size",
+      "rva": "0x1447160",
+      "size": 32,
+      "guards_line": 6,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "size setter; its body reads node +12, the field the HUD reads use (the port never calls it)",
+      "nearest_bound_function": {
+        "name": "size",
+        "rva": "0x1447160",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "scale",
+      "rva": "0x1447ed0",
+      "size": 32,
+      "guards_line": 7,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "scale setter; its body reads node +20, the field the HUD reads use (the port never calls it)",
+      "nearest_bound_function": {
+        "name": "scale",
+        "rva": "0x1447ed0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "anchor",
+      "rva": "0x144f160",
+      "size": 32,
+      "guards_line": 8,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "anchor setter; its body reads node +44, the field the HUD reads use (the port never calls it)",
+      "nearest_bound_function": {
+        "name": "anchor",
+        "rva": "0x144f160",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "pivot",
+      "rva": "0x144f0d0",
+      "size": 32,
+      "guards_line": 9,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "pivot setter; its body reads node +60, the field the HUD reads use (the port never calls it)",
+      "nearest_bound_function": {
+        "name": "pivot",
+        "rva": "0x144f0d0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "hud_root",
+      "rva": "0xad9d8e",
+      "size": 32,
+      "guards_line": 10,
+      "features": [
+        "STATE",
+        "HUD_READ"
+      ],
+      "reason": "loads the HUD root global 0x346d538; the ready byte (+0x24e334) and every HUD read hang off it",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "hud_panel",
+      "rva": "0x12ea0df",
+      "size": 32,
+      "guards_line": 11,
+      "features": [
+        "STATE",
+        "HUD_READ"
+      ],
+      "reason": "addresses the stratagem panel at +0x146dc0 in the HUD container; the open byte and the list hang off the panel",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "hud_update",
+      "rva": "0x12eb7d0",
+      "size": 32,
+      "guards_line": 12,
+      "features": [
+        "STATE",
+        "HUD_READ"
+      ],
+      "reason": "HUD update addressing the panel at +0x146dc0; the same panel layout as hud_panel",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "list_parent",
+      "rva": "0x18334fe",
+      "size": 32,
+      "guards_line": 13,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "attaches the stratagem list to its parent under the HUD root; the HUD reads check that parent link",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "row_layout",
+      "rva": "0x1833440",
+      "size": 32,
+      "guards_line": 14,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "list row layout set up in the list constructor; the HUD reads use the rows' layout",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "open_state",
+      "rva": "0x1833887",
+      "size": 32,
+      "guards_line": 15,
+      "features": [
+        "STATE"
+      ],
+      "reason": "reads the menu-open byte at panel+0x38769, the stratagem-menu-open read",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "card_animation",
+      "rva": "0x183753f",
+      "size": 98,
+      "guards_line": 16,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "card position from its animation pairs +0x3738/+0x3740; R46's snapshot reads +0x3740 for each row's list position (native.lua:274), so kept rather than dropped as card-animation code",
+      "nearest_bound_function": {
+        "name": "card_update",
+        "rva": "0x1836510",
+        "distance": "0x102f"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_transform",
+      "rva": "0x144a40e",
+      "size": 167,
+      "guards_line": 17,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "node transform reading position +4, scale +0x14, size +0x24, anchor +0x2c, pivot +0x3c and the parent link +0xf0, the fields the HUD reads use",
+      "nearest_bound_function": {
+        "name": "parameter",
+        "rva": "0x14498c0",
+        "distance": "0xb4e"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_measure",
+      "rva": "0x144bd60",
+      "size": 54,
+      "guards_line": 18,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "writes the measured size at +0x24 that the HUD geometry reads (native.lua:222)",
+      "nearest_bound_function": {
+        "name": "parameter",
+        "rva": "0x14498c0",
+        "distance": "0x24a0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "viewport_parent",
+      "rva": "0x12f0aa1",
+      "size": 19,
+      "guards_line": 19,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "HUD construction attaching the viewport to its parent, the chain the HUD reads check (native.lua:89-93); kept with HUD_READ when unsure",
+      "nearest_bound_function": {
+        "name": "pop_context",
+        "rva": "0x12ef4d0",
+        "distance": "0x15d1"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "scramble_query",
+      "rva": "0xa10820",
+      "size": 64,
+      "guards_line": 20,
+      "features": [
+        "SCRAMBLE"
+      ],
+      "reason": "the scramble effect query itself (0xa10820)",
+      "nearest_bound_function": {
+        "name": "scramble_effect",
+        "rva": "0xa10820",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "scramble_query_position",
+      "rva": "0xa1092c",
+      "size": 112,
+      "guards_line": 21,
+      "features": [
+        "SCRAMBLE"
+      ],
+      "reason": "inside the scramble query (+0x10c): the positions global 0x3326508 and its lookup",
+      "nearest_bound_function": {
+        "name": "scramble_effect",
+        "rva": "0xa10820",
+        "distance": "0x10c"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "scramble_match_shift",
+      "rva": "0x66dd94",
+      "size": 46,
+      "guards_line": 22,
+      "features": [
+        "SCRAMBLE"
+      ],
+      "reason": "the scramble remap: kind + avatar[+0x11b8] mod 149 + 1, with the avatar stride 0x1238 (input.lua:157)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x66d394",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "scramble_match_call",
+      "rva": "0x66dcf0",
+      "size": 57,
+      "guards_line": 23,
+      "features": [
+        "STRATAGEMS",
+        "SCRAMBLE"
+      ],
+      "reason": "the matcher calling the scramble query with the effects global 0x33264b0 and the payload kinds at +0x188 + i*0x30, which the stratagem reader reads",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x66d2f0",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "ui_sound",
+      "rva": "0x1327f50",
+      "size": 112,
+      "guards_line": 24,
+      "features": [
+        "SOUND"
+      ],
+      "reason": "the UI sound function itself (0x1327f50)",
+      "nearest_bound_function": {
+        "name": "ui_sound",
+        "rva": "0x1327f50",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_move_sound",
+      "rva": "0x182a908",
+      "size": 42,
+      "guards_line": 25,
+      "features": [
+        "SOUND"
+      ],
+      "reason": "the native wheel calling the UI sound function with an id from the wheel sound table: the call SOUND makes",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0x1018"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_action_sound",
+      "rva": "0x182a7d2",
+      "size": 65,
+      "guards_line": 26,
+      "features": [
+        "LATCH",
+        "SOUND"
+      ],
+      "reason": "reads the controls' action bytes at +0x328 + i*32 (the layout Select on Release reads, input.lua:314) and calls the UI sound function",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0xee2"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_sound_ids",
+      "rva": "0x2307520",
+      "size": 44,
+      "guards_line": 27,
+      "features": [
+        "SOUND"
+      ],
+      "reason": "the wheel sound id table, holding the move (0x39425a55) and confirm (0xdd274583) ids the port plays",
+      "nearest_bound_function": null,
+      "section": "#2",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "input_handler",
+      "rva": "0xa900d0",
+      "size": 32,
+      "guards_line": 31,
+      "features": [
+        "ENTRY"
+      ],
+      "reason": "the stratagem input handler itself (0xa900d0), called once per code direction",
+      "nearest_bound_function": {
+        "name": "input_handler",
+        "rva": "0xa900d0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "append_and_match",
+      "rva": "0xa903ab",
+      "size": 38,
+      "guards_line": 32,
+      "features": [
+        "ENTRY"
+      ],
+      "reason": "inside the input handler: appends a direction at component+4 and matches with the avatar's player context",
+      "nearest_bound_function": {
+        "name": "input_handler",
+        "rva": "0xa900d0",
+        "distance": "0x2db"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "avatar_layout",
+      "rva": "0x82a0a0",
+      "size": 55,
+      "guards_line": 33,
+      "features": [
+        "STATE",
+        "STRATAGEMS"
+      ],
+      "reason": "avatar manager layout: unit pointers at +0x110, avatars at +0x53d8b0 with stride 0x1238, read by the local-player and payload lookups (input.lua:108-116)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x8296a0",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "input_component",
+      "rva": "0xa3ea05",
+      "size": 15,
+      "guards_line": 34,
+      "features": [
+        "STATE",
+        "STRATAGEMS",
+        "ENTRY"
+      ],
+      "reason": "the input component inside the avatar: code entry passes it to the input handler, and the local-player check reads its owner key (input.lua:115-116)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "owner_map",
+      "rva": "0xfd9ba0",
+      "size": 32,
+      "guards_line": 35,
+      "features": [
+        "STATE",
+        "STRATAGEMS"
+      ],
+      "reason": "network index to key lookup on the registry global 0x346bf98, the local-player lookup (input.lua:106-107)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "owner_map_value",
+      "rva": "0xfd9c49",
+      "size": 20,
+      "guards_line": 36,
+      "features": [
+        "STATE",
+        "STRATAGEMS"
+      ],
+      "reason": "registry keys at +0xf32f20 + index*24, the local-player lookup (input.lua:107)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "context_to_peer",
+      "rva": "0x606c90",
+      "size": 32,
+      "guards_line": 37,
+      "features": [
+        "STATE",
+        "STRATAGEMS"
+      ],
+      "reason": "player context to peer on the players global 0x3326468 with stride 0x38, the local-peer check (input.lua:123-126)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x606290",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "card_payload_index",
+      "rva": "0x1836582",
+      "size": 20,
+      "guards_line": 38,
+      "features": [
+        "STRATAGEMS",
+        "HUD_READ"
+      ],
+      "reason": "card +0x3748 (its payload entry) compared with the payload count +0x788: how rows map to mission kinds",
+      "nearest_bound_function": {
+        "name": "card_update",
+        "rva": "0x1836510",
+        "distance": "0x72"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_direction_reader",
+      "rva": "0x182b5c0",
+      "size": 32,
+      "guards_line": 41,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "the pointing reader itself (0x182b5c0)",
+      "nearest_bound_function": {
+        "name": "pointing_reader",
+        "rva": "0x182b5c0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_direction_owner",
+      "rva": "0x182a8e0",
+      "size": 32,
+      "guards_line": 42,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "the native wheel calling the pointing reader and reading the selected sector +0x1cd8 and sector flags +0x1cc8, the buffer layout pointing reads",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0xff0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_binding_query",
+      "rva": "0x12f9540",
+      "size": 32,
+      "guards_line": 43,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "the binding query pointing calls before the reader (pointing.lua:35)",
+      "nearest_bound_function": {
+        "name": "binding_query",
+        "rva": "0x12f9540",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_constructor",
+      "rva": "0x1446840",
+      "size": 32,
+      "guards_line": 44,
+      "dropped": true,
+      "reason": "widget constructor 0x1446840; the port constructs no game widgets",
+      "nearest_bound_function": {
+        "name": "widget_init",
+        "rva": "0x1446840",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_card_constructor",
+      "rva": "0x18358d0",
+      "size": 32,
+      "guards_line": 45,
+      "dropped": true,
+      "reason": "card constructor 0x18358d0; the port draws its own cards",
+      "nearest_bound_function": {
+        "name": "card_init",
+        "rva": "0x18358d0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_card_update",
+      "rva": "0x1836510",
+      "size": 32,
+      "guards_line": 46,
+      "dropped": true,
+      "reason": "card setter 0x1836510; the port draws its own cards",
+      "nearest_bound_function": {
+        "name": "card_update",
+        "rva": "0x1836510",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_attach",
+      "rva": "0x144c5c0",
+      "size": 32,
+      "guards_line": 47,
+      "dropped": true,
+      "reason": "widget attach 0x144c5c0; no game widgets",
+      "nearest_bound_function": {
+        "name": "attach",
+        "rva": "0x144c5c0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_finish",
+      "rva": "0x144c2c0",
+      "size": 32,
+      "guards_line": 48,
+      "dropped": true,
+      "reason": "widget finish 0x144c2c0; no game widgets",
+      "nearest_bound_function": {
+        "name": "finish",
+        "rva": "0x144c2c0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_visible",
+      "rva": "0x144cfb0",
+      "size": 32,
+      "guards_line": 49,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "visibility setter: the port never calls it but reads the bit it sets (+0 bit 4) for HUD visibility (native.lua:208-212)",
+      "nearest_bound_function": {
+        "name": "visible",
+        "rva": "0x144cfb0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_release",
+      "rva": "0x144dd70",
+      "size": 32,
+      "guards_line": 50,
+      "dropped": true,
+      "reason": "release UI 0x144dd70; the port creates no game widgets",
+      "nearest_bound_function": {
+        "name": "release_ui",
+        "rva": "0x144dd70",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_release_children",
+      "rva": "0x144cbc0",
+      "size": 32,
+      "guards_line": 51,
+      "dropped": true,
+      "reason": "child release, part of release UI; no game widgets",
+      "nearest_bound_function": {
+        "name": "attach",
+        "rva": "0x144c5c0",
+        "distance": "0x600"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_opacity",
+      "rva": "0x1448ad0",
+      "size": 32,
+      "guards_line": 52,
+      "features": [
+        "LIST_OPACITY"
+      ],
+      "reason": "the opacity setter itself (0x1448ad0, value at +0x44), which fades the game's list",
+      "nearest_bound_function": {
+        "name": "opacity",
+        "rva": "0x1448ad0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "radial_input_flag_reset",
+      "rva": "0x127a353",
+      "size": 32,
+      "guards_line": 53,
+      "features": [
+        "CAMERA"
+      ],
+      "reason": "clears the camera input gate byte +0x1a9 on the camera owner",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_context_push",
+      "rva": "0x12ef4b0",
+      "size": 25,
+      "guards_line": 56,
+      "dropped": true,
+      "reason": "HUD resource context push 0x12ef4b0; no game widgets",
+      "nearest_bound_function": {
+        "name": "push_context",
+        "rva": "0x12ef4b0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_context_pop",
+      "rva": "0x12ef4d0",
+      "size": 14,
+      "guards_line": 57,
+      "dropped": true,
+      "reason": "HUD resource context pop 0x12ef4d0; no game widgets",
+      "nearest_bound_function": {
+        "name": "pop_context",
+        "rva": "0x12ef4d0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "widget_context_capture",
+      "rva": "0x1446975",
+      "size": 64,
+      "guards_line": 58,
+      "dropped": true,
+      "reason": "the widget constructor capturing the HUD resource context; no game widgets",
+      "nearest_bound_function": {
+        "name": "widget_init",
+        "rva": "0x1446840",
+        "distance": "0x135"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "hud_context_scope",
+      "rva": "0x12f0974",
+      "size": 26,
+      "guards_line": 59,
+      "dropped": true,
+      "reason": "HUD construction pushing its resource context; no game widgets",
+      "nearest_bound_function": {
+        "name": "pop_context",
+        "rva": "0x12ef4d0",
+        "distance": "0x14a4"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "camera_radial_gate",
+      "rva": "0x1286756",
+      "size": 53,
+      "guards_line": 60,
+      "features": [
+        "CAMERA"
+      ],
+      "reason": "camera code testing the gate byte +0x1a9 that pointing sets (camera.lua)",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "camera_radial_gate_secondary",
+      "rva": "0x1289912",
+      "size": 56,
+      "guards_line": 61,
+      "features": [
+        "CAMERA"
+      ],
+      "reason": "a second camera test of the gate byte +0x1a9",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_constructor",
+      "rva": "0x18298f0",
+      "size": 32,
+      "guards_line": 64,
+      "dropped": true,
+      "reason": "native wheel constructor 0x18298f0; the port draws its own wheel",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_static_mode",
+      "rva": "0x182cd23",
+      "size": 32,
+      "guards_line": 65,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "sets the wheel's sector count +0x1cd4, which pointing writes in its own buffer; 0x1763 above the pointing reader",
+      "nearest_bound_function": {
+        "name": "pointing_reader",
+        "rva": "0x182b5c0",
+        "distance": "0x1763"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_static_content",
+      "rva": "0x182bc6a",
+      "size": 40,
+      "guards_line": 66,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "wheel static icon setup (texture setter, material get) the port never calls, 0x6aa above the pointing reader on its code page: kept with POINTING by the rule",
+      "nearest_bound_function": {
+        "name": "pointing_reader",
+        "rva": "0x182b5c0",
+        "distance": "0x6aa"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_texture",
+      "rva": "0x1450230",
+      "size": 32,
+      "guards_line": 67,
+      "dropped": true,
+      "reason": "texture setter 0x1450230; icons come from game-icons.bin",
+      "nearest_bound_function": {
+        "name": "texture",
+        "rva": "0x1450230",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_label",
+      "rva": "0x1441720",
+      "size": 32,
+      "guards_line": 68,
+      "dropped": true,
+      "reason": "label setter 0x1441720; no game widgets",
+      "nearest_bound_function": {
+        "name": "label",
+        "rva": "0x1441720",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_rotation",
+      "rva": "0x1448ef0",
+      "size": 32,
+      "guards_line": 69,
+      "dropped": true,
+      "reason": "rotation setter 0x1448ef0; no game widgets",
+      "nearest_bound_function": {
+        "name": "rotation",
+        "rva": "0x1448ef0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_cursor",
+      "rva": "0x182adb8",
+      "size": 65,
+      "guards_line": 70,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "reads the direction vector +0x1ce8/+0x1cec that pointing reads back from the reader",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0x14c8"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_icon_definition",
+      "rva": "0x183a1e5",
+      "size": 22,
+      "guards_line": 71,
+      "features": [
+        "STRATAGEMS"
+      ],
+      "reason": "reads definition +0xb0 (icon texture): a definition-layout witness, kept with STRATAGEMS when unsure",
+      "nearest_bound_function": {
+        "name": "dock_tick",
+        "rva": "0x1839fd0",
+        "distance": "0x215"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "wheel_label_definition",
+      "rva": "0x66d54c",
+      "size": 4,
+      "guards_line": 74,
+      "features": [
+        "STRATAGEMS"
+      ],
+      "reason": "the definition-table load [image + kind*8 + disp] whose displacement at 0x66d550 the reader follows to HellForge's moved table",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x66cb4c",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "wheel_label_definition_tail",
+      "rva": "0x66d554",
+      "size": 8,
+      "guards_line": 75,
+      "features": [
+        "STRATAGEMS"
+      ],
+      "reason": "reads definition +0x28 (label) after the table load; with wheel_label_definition it proves 0x66d550 is the displacement",
+      "nearest_bound_function": null,
+      "section": "#1",
+      "file_offset": "0x66cb54",
+      "check": "expect_differs",
+      "file_check_reason": "section #1 is packed on disk (raw entropy about 8 bits per byte, no x64 prologues; every byte of the span differs and .reloc has no entry in it); the game unpacks it at load, where R46 captured these bytes"
+    },
+    {
+      "name": "expanded_sprite_constructor",
+      "rva": "0x143eab0",
+      "size": 48,
+      "guards_line": 78,
+      "dropped": true,
+      "reason": "sprite constructor 0x143eab0; no game widgets",
+      "nearest_bound_function": {
+        "name": "sprite",
+        "rva": "0x143eab0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_sprite_asset",
+      "rva": "0x144f800",
+      "size": 32,
+      "guards_line": 79,
+      "dropped": true,
+      "reason": "sprite asset setter 0x144f800; no game widgets",
+      "nearest_bound_function": {
+        "name": "asset",
+        "rva": "0x144f800",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_rotation_pivot",
+      "rva": "0x14481a0",
+      "size": 32,
+      "guards_line": 80,
+      "dropped": true,
+      "reason": "rotation pivot setter 0x14481a0; no game widgets",
+      "nearest_bound_function": {
+        "name": "rotation_pivot",
+        "rva": "0x14481a0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_sprite_order",
+      "rva": "0x14491f0",
+      "size": 32,
+      "guards_line": 81,
+      "dropped": true,
+      "reason": "draw-order setter 0x14491f0; no game widgets",
+      "nearest_bound_function": {
+        "name": "order",
+        "rva": "0x14491f0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_sprite_color",
+      "rva": "0x1448690",
+      "size": 32,
+      "guards_line": 82,
+      "dropped": true,
+      "reason": "colour setter 0x1448690; the port does not recolour game widgets",
+      "nearest_bound_function": {
+        "name": "colour",
+        "rva": "0x1448690",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_parent_transform",
+      "rva": "0x144a5e9",
+      "size": 64,
+      "guards_line": 83,
+      "features": [
+        "HUD_READ"
+      ],
+      "reason": "node transform composing the parent's matrix (parent +0xf0, matrix at +0x64), the matrix the HUD geometry reads (native.lua:226)",
+      "nearest_bound_function": {
+        "name": "parameter",
+        "rva": "0x14498c0",
+        "distance": "0xd29"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "icon_material_get",
+      "rva": "0x144f6e0",
+      "size": 32,
+      "guards_line": 86,
+      "dropped": true,
+      "reason": "material getter 0x144f6e0; icons come from game-icons.bin",
+      "nearest_bound_function": {
+        "name": "material",
+        "rva": "0x144f6e0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "icon_material_parameter",
+      "rva": "0x14498c0",
+      "size": 32,
+      "guards_line": 87,
+      "dropped": true,
+      "reason": "material parameter setter 0x14498c0; icons are tinted in ImGui",
+      "nearest_bound_function": {
+        "name": "parameter",
+        "rva": "0x14498c0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "icon_material_source",
+      "rva": "0x18398be",
+      "size": 24,
+      "guards_line": 88,
+      "dropped": true,
+      "reason": "sprite and asset calls in the dock tile constructor; no game widgets",
+      "nearest_bound_function": {
+        "name": "dock_create",
+        "rva": "0x1839520",
+        "distance": "0x39e"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "icon_channel_palette",
+      "rva": "0x183a1fb",
+      "size": 104,
+      "guards_line": 89,
+      "features": [
+        "STRATAGEMS"
+      ],
+      "reason": "icon tint from definition +0xb8 (category) and the palette at 0x3318040 + category*16, which the port's icon tint reads; kept with STRATAGEMS when unsure",
+      "nearest_bound_function": {
+        "name": "dock_tick",
+        "rva": "0x1839fd0",
+        "distance": "0x22b"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "cooldown_label",
+      "rva": "0x143bf90",
+      "size": 32,
+      "guards_line": 92,
+      "dropped": true,
+      "reason": "timer label setter 0x143bf90; the port formats its own timers",
+      "nearest_bound_function": {
+        "name": "timer_label",
+        "rva": "0x143bf90",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "cooldown_number",
+      "rva": "0x143c9d0",
+      "size": 32,
+      "guards_line": 93,
+      "dropped": true,
+      "reason": "timer number setter 0x143c9d0; the port formats its own timers",
+      "nearest_bound_function": {
+        "name": "timer_number",
+        "rva": "0x143c9d0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "cooldown_field",
+      "rva": "0x1836bea",
+      "size": 23,
+      "guards_line": 94,
+      "features": [
+        "STRATAGEMS",
+        "DOCK"
+      ],
+      "reason": "card timer block: cooldown seconds at +0x3720 (block +0x3718, state 4); the stratagem reader copies the block and the cooldown display decodes it",
+      "nearest_bound_function": {
+        "name": "card_update",
+        "rva": "0x1836510",
+        "distance": "0x6da"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "cooldown_format",
+      "rva": "0x18377e2",
+      "size": 85,
+      "guards_line": 95,
+      "dropped": true,
+      "reason": "the card formatting its timer label through the number setter 0x143c9d0; the port formats its own timers",
+      "nearest_bound_function": {
+        "name": "card_update",
+        "rva": "0x1836510",
+        "distance": "0x12d2"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "cooldown_hint_type",
+      "rva": "0x182a1e4",
+      "size": 15,
+      "guards_line": 96,
+      "dropped": true,
+      "reason": "the native wheel's hint label (+0xf50); the port draws its own wheel",
+      "nearest_bound_function": {
+        "name": "wheel_ctor",
+        "rva": "0x18298f0",
+        "distance": "0x8f4"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_guarded_open",
+      "rva": "0xa8e850",
+      "size": 54,
+      "guards_line": 99,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the guarded menu opener itself (0xa8e850), used by Select on Release and the slot hotkeys",
+      "nearest_bound_function": {
+        "name": "open_input",
+        "rva": "0xa8e850",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_close",
+      "rva": "0xa8fb50",
+      "size": 32,
+      "guards_line": 100,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the menu close itself (0xa8fb50)",
+      "nearest_bound_function": {
+        "name": "close_input",
+        "rva": "0xa8fb50",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_hold_test",
+      "rva": "0xa8ed4e",
+      "size": 96,
+      "guards_line": 101,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "opener code testing the menu trigger Hold 2 / LongHold 9 and the action bytes at +0x4118",
+      "nearest_bound_function": {
+        "name": "open_input",
+        "rva": "0xa8e850",
+        "distance": "0x4fe"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_match_survives",
+      "rva": "0xa8eda7",
+      "size": 7,
+      "guards_line": 102,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "opener branch that keeps a completed match",
+      "nearest_bound_function": {
+        "name": "open_input",
+        "rva": "0xa8e850",
+        "distance": "0x557"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_weapon_request",
+      "rva": "0xa93e90",
+      "size": 48,
+      "guards_line": 103,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the slot request itself (0xa93e90)",
+      "nearest_bound_function": {
+        "name": "request_slot",
+        "rva": "0xa93e90",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_weapon_request_assignment",
+      "rva": "0xa9401a",
+      "size": 40,
+      "guards_line": 104,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the slot request assigning the requested slot at +4",
+      "nearest_bound_function": {
+        "name": "request_slot",
+        "rva": "0xa93e90",
+        "distance": "0x18a"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_opener_slot_guard",
+      "rva": "0xa8f828",
+      "size": 16,
+      "guards_line": 105,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the opener testing the current slot against 5",
+      "nearest_bound_function": {
+        "name": "open_input",
+        "rva": "0xa8e850",
+        "distance": "0xfd8"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "release_opener_slot_call",
+      "rva": "0xa8f88f",
+      "size": 16,
+      "guards_line": 106,
+      "features": [
+        "ENTRY",
+        "LATCH"
+      ],
+      "reason": "the opener requesting slot 5 on the avatar's weapon (+0x420) through 0xa93e90",
+      "nearest_bound_function": {
+        "name": "open_input",
+        "rva": "0xa8e850",
+        "distance": "0x103f"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "expanded_arrow_uv",
+      "rva": "0x143eef0",
+      "size": 22,
+      "guards_line": 109,
+      "dropped": true,
+      "reason": "arrow atlas UV setter 0x143eef0; no game widgets",
+      "nearest_bound_function": {
+        "name": "uv",
+        "rva": "0x143eef0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "controller_active_binding",
+      "rva": "0x12f95d2",
+      "size": 20,
+      "guards_line": 111,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "the binding query reading the active input device at controls+0xa7c18 (pointing.lua:70)",
+      "nearest_bound_function": {
+        "name": "binding_query",
+        "rva": "0x12f9540",
+        "distance": "0x92"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "controller_stick_binding",
+      "rva": "0x182b6ce",
+      "size": 71,
+      "guards_line": 113,
+      "features": [
+        "POINTING"
+      ],
+      "reason": "the pointing reader's binding-kind switch (kind & 0xf; stick kinds 1 and 2)",
+      "nearest_bound_function": {
+        "name": "pointing_reader",
+        "rva": "0x182b5c0",
+        "distance": "0x10e"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "dock_card_constructor",
+      "rva": "0x1839520",
+      "size": 0,
+      "guards_line": 115,
+      "dropped": true,
+      "reason": "R46 lists no bytes for it, and the dock tile constructor 0x1839520 is never called",
+      "nearest_bound_function": {
+        "name": "dock_create",
+        "rva": "0x1839520",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "empty"
+    },
+    {
+      "name": "dock_card_tick",
+      "rva": "0x1839fd0",
+      "size": 0,
+      "guards_line": 117,
+      "dropped": true,
+      "reason": "R46 lists no bytes for it, and the dock tile tick 0x1839fd0 is never called",
+      "nearest_bound_function": {
+        "name": "dock_tick",
+        "rva": "0x1839fd0",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "empty"
+    },
+    {
+      "name": "dock_charge_count",
+      "rva": "0x183aef1",
+      "size": 19,
+      "guards_line": 119,
+      "features": [
+        "DOCK"
+      ],
+      "reason": "the tile's cached charge count at +0x14bc fed to its count label; the charge badges read +0x14bc",
+      "nearest_bound_function": {
+        "name": "dock_tick",
+        "rva": "0x1839fd0",
+        "distance": "0xf21"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    },
+    {
+      "name": "list_text_colour",
+      "rva": "0x1448690",
+      "size": 23,
+      "guards_line": 121,
+      "dropped": true,
+      "reason": "colour setter 0x1448690 (the list text colour); the port does not recolour the list",
+      "nearest_bound_function": {
+        "name": "colour",
+        "rva": "0x1448690",
+        "distance": "0x0"
+      },
+      "section": "#1",
+      "file_offset": null,
+      "check": "unreadable"
+    }
+  ]
+}
