@@ -62,8 +62,21 @@ local function options(bridge)
     return s
 end
 
+-- These R46/R50 diagnostics identify UI objects which can disappear as a
+-- mission ends or a menu rebuilds. ABI and ownership errors stay terminal.
+local transient={
+    ['Wheel HUD changed']=true,['Expanded HUD changed']=true,
+    ['HUD changed during radial construction']=true,['Original list geometry unavailable']=true,
+    ['List row scale unavailable']=true,['Widget became unreadable']=true,
+    ['Native transform unreadable']=true,['Degenerate list transform']=true,
+    ['UI context manager unavailable']=true,['Original widget resource context unavailable']=true,
+    ['HUD resource renderer unavailable']=true,['UI context stack is full']=true,
+    ['Animation owner changed']=true,['Native code not resident yet']=true,
+    ['Closed status HUD changed']=true,['Blacklist HUD changed']=true,
+}
+
 local function dbf_hud_runtime(bridge)
-    local r={status='waiting for companion',token=ffi.new('uint8_t[1]')}
+    local r={status='waiting for companion',token=ffi.new('uint8_t[1]'),attempts=0}
     local function report(message)
         if r.status~=message then
             r.status=message
@@ -142,9 +155,25 @@ local function dbf_hud_runtime(bridge)
         r.terminal=nil
         r.initialized=false
     end
-    function r:ready() return self.initialized==true and not self.stopping end
+    local function release_for_retry()
+        local ok,why=pcall(stop)
+        if not ok then
+            report('HUD cleanup pending: '..tostring(why))
+            r.retry_at=r.elapsed+250
+            return
+        end
+        -- No allocations or input jobs from the failed generation may be reused.
+        r.b,r.admit,r.mode,r.active,r.filters,r.filter_kinds=nil,nil,nil,nil,nil,nil
+        r.next_options,r.strip_retry,r.dock_retry=nil,nil,nil
+        r.block_release=true
+        r.recovery='closed'
+        r.retry_at=r.elapsed+500*r.attempts
+        report('HUD released; waiting for a closed menu to recover')
+    end
+    function r:ready() return self.initialized==true and not self.stopping and not self.recovery end
     function r:shutdown()
         self.stopping=true
+        self.recovery=nil
         local ok,why=pcall(stop)
         if not ok then report('HUD cleanup pending: '..tostring(why)) end
         return ok,why
@@ -357,6 +386,7 @@ local function dbf_hud_runtime(bridge)
         r.list_open=mode==2 and open
         display.step(true,snapshot or {open=false})
         r.hidden.step(mode==2 and snapshot or nil)
+        if open then r.attempts=0 end
     end
     function r:update(dt)
         if self.stopping then
@@ -365,6 +395,7 @@ local function dbf_hud_runtime(bridge)
         end
         self.elapsed=(self.elapsed or 0)+math.max(1,(tonumber(dt) or 1/60)*1000)
         if self.elapsed<(self.retry_at or 0) then return end
+        if self.recovery=='cleanup' then release_for_retry();return end
         if not bridge then
             local ok,dll=pcall(loaded_companion)
             if not ok or not dll then self.retry_at=self.elapsed+500;return end
@@ -398,6 +429,14 @@ local function dbf_hud_runtime(bridge)
                     end
                     self.b=b
                 end
+                if self.recovery=='closed' then
+                    local sampled,current=pcall(self.b.snapshot)
+                    if not sampled or not current or current.open~=false then
+                        self.retry_at=self.elapsed+500
+                        return
+                    end
+                    self.recovery=nil
+                end
                 self.requested=true
                 if bridge.dbf_hud_acquire(self.token)~=1 then return end
                 self.owned=true
@@ -406,8 +445,17 @@ local function dbf_hud_runtime(bridge)
             frame(math.max(0.001,math.min(tonumber(dt) or 1/60,0.05)))
         end)
         if not ok then
-            report('HUD stopped: '..tostring(why))
-            self:shutdown()
+            local message=tostring(why)
+            local reason=message:match('.*: (.*)$') or message
+            if self.initialized and transient[reason] and self.attempts<3 then
+                self.attempts=self.attempts+1
+                self.recovery='cleanup'
+                report('HUD interrupted: '..reason)
+                release_for_retry()
+            else
+                report('HUD stopped: '..message)
+                self:shutdown()
+            end
         end
     end
     return r

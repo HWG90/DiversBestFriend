@@ -69,9 +69,16 @@ scope.input_backend=function() return {
 } end
 scope.duplicate_cards=object
 scope.expanded_wheel=object
+local transient_error=false
+local wheels=0
 scope.emote_wheel=function()
+    wheels=wheels+1
     local w=object()
-    w.prepare=function(s) mutation();return s,false end
+    w.prepare=function(s)
+        mutation()
+        if transient_error then error('Wheel HUD changed') end
+        return s,false
+    end
     w.draw=mutation;w.timer=noop
     w.close=function() return capacity,'widget still linked' end
     return w
@@ -118,3 +125,23 @@ capacity=true
 assert(r:shutdown() and token==nil and releases==2,'release only after successful cleanup')
 assert(r:shutdown() and releases==2,'idempotent shutdown')
 print('HUD admission, handoff, strip isolation, pointing, filter changes, Hold release and cleanup passed')
+
+-- Rebuild during an open menu: release the lease, wait with no claim, then
+-- construct new controllers only after the next positively observed closure.
+local recovering=scope.dbf_hud_runtime(bridge)
+transient_error=true
+tick(recovering,20)
+assert(not recovering:ready() and not token and not captured)
+local before=wheels
+tick(recovering,1000)
+assert(wheels==before and not token,'open menu cannot rearm after transient failure')
+transient_error=false;snapshot.open=false
+tick(recovering,500)
+assert(recovering:ready() and wheels==before+1 and token==recovering.token)
+snapshot.open=true;tick(recovering,16);assert(captured,'fresh owner draws the wheel')
+transient_error=true;tick(recovering,16)
+assert(not token and not recovering:ready())
+assert(recovering:shutdown())
+snapshot.open=false;tick(recovering,1000)
+assert(wheels==before+1 and not token,'manager disable permanently cancels recovery')
+print('Transient rebuild recovery released the lease and manager disable cancelled reinitialization')
