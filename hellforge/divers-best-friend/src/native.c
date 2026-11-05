@@ -11,21 +11,32 @@
 #include "memory.h"
 #include "native.h"
 
-#define LINE_MAX 160
+#define NATIVE_LINE_MAX 160 /* not LINE_MAX: POSIX's <limits.h> has one */
 
 /* The scramble query's "no effect" answer: R46 presets its result to this before asking (native.lua:333-338). */
 #define SCRAMBLE_NO_ANSWER 0xffffffffu
 
+/* DBF's own (Plan 2's Task 5 review), not R46's: a per-tick call (the scramble query, the UI sound) logs its checkpoint on
+ * its first call of the session and then at most once per this many milliseconds. */
+#define PER_TICK_LOG_MS 1000u
+
+/* When a per-tick call last logged its checkpoint. */
+typedef struct Throttle {
+    bool logged;
+    uint64_t at;
+} Throttle;
+
 static NativePort g_port;
 static uintptr_t g_base; /* game.dll; 0 when not set */
-static bool g_sound_skip_logged;
+static bool g_sound_skip_logged, g_base_unset_logged, g_scramble_skip_logged;
+static Throttle g_sound_throttle, g_scramble_throttle;
 
 /* --- the checkpoint line --------------------------------------------------------------------------------------- */
 
 /* Appends `text` at `at`, cut to leave room for the end of the line; returns the new length. */
 static size_t put_text(char* line, size_t at, const char* text)
 {
-    while (*text && at < LINE_MAX - 1) line[at++] = *text++;
+    while (*text && at < NATIVE_LINE_MAX - 1) line[at++] = *text++;
     return at;
 }
 
@@ -40,7 +51,7 @@ static size_t put_hex(char* line, size_t at, uint64_t value)
         digits[n++] = DIGITS[value & 15u];
         value >>= 4;
     } while (value != 0);
-    while (n > 0 && at < LINE_MAX - 1) line[at++] = digits[--n];
+    while (n > 0 && at < NATIVE_LINE_MAX - 1) line[at++] = digits[--n];
     return at;
 }
 
@@ -52,7 +63,7 @@ static void log_line(const char* line)
 /* "call <name>(<arg>, <arg>, ...)" through the port's log, before the call it announces. */
 static void checkpoint(const char* name, const uint64_t* args, size_t count)
 {
-    char line[LINE_MAX];
+    char line[NATIVE_LINE_MAX];
     size_t at = put_text(line, 0, "call ");
     at = put_text(line, at, name);
     at = put_text(line, at, "(");
@@ -62,6 +73,27 @@ static void checkpoint(const char* name, const uint64_t* args, size_t count)
     }
     at = put_text(line, at, ")");
     line[at] = '\0';
+    log_line(line);
+}
+
+/* A per-tick call's checkpoint: logged when there is no clock, on the session's first call, and when PER_TICK_LOG_MS
+ * have passed since the last one it logged. */
+static void throttled_checkpoint(Throttle* t, const char* name, const uint64_t* args, size_t count)
+{
+    if (g_port.now_ms) {
+        uint64_t now = g_port.now_ms();
+        if (t->logged && now - t->at < PER_TICK_LOG_MS) return;
+        t->logged = true;
+        t->at = now;
+    }
+    checkpoint(name, args, count);
+}
+
+/* `line`, the first time of the session only (`*latch` says it was logged). */
+static void log_once(bool* latch, const char* line)
+{
+    if (*latch) return;
+    *latch = true;
     log_line(line);
 }
 
@@ -79,7 +111,9 @@ void native_init(const NativePort* port)
     else
         memset(&g_port, 0, sizeof g_port);
     g_base = 0;
-    g_sound_skip_logged = false;
+    g_sound_skip_logged = g_base_unset_logged = g_scramble_skip_logged = false;
+    memset(&g_sound_throttle, 0, sizeof g_sound_throttle);
+    memset(&g_scramble_throttle, 0, sizeof g_scramble_throttle);
 }
 
 void native_set_base(uintptr_t game_dll)
@@ -130,24 +164,21 @@ bool nat_request_slot(uintptr_t weapon, uint32_t slot)
     return true;
 }
 
-/* "sound skipped: <label> (<from>+0x<offset>)", the first time of the session only. `from` NULL: no position. */
+/* "sound skipped: <label> (<from>+0x<offset>)", the first time of the session only. */
 static void log_sound_skipped(const char* label, const char* from, uint64_t offset)
 {
-    char line[LINE_MAX];
+    char line[NATIVE_LINE_MAX];
     size_t at;
     if (g_sound_skip_logged) return;
-    g_sound_skip_logged = true;
     at = put_text(line, 0, "sound skipped: ");
     at = put_text(line, at, label);
-    if (from) {
-        at = put_text(line, at, " (");
-        at = put_text(line, at, from);
-        at = put_text(line, at, "+");
-        at = put_hex(line, at, offset);
-        at = put_text(line, at, ")");
-    }
+    at = put_text(line, at, " (");
+    at = put_text(line, at, from);
+    at = put_text(line, at, "+");
+    at = put_hex(line, at, offset);
+    at = put_text(line, at, ")");
     line[at] = '\0';
-    log_line(line);
+    log_once(&g_sound_skip_logged, line);
 }
 
 /* R46's ui_sound preconditions (native.lua:325-332): the audio engine and the game state globals, then the three pointers
@@ -155,8 +186,8 @@ static void log_sound_skipped(const char* label, const char* from, uint64_t offs
 static bool audio_ready(void)
 {
     uintptr_t engine, game, scratch;
-    if (g_base == 0) {
-        log_sound_skipped("game.dll base not set", NULL, 0);
+    if (g_base == 0) { /* its own line: a missing base is not one of the audio pointers */
+        log_once(&g_base_unset_logged, "native: game.dll base not set");
         return false;
     }
     if (!mem_ptr(g_base + DBF_RVA_AUDIO, &engine)) {
@@ -187,7 +218,7 @@ bool nat_ui_sound(uint32_t id)
     uint64_t args[1];
     if (!g_port.ui_sound || !admitted(FEAT_SOUND) || !audio_ready()) return false;
     args[0] = id;
-    checkpoint("ui_sound", args, 1);
+    throttled_checkpoint(&g_sound_throttle, "ui_sound", args, 1);
     g_port.ui_sound(0, id);
     return true;
 }
@@ -197,12 +228,19 @@ bool nat_scramble_query(uint32_t key, uint32_t kind, uint32_t* out)
     uintptr_t effects;
     uint64_t args[3];
     if (!g_port.scramble_query || !out || !admitted(FEAT_SCRAMBLE)) return false;
-    if (g_base == 0 || !mem_ptr(g_base + DBF_RVA_EFFECTS, &effects)) return false;
+    if (g_base == 0) {
+        log_once(&g_scramble_skip_logged, "scramble query skipped: no base");
+        return false;
+    }
+    if (!mem_ptr(g_base + DBF_RVA_EFFECTS, &effects)) {
+        log_once(&g_scramble_skip_logged, "scramble query skipped: no effects pointer");
+        return false;
+    }
     *out = SCRAMBLE_NO_ANSWER;
     args[0] = effects;
     args[1] = key;
     args[2] = kind;
-    checkpoint("scramble_query", args, 3);
+    throttled_checkpoint(&g_scramble_throttle, "scramble_query", args, 3);
     (void)g_port.scramble_query(effects, out, key, kind, 0, 0);
     return true;
 }

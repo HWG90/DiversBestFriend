@@ -87,8 +87,16 @@ static uintptr_t fake_scramble_query(uintptr_t effects, uint32_t* out, uint32_t 
     return 0x1234; /* not used by the wrapper */
 }
 
+/* The port without a clock (now_ms NULL: every call logs), as an initialiser written before now_ms existed. */
 static const NativePort PORT = { fake_input_handler, fake_open_input, fake_close_input, fake_request_slot,
                                  fake_ui_sound, fake_scramble_query, fake_log };
+
+static uint64_t g_now;
+static uint64_t fake_now(void) { return g_now; }
+
+/* The same port with a millisecond clock. */
+static const NativePort CLOCKED = { fake_input_handler, fake_open_input, fake_close_input, fake_request_slot,
+                                    fake_ui_sound, fake_scramble_query, fake_log, fake_now };
 
 /* --- helpers --------------------------------------------------------------------------------------------------- */
 
@@ -493,17 +501,84 @@ static void test_no_base(void)
     uint32_t answer = 0x4321;
     start(&PORT);
     native_init(&PORT); /* forgets the base */
-    CHECK(!nat_ui_sound(1) && event_has(0, "sound skipped: game.dll base not set") && g_event_count == 1,
-          "no game.dll base: the sound is not called and the skip line says why");
+    CHECK(!nat_ui_sound(1) && events_are(1, "log: native: game.dll base not set"),
+          "no game.dll base: the sound is not called, one line \"native: game.dll base not set\"");
     g_event_count = 0;
-    CHECK(!nat_scramble_query(1, 2, &answer) && no_events() && answer == 0x4321, "no game.dll base: no scramble query");
+    CHECK(!nat_ui_sound(2) && no_events(), "  logged once a session");
+    CHECK(!nat_scramble_query(1, 2, &answer) && events_are(1, "log: scramble query skipped: no base") && answer == 0x4321,
+          "no game.dll base: no scramble query, one line \"scramble query skipped: no base\"");
+    g_event_count = 0;
+    CHECK(!nat_scramble_query(1, 2, &answer) && no_events(), "  logged once a session");
     CHECK(nat_input_handler(COMPONENT) && g_event_count == 2, "  the wrappers that read no global do not need the base");
     native_set_base(SYN_GAME_BASE);
     g_event_count = 0;
     CHECK(nat_scramble_query(1, 2, &answer) && g_event_count == 2, "native_set_base makes the global readers work");
+    syn_poke_u64(AT_ENGINE + OFF_ENGINE_CALL, 0);
+    g_event_count = 0;
+    CHECK(!nat_ui_sound(3) && events_are(1, "log: sound skipped: audio call pointer (engine+0x288)"),
+          "the base line did not use up the session's \"sound skipped\" line");
     native_set_base(0);
     g_event_count = 0;
-    CHECK(!nat_scramble_query(1, 2, &answer) && no_events(), "native_set_base(0) takes the base away again");
+    CHECK(!nat_scramble_query(1, 2, &answer) && no_events(), "native_set_base(0) takes the base away again (already logged)");
+}
+
+/* The per-tick calls (the scramble query, the UI sound) log their checkpoint on their first call of the session and
+ * then at most once per 1000 ms each; the calls themselves are always made. The user-triggered calls log every time. */
+static void test_per_tick_checkpoints_throttled(void)
+{
+    uint32_t answer = 0;
+    start(&CLOCKED);
+    g_now = 5000;
+    CHECK(nat_scramble_query(1, 2, &answer) && events_are(2, "log: call scramble_query(0x2d000000000, 0x1, 0x2)",
+                                                          "call: scramble_query 0x2d000000000 out 0x1 0x2"),
+          "the session's first scramble query: checkpoint, then the call");
+    g_event_count = 0;
+    g_now = 5999;
+    CHECK(nat_scramble_query(1, 3, &answer) && events_are(1, "call: scramble_query 0x2d000000000 out 0x1 0x3"),
+          "999 ms later: the call without a checkpoint");
+    g_event_count = 0;
+    g_now = 6000;
+    CHECK(nat_scramble_query(1, 4, &answer) && events_are(2, "log: call scramble_query(0x2d000000000, 0x1, 0x4)",
+                                                          "call: scramble_query 0x2d000000000 out 0x1 0x4"),
+          "1000 ms after the last checkpoint: logged again");
+    g_event_count = 0;
+    CHECK(nat_ui_sound(0x39425a55u) && events_are(2, "log: call ui_sound(0x39425a55)", "call: ui_sound 0x0 0x39425a55"),
+          "the sound has its own limit: its first call is logged");
+    g_event_count = 0;
+    g_now = 6500;
+    CHECK(nat_ui_sound(1) && nat_scramble_query(1, 5, &answer) && g_event_count == 2 && event_has(0, "call: ui_sound")
+              && event_has(1, "call: scramble_query"),
+          "500 ms later: sound and query called, neither logged");
+    g_event_count = 0;
+    g_now = 7000;
+    CHECK(nat_ui_sound(2) && events_are(2, "log: call ui_sound(0x2)", "call: ui_sound 0x0 0x2"),
+          "1000 ms after its last checkpoint: the sound is logged again");
+    g_event_count = 0;
+    CHECK(nat_input_handler(COMPONENT) && nat_input_handler(COMPONENT) && g_event_count == 4,
+          "the input handler logs every call, clock or not");
+    g_event_count = 0;
+    CHECK(nat_open_input(COMPONENT, &(uint8_t){ 0 }) && nat_close_input(COMPONENT) && nat_request_slot(WEAPON, 5)
+              && nat_close_input(COMPONENT) && g_event_count == 8,
+          "open, close and the slot request log every call");
+    g_now = 6600; /* 600 ms after the query's last checkpoint, 400 before the sound's next one is due */
+    native_init(&CLOCKED);
+    native_set_base(SYN_GAME_BASE);
+    g_event_count = 0;
+    CHECK(nat_scramble_query(1, 6, &answer) && nat_ui_sound(3) && g_event_count == 4,
+          "a new session (native_init): its first query and sound are logged at once");
+
+    start(&CLOCKED);
+    g_now = 0;
+    CHECK(nat_scramble_query(1, 2, &answer) && g_event_count == 2, "a first call at clock 0 is logged");
+    g_event_count = 0;
+    g_now = 999;
+    CHECK(nat_scramble_query(1, 2, &answer) && g_event_count == 1, "  not at 999");
+    g_event_count = 0;
+    g_now = 1000;
+    CHECK(nat_scramble_query(1, 2, &answer) && g_event_count == 2, "  again at 1000");
+    start(&PORT);
+    CHECK(nat_scramble_query(1, 2, &answer) && nat_scramble_query(1, 2, &answer) && g_event_count == 4,
+          "without a clock every call is logged");
 }
 
 static void test_scramble_arguments(void)
@@ -535,16 +610,26 @@ static void test_scramble_effects_missing(void)
     uint32_t answer = 0x1111;
     start(&PORT);
     syn_poke_u64(SYN_GAME_BASE + RVA_EFFECTS, 0);
-    CHECK(!nat_scramble_query(1, 2, &answer) && no_events() && answer == 0x1111,
-          "no effects pointer: false, nothing called, nothing logged, *out left alone");
+    CHECK(!nat_scramble_query(1, 2, &answer) && events_are(1, "log: scramble query skipped: no effects pointer")
+              && answer == 0x1111,
+          "no effects pointer: false, nothing called, one \"scramble query skipped\" line, *out left alone");
+    g_event_count = 0;
+    CHECK(!nat_scramble_query(1, 2, &answer) && no_events(), "  the line is logged once a session");
     syn_poke_u64(SYN_GAME_BASE + RVA_EFFECTS, AT_EFFECTS + 2);
     CHECK(!nat_scramble_query(1, 2, &answer) && no_events() && answer == 0x1111, "a misaligned effects pointer is missing too");
     syn_poke_u64(SYN_GAME_BASE + RVA_EFFECTS, 0x40);
     CHECK(!nat_scramble_query(1, 2, &answer) && no_events() && answer == 0x1111, "an implausible effects pointer is missing too");
     syn_unmap(SYN_GAME_BASE + RVA_EFFECTS);
     CHECK(!nat_scramble_query(1, 2, &answer) && no_events() && answer == 0x1111, "an effects global that cannot be read is missing too");
+    native_init(&PORT);
+    native_set_base(SYN_GAME_BASE);
+    CHECK(!nat_scramble_query(1, 2, &answer) && events_are(1, "log: scramble query skipped: no effects pointer"),
+          "a new session (native_init) logs its first skipped query again");
     start(&PORT);
     CHECK(!nat_scramble_query(1, 2, NULL) && no_events(), "nat_scramble_query(NULL out): false, nothing called, nothing logged");
+    spoil_witness("scramble_query", true);
+    syn_poke_u64(SYN_GAME_BASE + RVA_EFFECTS, 0);
+    CHECK(!nat_scramble_query(1, 2, &answer) && no_events(), "SCRAMBLE refused and no effects pointer: not even the skip line");
 }
 
 static void test_scramble_refused_leaves_out_alone(void)
@@ -584,6 +669,7 @@ int main(void)
     test_sound_skip_logged_once();
     test_sound_not_admitted_logs_nothing();
     test_no_base();
+    test_per_tick_checkpoints_throttled();
     test_scramble_arguments();
     test_scramble_effects_missing();
     test_scramble_refused_leaves_out_alone();

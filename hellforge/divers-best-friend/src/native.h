@@ -16,9 +16,13 @@
  *   1. If the port's function is NULL (a partial port, as tests build), or the feature that gates the call is not
  *      ADMIT_OK (adm_feature), it returns false, calls nothing and logs nothing. The features: the input handler ENTRY,
  *      open_input / close_input / request_slot LATCH, ui_sound SOUND, scramble_query SCRAMBLE.
- *   2. Otherwise it logs exactly one checkpoint line through the port's `log` (when that is not NULL), then makes the call,
- *      then returns true. The checkpoint comes first so that, if the game crashes inside the call, the last line of the
- *      log names the step that was running. The line is "call <name>(<arguments>)", every argument as 0x followed by
+ *   2. Otherwise it logs one checkpoint line through the port's `log` (when that is not NULL), then makes the call, then
+ *      returns true. The checkpoint comes first so that, if the game crashes inside the call, the last line of the log
+ *      names the step that was running. The user-triggered calls (input handler, open, close, request slot) log every
+ *      call. The per-tick calls (ui_sound on selection moves, scramble_query for every row each tick) log their first call
+ *      of the session and then at most once per 1000 ms each, by the port's now_ms clock (NULL: every call logs), so a
+ *      crash inside one of them is still named by the last line, though that line may be from an earlier call of the
+ *      same function. The line is "call <name>(<arguments>)", every argument as 0x followed by
  *      lowercase hex digits without leading zeros (0 is "0x0"), separated by ", ". For example:
  *          call request_slot(0x2c0000100, 0x5)
  *      The arguments logged are the ones the caller chose, plus the effects pointer the scramble wrapper reads itself:
@@ -35,12 +39,16 @@
  * *(game + DBF_OFF_GAME_AUDIO_OFFSET) must all be readable, plausible, 8-aligned pointers. When one is not, nothing is
  * called and the port's log gets "sound skipped: <which pointer>" (for example "sound skipped: audio call pointer
  * (engine+0x288)"), at most once per session (since native_init): the sound is asked for on every selection move, so
- * only the first gap is worth a line. A sound that the feature does not admit logs nothing, not even this.
+ * only the first gap is worth a line. Before native_set_base it is not called either, and the log gets "native: game.dll
+ * base not set", once a session, a line of its own (it does not use up the "sound skipped" line). A sound that the
+ * feature does not admit logs nothing, not even these.
  *
  * nat_scramble_query reads the effects pointer from game.dll + DBF_RVA_EFFECTS through mem_ptr (R46 input.lua:153); when
- * that fails nothing is called and *out is left alone. Otherwise *out is set to 0xffffffff before the call ("no effect"
- * in R46's reading, input.lua:155) and the game is asked with (effects, out, key, kind, 0, 0), the two optional outputs
- * null (native.lua:333-338); what the game wrote to *out is the answer. The function's own return value is not used.
+ * there is no base or that fails nothing is called, *out is left alone, and the log gets "scramble query skipped: no
+ * base" or "scramble query skipped: no effects pointer", one of them once a session (since native_init). Otherwise *out
+ * is set to 0xffffffff before the call ("no effect" in R46's reading, input.lua:156) and the game is asked with
+ * (effects, out, key, kind, 0, 0), the two optional outputs null (native.lua:333-338); what the game wrote to *out is
+ * the answer. The function's own return value is not used. A query that the feature does not admit logs nothing.
  *
  * Not thread-safe by design: only the game thread calls it. */
 #ifndef DBF_NATIVE_H
@@ -57,10 +65,14 @@ typedef struct NativePort {
     void (*ui_sound)(uintptr_t unused, uint32_t id);
     uintptr_t (*scramble_query)(uintptr_t effects, uint32_t* out, uint32_t key, uint32_t kind, uintptr_t a5, uintptr_t a6);
     void (*log)(const char* line); /* the checkpoint before each call; takes one line, without a line end */
+    /* Optional: a monotonic millisecond clock (GetTickCount64 in the DLL). NULL: every call logs its checkpoint. Added
+     * last, so an initialiser that stops at `log` stays valid. */
+    uint64_t (*now_ms)(void);
 } NativePort;
 
 /* Starts a session: copies the port (NULL leaves no port, so every wrapper returns false), forgets the game.dll base (see
- * native_set_base) and re-arms the once-per-session "sound skipped" line. */
+ * native_set_base), re-arms the once-per-session lines ("sound skipped", "native: game.dll base not set", "scramble
+ * query skipped") and the per-tick calls' first checkpoints. */
 void native_init(const NativePort* port);
 
 /* The base address of game.dll, where the audio and effects globals are read from. Call it after native_init (which
