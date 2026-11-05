@@ -104,14 +104,23 @@ static bool drew_nothing(void)
     return false;
 }
 
-/* The line number of the first dtext whose text is `text` (any colour), or -1. */
+static int foreground_count(void)
+{
+    char shadow[24];
+    snprintf(shadow, sizeof shadow, "dtext:%08X:", (unsigned)fake_ov_theme_color(OV_THEME_HUD_SHADOW));
+    return fake_ov_count_prefix("dtext:") - fake_ov_count_prefix(shadow);
+}
+
+/* The first foreground draw for this text. */
 static int find_text(const char* text)
 {
+    char shadow[300];
+    dtext(shadow, sizeof shadow, OV_THEME_HUD_SHADOW, text);
     size_t n = strlen(text);
     for (int i = 0; i < fake_ov_lines(); i++) {
         const char* line = fake_ov_line(i);
         size_t length = strlen(line);
-        if (strncmp(line, "dtext:", 6) == 0 && length >= 15 + n && strcmp(line + 15, text) == 0) return i;
+        if (strncmp(line, "dtext:", 6) == 0 && length >= 15 + n && strcmp(line + 15, text) == 0 && strcmp(line, shadow) != 0) return i;
     }
     return -1;
 }
@@ -184,8 +193,8 @@ static void test_plate(void)
     char first[40];
     sample(&g_snap);
     draw(&g_snap);
-    snprintf(first, sizeof first, "rect:%08X", (unsigned)fake_ov_theme_color(OV_THEME_PANEL));
-    CHECK(strcmp(fake_ov_line(0), first) == 0, "the first thing drawn is the plate, in the theme's panel colour");
+    snprintf(first, sizeof first, "rect:%08X", (unsigned)fake_ov_theme_color(OV_THEME_HUD_PLATE));
+    CHECK(strcmp(fake_ov_line(0), first) == 0, "the first thing drawn is the plate, in the HUD plate colour");
     CHECK(fake_ov_count_prefix(first) == 1, "and there is only one plate");
     CHECK(fake_ov_geom(0, g), "the plate has numbers");
     CHECK(g[4] == 6.0f, "its corners are 6 px at scale 1 (DESIGN.md hud_plate_rounding)");
@@ -326,6 +335,10 @@ static void test_old_host_dimming(void)
           "a host before 0.4.0: dimmed rows fall back to text_dim");
     CHECK(has_dtext(OV_THEME_TEXT_DIM, "45s"), "and their timers");
     CHECK(has_dtext(OV_THEME_ACCENT, NAME1) && has_dtext(OV_THEME_TEXT, NAME0), "the other colours are unchanged");
+    char panel[24];
+    snprintf(panel, sizeof panel, "rect:%08X", (unsigned)fake_ov_theme_color(OV_THEME_PANEL));
+    CHECK(strcmp(fake_ov_line(0), panel) == 0, "older hosts use the panel role for the plate");
+    CHECK(fake_ov_count_prefix("dtext:") == 12, "older hosts omit the unsupported shadows");
     snprintf(needle, sizeof needle, "%08X", 0xFFFFFFFFu);
     {
         bool white = false;
@@ -351,7 +364,7 @@ static void test_only_theme_colours(void)
         const char* hex = strncmp(line, "rect:", 5) == 0 ? line + 5 : strncmp(line, "dtext:", 6) == 0 ? line + 6 : NULL;
         if (hex == NULL) continue;
         sscanf(hex, "%8x", &colour);
-        for (int t = 0; t <= OV_THEME_ACCENT_PRESS; t++)
+        for (int t = 0; t <= OV_THEME_HUD_SHADOW; t++)
             if (fake_ov_theme_color(t) == colour) known = true;
         if (!known) {
             printf("  line %d has a colour that is no theme token: %s\n", i, line);
@@ -392,7 +405,7 @@ static void test_timer_text_edges(void)
 
     sample(&g_snap);
     draw(&g_snap);
-    CHECK(fake_ov_count_prefix("dtext:") == 5 + 5 + 2, "rows with no timer have no timer text: names, codes and two timers");
+    CHECK(foreground_count() == 5 + 5 + 2, "rows with no timer have no timer text: names, codes and two timers");
 }
 
 static void test_chosen_bar(void)
@@ -415,6 +428,31 @@ static void test_chosen_bar(void)
         CHECK(bar[2] - bar[0] == 3.0f, "3 px wide (DESIGN.md selected_bar)");
         CHECK(bar[1] <= name[1] && bar[3] >= name[1] + 22.0f, "spanning the row's text");
         CHECK(bar[0] < name[0], "to the left of the text");
+    }
+}
+
+static void test_scaled_selection_and_shadows(void)
+{
+    OvFrame frame = g_frame;
+    char wash[24], bar[24];
+    float w[5], b[5], plate[5], fg[5], bg[5];
+    frame.scale = 1.5f;
+    sample(&g_snap);
+    draw_in(&frame, &g_snap, false);
+    snprintf(wash, sizeof wash, "rect:%08X", (unsigned)fake_ov_theme_color(OV_THEME_ACCENT_DIM));
+    snprintf(bar, sizeof bar, "rect:%08X", (unsigned)fake_ov_theme_color(OV_THEME_ACCENT));
+    int wi = fake_ov_find(wash, 0), bi = fake_ov_find(bar, 0);
+    CHECK(fake_ov_count_prefix(wash) == 1 && wi > 0 && bi > wi && bi < find_text(NAME1), "wash, then bar, then selected text");
+    if (fake_ov_geom(wi, w) && fake_ov_geom(bi, b) && fake_ov_geom(0, plate)) {
+        CHECK(w[0] == plate[0] && w[2] == plate[2], "wash spans the plate width");
+        CHECK(b[0] == w[0] && b[1] == w[1] && b[3] == w[3] && b[2] - b[0] == 4.5f, "scaled bar lines the wash's left edge");
+    }
+    const char* labels[] = {NAME1, "> > ^", "45s"};
+    for (unsigned i = 0; i < sizeof labels / sizeof labels[0]; i++) {
+        int shadow = find_dtext(OV_THEME_HUD_SHADOW, labels[i]), front = find_text(labels[i]);
+        CHECK(shadow >= 0 && shadow < front && fake_ov_geom(shadow, bg) && fake_ov_geom(front, fg)
+              && bg[0] == fg[0] + frame.scale && bg[1] == fg[1] + frame.scale && bg[2] == fg[2],
+              "name, code and timer shadows sit one scaled pixel behind the text");
     }
 }
 
@@ -476,7 +514,7 @@ static void test_progress(void)
 
     g_snap.list.entry_sent = 3;
     draw(&g_snap);
-    CHECK(has_dtext(OV_THEME_ACCENT, "> > ^") && fake_ov_count_prefix("dtext:") == 12, "all sent: the whole code is accent");
+    CHECK(has_dtext(OV_THEME_ACCENT, "> > ^") && foreground_count() == 12, "all sent: the whole code is accent");
 
     g_snap.list.entry_sent = 9;
     draw(&g_snap);
@@ -523,7 +561,7 @@ static void test_progress_only_while_running(void)
         g_snap.list.entry_len = 3;
         g_snap.list.entry_sent = 1;
         draw(&g_snap);
-        CHECK(has_dtext(OV_THEME_ACCENT, "> > ^") && fake_ov_count_prefix("dtext:") == 12,
+        CHECK(has_dtext(OV_THEME_ACCENT, "> > ^") && foreground_count() == 12,
               states[i] == ENTRY_IDLE ? "idle: no progress shown" : states[i] == ENTRY_DONE ? "done: no progress shown"
                                                                                            : "failed: no progress shown");
     }
@@ -537,7 +575,7 @@ static void test_progress_kind_not_listed(void)
     g_snap.list.entry_len = 4;
     g_snap.list.entry_sent = 2;
     draw(&g_snap);
-    CHECK(fake_ov_count_prefix("dtext:") == 12, "a job whose stratagem is not in the list changes nothing");
+    CHECK(foreground_count() == 12, "a job whose stratagem is not in the list changes nothing");
 }
 
 static void test_scale(void)
@@ -561,7 +599,7 @@ static bool drawn_at_scale_one(void)
 {
     float g[5];
     int at = find_text(NAME0);
-    return fake_ov_count_prefix("dtext:") == 12 && at >= 0 && fake_ov_geom(at, g) && g[2] == 22.0f;
+    return foreground_count() == 12 && at >= 0 && fake_ov_geom(at, g) && g[2] == 22.0f;
 }
 
 static void test_scale_odd(void)
@@ -591,13 +629,13 @@ static void test_row_limits(void)
     g_snap.list.chosen = -1;
     g_snap.list.row_count = 99;
     draw(&g_snap);
-    CHECK(fake_ov_count_prefix("dtext:") == DBF_LIST_ROWS * 2, "a row count past the list's room is cut to it");
+    CHECK(foreground_count() == DBF_LIST_ROWS * 2, "a row count past the list's room is cut to it");
     CHECK(find_text("Row number 15") >= 0 && find_text("Row number 00") >= 0, "the first and the last row are there");
 
     sample(&g_snap);
     g_snap.list.row_count = 1;
     draw(&g_snap);
-    CHECK(fake_ov_count_prefix("dtext:") == 2 && has_dtext(OV_THEME_TEXT, NAME0), "a single row is drawn alone");
+    CHECK(foreground_count() == 2 && has_dtext(OV_THEME_TEXT, NAME0), "a single row is drawn alone");
 }
 
 static void test_long_code_is_cut(void)
@@ -667,6 +705,7 @@ int main(void)
     test_codes_and_timers_text();
     test_timer_text_edges();
     test_chosen_bar();
+    test_scaled_selection_and_shadows();
     test_chosen_wins_over_dim();
     test_nothing_chosen();
     test_progress();

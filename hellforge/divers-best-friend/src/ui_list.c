@@ -107,7 +107,7 @@ void ui_list_draw(const OvApi* ov, const OvFrame* f, const DbfSnapshot* s)
 {
     const ListView* l;
     Item items[DBF_LIST_ROWS];
-    uint32_t text, accent, off;
+    uint32_t text, accent, off, plate, shadow;
     float scale, size, pad, gap, row_gap, line_h, name_w = 0.0f, code_w = 0.0f, timer_w = 0.0f;
     float x0, y0, x1, name_x, code_x, timer_x, plate_h, y;
     int n, running = -1;
@@ -123,6 +123,9 @@ void ui_list_draw(const OvApi* ov, const OvFrame* f, const DbfSnapshot* s)
     pad = LIST_PAD_PX * scale;
     gap = LIST_COLUMN_GAP_PX * scale;
     row_gap = LIST_ROW_GAP_PX * scale;
+    plate = ov->theme(OV_THEME_HUD_PLATE);
+    if (plate == THEME_ABSENT) plate = ov->theme(OV_THEME_PANEL);
+    shadow = ov->theme(OV_THEME_HUD_SHADOW);
     text = ov->theme(OV_THEME_TEXT);
     accent = ov->theme(OV_THEME_ACCENT);
     off = ov->theme(OV_THEME_TEXT_OFF);
@@ -157,13 +160,20 @@ void ui_list_draw(const OvApi* ov, const OvFrame* f, const DbfSnapshot* s)
     plate_h = 2.0f * pad + (float)n * line_h + (float)(n - 1) * row_gap;
     y0 = (f->height - plate_h) * 0.5f;
 
-    ov->draw_rect_filled(x0, y0, x1, y0 + plate_h, ov->theme(OV_THEME_PANEL), LIST_PLATE_ROUNDING_PX * scale);
+    ov->draw_rect_filled(x0, y0, x1, y0 + plate_h, plate, LIST_PLATE_ROUNDING_PX * scale);
     y = y0 + pad;
     for (int i = 0; i < n; i++) {
         const Item* it = &items[i];
-        if (i == l->chosen) /* the bar spans the line and half the gap above and below it */
-            ov->draw_rect_filled(x0, y - row_gap * 0.5f, x0 + LIST_BAR_PX * scale, y + line_h + row_gap * 0.5f, accent,
-                                 0.0f);
+        if (i == l->chosen) {
+            float top = y - row_gap * 0.5f, bottom = y + line_h + row_gap * 0.5f;
+            ov->draw_rect_filled(x0, top, x1, bottom, ov->theme(OV_THEME_ACCENT_DIM), LIST_PLATE_ROUNDING_PX * scale);
+            ov->draw_rect_filled(x0, top, x0 + LIST_BAR_PX * scale, bottom, accent, 0.0f);
+        }
+        if (shadow != THEME_ABSENT) {
+            ov->draw_text(name_x + scale, y + scale, shadow, 0, size, it->name);
+            ov->draw_text(code_x + scale, y + scale, shadow, 0, size, it->code);
+            if (it->timer[0] != '\0') ov->draw_text(timer_x + scale, y + scale, shadow, 0, size, it->timer);
+        }
         ov->draw_text(name_x, y, it->color, 0, size, it->name);
         draw_code(ov, code_x, y, size, it, accent);
         if (it->timer[0] != '\0') ov->draw_text(timer_x, y, it->color, 0, size, it->timer);

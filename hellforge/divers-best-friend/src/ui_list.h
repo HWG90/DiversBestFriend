@@ -9,17 +9,17 @@
  * hud_ready), the stratagem menu is open and the list has at least one row.
  *
  * What it draws, in screen pixels scaled by OvFrame.scale (a scale that is not a positive number counts as 1):
- *   - a plate in the left third of the screen, centred up and down, in theme(OV_THEME_PANEL) with corners of 6 px
+ *   - a plate in the left third of the screen, centred up and down, in OV_THEME_HUD_PLATE (OV_THEME_PANEL on older hosts) with corners of 6 px
  *     (DESIGN.md hud_plate_rounding);
  *   - one line per row in list order, in columns that line up: the name, the code as "^ > v <" (or "no code") and the
  *     timer ("<n>s" for an incoming or cooldown timer, "unavailable"; nothing when no timer runs);
- *   - colours, all from theme(): OV_THEME_TEXT; the chosen row OV_THEME_ACCENT, with a 3 px accent bar (DESIGN.md
+ *   - colours, all from theme(): OV_THEME_TEXT; the chosen row OV_THEME_ACCENT, with an OV_THEME_ACCENT_DIM wash and a 3 px accent bar (DESIGN.md
  *     selected_bar) at the left edge of its line; a row that cannot be chosen OV_THEME_TEXT_OFF, or OV_THEME_TEXT_DIM
  *     when the host answers 0xFFFFFFFF for it (hosts before 0.4.0, which have no text_off);
  *   - while the code entry runs (ListView.entry_state), the directions it has sent so far in the row of its stratagem
  *     (the first row with that kind) are drawn in the accent, the rest in the row's own colour; on the chosen row, whose
  *     own colour is the accent already, the rest is OV_THEME_TEXT, so the progress shows.
- * There is no text shadow: the host has no hud_shadow token and a colour is never a literal. The arrows are ASCII because
+ * Text has a 1 px OV_THEME_HUD_SHADOW offset down and right when the host provides the role. The arrows are ASCII because
  * the host loads only ImGui's default glyph range.
  *
  * Portable C11: standard headers, goose_overlay.h, snapshot.h and text.h (dbf_code_arrows) only. No printf. */

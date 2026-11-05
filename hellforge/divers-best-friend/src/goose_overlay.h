@@ -344,6 +344,9 @@ enum OvThemeColor
     OV_THEME_TEXT_OFF,      /* disabled text */
     OV_THEME_ACCENT_HOVER,  /* the main button under the pointer */
     OV_THEME_ACCENT_PRESS,  /* the main button held */
+    /* HUD roles: older hosts return 0xFFFFFFFF for these. */
+    OV_THEME_HUD_PLATE,     /* translucent background behind HUD text */
+    OV_THEME_HUD_SHADOW,    /* shadow under HUD text */
 };
 
 enum OvInputFlags { OV_INPUT_ENTER_RETURNS = 1, OV_INPUT_AUTO_SELECT = 2, OV_INPUT_HEX = 4, OV_INPUT_NO_SPACES = 8 };
