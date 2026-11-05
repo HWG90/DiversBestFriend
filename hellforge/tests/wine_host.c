@@ -27,12 +27,12 @@
  *   on-fails       the API 4 stub, and HellForge refuses the listener (hf->on fails): DBF logs it and registers nothing
  *   masked-log     the API 4 stub and a stub loader that rewrites several witness bytes, two witnesses' worth: the count
  *                  of masked bytes of each is logged once, however often the witness is read again
- * The code-entry cases (Plan 2, Task 12), each with the API 5 stub host and the stub loader (no-host-entry: the loader
+ * The code-entry cases (Plan 2, Task 12), with the API 8 stub host and the stub loader (old-host-input: API 5; no-host-entry: the loader
  * alone), a settings.ini in a LOCALAPPDATA of their own, a writable image (hf->write writes into pages that exist), a
  * window of this process in front and DBF's keys pressed with keybd_event (F20 slot 1, F21 Next, F22 Previous, F23
  * Confirm), as a player would:
  *   list-confirm   menu open, Next once, Confirm: the fake handler gets the second row's code, paced 60 ms, the job is done,
- *                  the action bytes are 0, the move and confirm sounds played; the HUD list shows the choice
+ *                  the action bytes are 0, the move and confirm sounds played; the selected native card is enlarged
  *   instant        instant_stratagems: every direction but the last at once, the last once Confirm was up 100 ms
  *   menu-close     the game closes the menu after the first direction: failed, "menu closed", bytes 0, nothing left
  *   mission-end    the mission ends after the first direction: "the mission ended", bytes 0, nothing left
@@ -43,6 +43,7 @@
  *   mod-stratagem  a HellForge kind 151 (moved table, its code array inside the stub loader's own image) is entered
  *   scramble       the fake scramble query answers with an effect: the remapped kind's code is entered
  *   no-entry-admission  an ENTRY witness byte differs: Confirm sends nothing, and the Status tab says why
+ *   old-host-input  API 5 registers a settings window but blocks Next and Confirm without a capture query
  *   no-host-entry  no Overlay Host: the keys still work and the code is entered; one log line says what is missing
  *   release-retry  the write that releases the first direction fails: the job fails, and the next tick puts it back
  *   card-gone      the stratagem's card turns unavailable during a code: "card membership changed" (R46)
@@ -53,11 +54,11 @@
  * Every case maps the synthetic game.dll's code pages into executable memory with a 12-byte stub (mov rax, imm64;
  * jmp rax) at each DBF_FN_* RVA, jumping to a C fake here (the input handler, open, close and request_slot over
  * tests/synthetic.c's fakes; the UI sound and the scramble query recorded). The stub's bytes are in the synthetic image
- * too, so hf->read sees them as it would see a hook; read_code serves the original bytes from a shadow copy, as
+ * too (except the scale and RGB setters, modelled as native implementations with intact witnesses), so hf->read sees them as it would see a hook; read_code serves the original bytes from a shadow copy, as
  * HellForge's does, and in the code-entry cases the stub loader reports the stub ranges through
- * hellforge_lua_rewrites, as HellForge reports its hooks. The cases from no-host to masked-log must call none of them.
+ * hellforge_lua_rewrites, as HellForge reports its hooks. The cases from no-host to masked-log may update card graphics but must send no gameplay input or sounds.
  * Checks of the first five: init returns 0, logs the version line, registers for HF_EVENT_GAME_LOADED and nothing else.
- * After the event: without a usable host (no-host, host-api3) the "running without a window" line, exactly once even after 3
+ * After the event: without a usable host (no-host, host-api3) the "running without a settings window" line, exactly once even after 3
  * ticks, and the tick on HellForge's on_game_thread; with one, one register_panel call for the Status window (id, title,
  * kind, hotkey 0, 640x520), the tick on the host's on_game_thread when it has one (API 5) and HellForge's otherwise, the
  * window drawing "starting" before the first tick, the menu open after the first, and, after 3 ticks (the menu closed in
@@ -85,12 +86,11 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.2 (game 25480438)"
-#define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a window or list on screen; key and controller " \
+#define VERSION_LINE "Diver's Best Friend R50-hellforge.3 (game 25480438)"
+#define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"
 #define NO_PANEL_LINE "The Overlay Host did not take the Diver's Best Friend window (its log says why)"
-#define NO_LIST_LINE "The Overlay Host did not take the Diver's Best Friend list (its log says why)"
 #define LISTEN_FAILED_LINE "Diver's Best Friend could not listen for the game loading"
 #define REPEATED_LINE "Diver's Best Friend ignored a repeated game-loaded event"
 #define ADMISSION_LINE "game.dll found; admission starts"
@@ -100,7 +100,6 @@
 #define STARTING_TEXT "text:Diver's Best Friend is starting..."
 #define PANEL_ID "goose.divers-best-friend"
 #define PANEL_TITLE "Diver's Best Friend"
-#define LIST_ID "goose.divers-best-friend/list"
 #define TICKS 3
 #define MENU_OPEN_AT 0x38769u /* the menu-open byte in the stratagem panel (R46 native.lua:214), as tests/synthetic.c */
 #define RETRY_WAIT_MS 1100u   /* admission retries what is pending once a second */
@@ -251,10 +250,10 @@ static int api_write(uintptr_t address, const void* data, size_t size)
 /* --- the game functions: 12-byte stubs in executable memory ----------------------------------------------------- */
 
 #define STUB_BYTES 12 /* mov rax, imm64 (48 B8 + 8 bytes); jmp rax (FF E0) */
-enum { FN_INPUT, FN_OPEN, FN_CLOSE, FN_REQUEST, FN_SOUND, FN_SCRAMBLE, FN_COUNT };
+enum { FN_INPUT, FN_OPEN, FN_CLOSE, FN_REQUEST, FN_SOUND, FN_SCRAMBLE, FN_HOOK_COUNT, FN_SCALE = FN_HOOK_COUNT, FN_RGB, FN_COUNT };
 #define MAX_CALLS 64
 
-static int g_calls[FN_COUNT];
+static int g_calls[FN_HOOK_COUNT];
 static int g_checkpoint_misses; /* calls of the four user-triggered functions whose checkpoint was not the last line */
 
 /* native.h: the input handler, open, close and request_slot log "call <name>(" right before every call. */
@@ -273,7 +272,7 @@ static bool g_scramble_remap; /* the fake scramble query says an effect is on */
 static int fn_calls(void)
 {
     int n = 0;
-    for (int i = 0; i < FN_COUNT; i++) n += g_calls[i];
+    for (int i = 0; i < FN_HOOK_COUNT; i++) n += g_calls[i];
     return n;
 }
 
@@ -324,6 +323,21 @@ static uintptr_t host_scramble_query(uintptr_t effects, uint32_t* out, uint32_t 
     return 0;
 }
 
+/* The Windows x64 ABI passes R46's two-float NSR_vec2 by value. The RGB setter
+ * takes a pointer and owns just the three channels after the native fade alpha. */
+typedef struct ScalePair { float x, y; } ScalePair;
+static void host_widget_scale(uintptr_t card, ScalePair scale)
+{
+    if (syn_write_mapped(card + 0x14u, &scale, sizeof scale) != 0)
+        CHECK(false, "the widget scale setter received an unmapped card");
+}
+
+static void host_text_colour(uintptr_t widget, const float* rgb)
+{
+    if (!rgb || syn_write_mapped(widget + 0x48u, rgb, 3 * sizeof(float)) != 0)
+        CHECK(false, "the widget colour setter received an unmapped container or missing RGB");
+}
+
 typedef struct GameFn {
     const char* name;
     uint32_t rva;
@@ -338,6 +352,8 @@ static GameFn g_fns[FN_COUNT] = {
     [FN_REQUEST] = { "request_slot", DBF_FN_REQUEST_SLOT, (void*)host_request_slot, { 0 } },
     [FN_SOUND] = { "ui_sound", DBF_FN_UI_SOUND, (void*)host_ui_sound, { 0 } },
     [FN_SCRAMBLE] = { "scramble_query", DBF_FN_SCRAMBLE_QUERY, (void*)host_scramble_query, { 0 } },
+    [FN_SCALE] = { "widget_scale", DBF_FN_WIDGET_SCALE, (void*)host_widget_scale, { 0 } },
+    [FN_RGB] = { "text_colour", DBF_FN_TEXT_COLOUR, (void*)host_text_colour, { 0 } },
 };
 
 static void stub_bytes(const GameFn* f, uint8_t out[STUB_BYTES])
@@ -376,11 +392,12 @@ static bool map_game_code(void)
     return FlushInstructionCache(GetCurrentProcess(), NULL, 0) != 0;
 }
 
-/* After a syn_build: the original bytes at each stub are kept as the shadow copy, and the image gets the stub's bytes. */
+/* The input, sound and scramble stubs model hooks: the reader gets a shadow copy.
+ * Scale and colour model the game's own setters and keep their intact admission witnesses. */
 static bool place_stubs(void)
 {
     bool ok = true;
-    for (int i = 0; i < FN_COUNT; i++) {
+    for (int i = 0; i < FN_HOOK_COUNT; i++) {
         uint8_t code[STUB_BYTES];
         stub_bytes(&g_fns[i], code);
         ok = ok && syn_read(SYN_GAME_BASE + g_fns[i].rva, g_fns[i].original, STUB_BYTES) == 0
@@ -395,7 +412,7 @@ static int api_read_code(uintptr_t address, void* out, size_t size)
     uint8_t* bytes = out;
     g_read_calls++;
     if (syn_read(address, out, size) != 0) return -1;
-    for (int i = 0; i < FN_COUNT; i++)
+    for (int i = 0; i < FN_HOOK_COUNT; i++)
         for (unsigned b = 0; b < STUB_BYTES; b++) {
             uintptr_t at = SYN_GAME_BASE + g_fns[i].rva + b;
             if (at >= address && at - address < size) bytes[at - address] = g_fns[i].original[b];
@@ -447,13 +464,14 @@ static StubTickFn s_tick;
 static StubDrawFn s_draw;
 static StubLineFn s_line;
 static StubTextFn s_count_prefix;
-static StubSwitchFn s_refuse_panels;
+static StubSwitchFn s_refuse_panels, s_set_capturing;
 
 static bool load_stub(HMODULE stub)
 {
     s_requests = (StubCountFn)need(stub, "stub_requests");
     s_panel_count = (StubCountFn)need(stub, "stub_panel_count");
     s_register_calls = (StubCountFn)need(stub, "stub_register_calls");
+    s_set_capturing = (StubSwitchFn)need(stub, "stub_set_capturing");
     s_refuse_panels = (StubSwitchFn)need(stub, "stub_refuse_panels");
     s_panel = (StubPanelFn)need(stub, "stub_panel");
     s_game_thread_count = (StubCountFn)need(stub, "stub_game_thread_count");
@@ -465,10 +483,10 @@ static bool load_stub(HMODULE stub)
     s_open = (StubCountFn)need(stub, "stub_open");
     s_misuse = (StubCountFn)need(stub, "stub_misuse");
     return s_requests && s_panel_count && s_register_calls && s_refuse_panels && s_panel && s_game_thread_count && s_tick
-        && s_draw && s_line_count && s_line && s_count_prefix && s_open && s_misuse;
+        && s_set_capturing && s_draw && s_line_count && s_line && s_count_prefix && s_open && s_misuse;
 }
 
-/* One game update: the stub host's slot when the case has a host that runs one (API 5), else HellForge's. */
+/* One game update: the stub host's slot when the case has a host that runs one (API 5+), else HellForge's. */
 static bool g_ticks_via_host;
 static void do_tick(void)
 {
@@ -524,7 +542,7 @@ typedef enum {
     C_NO_HOST, C_API3, C_API4, C_API5, C_NO_TICK, C_RETRY, C_ON_AT_ONCE, C_LATE_MODULE, C_SECOND_LOADED, C_NULL_PANEL,
     C_ON_FAILS, C_MASKED_LOG, C_LIST_CONFIRM, C_INSTANT, C_MENU_CLOSE, C_MISSION_END, C_SHORTCUT, C_SHORTCUT_HUD,
     C_MOD_STRATAGEM, C_SCRAMBLE, C_NO_ENTRY_ADMISSION, C_NO_HOST_ENTRY, C_RELEASE_RETRY, C_CARD_GONE, C_SHORTCUT_BLOCKED,
-    C_LATCH_RETRY
+    C_LATCH_RETRY, C_OLD_HOST_INPUT
 } CaseId;
 
 typedef struct CaseInfo {
@@ -557,6 +575,7 @@ static const CaseInfo CASES[] = {
     [C_MOD_STRATAGEM] = { "mod-stratagem", "a HellForge stratagem (kind 151) with its code in the loader", true, true, true },
     [C_SCRAMBLE] = { "scramble", "a scramble effect: the remapped code is entered", true, true, true },
     [C_NO_ENTRY_ADMISSION] = { "no-entry-admission", "an ENTRY witness differs: Confirm does nothing", true, true, true },
+    [C_OLD_HOST_INPUT] = { "old-host-input", "API 5 lacks direct input capture", true, true, true },
     [C_NO_HOST_ENTRY] = { "no-host-entry", "no Overlay Host: DBF's keys still enter codes", false, true, true },
     [C_RELEASE_RETRY] = { "release-retry", "a direction's release cannot be written: the tick retries it", true, true, true },
     [C_CARD_GONE] = { "card-gone", "the stratagem's card becomes unavailable during a code", true, true, true },
@@ -637,15 +656,11 @@ static void run_standard(void)
     CHECK(logged(NO_TICK_LINE) == 0, "the tick is registered");
     if (window) {
         const StubPanel* p = s_panel(0);
-        CHECK(logged(NO_HOST_LINE) == 0, "with an Overlay Host 0.2.0 or later, no \"running without a window\" line");
-        const StubPanel* l = s_panel(1);
-        CHECK(s_panel_count() == 2 && p != NULL && strcmp(p->id, PANEL_ID) == 0, "two panels, the first id " PANEL_ID);
+        CHECK(logged(NO_HOST_LINE) == 0, "with an Overlay Host 0.2.0 or later, no \"running without a settings window\" line");
+        CHECK(s_panel_count() == 1 && p != NULL && strcmp(p->id, PANEL_ID) == 0, "one settings window with id " PANEL_ID);
         CHECK(p && p->size == sizeof(OvPanelDef) && strcmp(p->title, PANEL_TITLE) == 0 && p->kind == OV_PANEL_WINDOW
                   && p->hotkey == 0 && p->width == 640.0f && p->height == 520.0f && p->draw != NULL,
               "the panel is the window \"" PANEL_TITLE "\", no hotkey, 640x520, with a draw callback");
-        CHECK(l && l->size == sizeof(OvPanelDef) && strcmp(l->id, LIST_ID) == 0 && l->kind == OV_PANEL_HUD && l->hotkey == 0
-                  && l->draw != NULL,
-              "the second is the HUD list " LIST_ID ", no hotkey, with a draw callback");
         if (api5)
             CHECK(s_game_thread_count() == 1 && g_ticker_count == 0,
                   "the tick goes through the Overlay Host's on_game_thread (API 5), not HellForge's");
@@ -675,8 +690,8 @@ static void run_standard(void)
     }
     CHECK(logged(VERSION_LINE) == 1, "after 3 ticks the version line is still logged once");
     CHECK(logged(NO_HOST_LINE) == (window ? 0 : 1),
-          window ? "after 3 ticks still no \"running without a window\" line"
-                 : "after 3 ticks the \"running without a window\" line is still logged exactly once");
+          window ? "after 3 ticks still no \"running without a settings window\" line"
+                 : "after 3 ticks the \"running without a settings window\" line is still logged exactly once");
     CHECK(logged(ADMISSION_LINE) == 1, "the first tick found game.dll and logged that admission starts, once");
     if (api5) {
         const DbfWitness* w = witness("hud_root");
@@ -692,7 +707,7 @@ static void run_standard(void)
               "the tick found no hellforge_lua_rewrites and logged it once");
         CHECK(logged_ending(MASKED_TAIL) == 0, "and logged no masked witness");
     }
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
     if (api5) {
         int (*byte_calls)(void) = (int (*)(void))need(g_loader, "stub_byte_calls");
         const DbfWitness* w = witness("hud_root");
@@ -735,7 +750,7 @@ static void run_retry(void)
           "a byte of the hud_root witness is wrong before the first tick");
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_panel_count() == 2 && g_ticker_count == 1, "the window, the list and the tick are registered");
+    CHECK(s_panel_count() == 1 && g_ticker_count == 1, "the window and the tick are registered");
 
     do_tick();
     CHECK(draw_window(), "the window draws after the first tick");
@@ -752,7 +767,7 @@ static void run_retry(void)
     do_tick();
     check_full_window("a second after the byte was put right");
     CHECK(logged(ADMISSION_LINE) == 1 && logged(VERSION_LINE) == 1, "admission was not started again, only retried");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- on-at-once ------------------------------------------------------------------------------------------------ */
@@ -768,8 +783,8 @@ static void run_on_at_once(void)
     CHECK(g_line_count > 0 && strcmp(g_lines[0], VERSION_LINE) == 0 && logged(VERSION_LINE) == 1,
           "the version line is the first line logged, and logged once");
     p = s_panel(0);
-    CHECK(s_register_calls() == 2 && s_panel_count() == 2 && p != NULL && strcmp(p->id, PANEL_ID) == 0,
-          "the event delivered inside on registered the window and the list, once");
+    CHECK(s_register_calls() == 1 && s_panel_count() == 1 && p != NULL && strcmp(p->id, PANEL_ID) == 0,
+          "the event delivered inside on registered the window once");
     CHECK(g_ticker_count == 1 && g_tickers[0].mod == &g_mod && s_game_thread_count() == 0,
           "and the tick, through HellForge's on_game_thread (the API 4 host has no slot)");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0 && logged(NO_PANEL_LINE) == 0, "with nothing refused");
@@ -777,11 +792,11 @@ static void run_on_at_once(void)
           "before the first tick the window says \"Diver's Best Friend is starting...\"");
 
     for (int i = 0; i < TICKS; i++) do_tick();
-    CHECK(logged(VERSION_LINE) == 1 && s_panel_count() == 2 && s_register_calls() == 2 && g_ticker_count == 1,
-          "after 3 ticks still one version line, one window, one list and one tick");
+    CHECK(logged(VERSION_LINE) == 1 && s_panel_count() == 1 && s_register_calls() == 1 && g_ticker_count == 1,
+          "after 3 ticks still one version line, one window and one tick");
     CHECK(logged(ADMISSION_LINE) == 1, "admission started once");
     check_full_window("after 3 ticks");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- late-module ----------------------------------------------------------------------------------------------- */
@@ -815,7 +830,7 @@ static void run_late_module(void)
     do_tick();
     CHECK(logged(ADMISSION_LINE) == 1 && logged(REWRITES_MISSING_LINE) == 1, "a third tick starts nothing again");
     check_full_window("after the third tick");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- second-loaded --------------------------------------------------------------------------------------------- */
@@ -825,15 +840,15 @@ static void run_second_loaded(void)
     int requests;
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_panel_count() == 2 && g_ticker_count == 1 && logged(REPEATED_LINE) == 0,
-          "the first event registers the window, the list and the tick, and logs no repeat");
+    CHECK(s_panel_count() == 1 && g_ticker_count == 1 && logged(REPEATED_LINE) == 0,
+          "the first event registers the window and the tick, and logs no repeat");
     requests = s_requests();
     fire(HF_EVENT_GAME_LOADED);
     CHECK(logged(REPEATED_LINE) == 1, "the second event is logged: \"" REPEATED_LINE "\"");
     fire(HF_EVENT_GAME_LOADED);
     CHECK(logged(REPEATED_LINE) == 1, "a third one is not logged again");
-    CHECK(s_register_calls() == 2 && s_panel_count() == 2 && g_ticker_count == 1 && s_game_thread_count() == 0,
-          "and neither registered another window, list or tick");
+    CHECK(s_register_calls() == 1 && s_panel_count() == 1 && g_ticker_count == 1 && s_game_thread_count() == 0,
+          "and neither registered another window or tick");
     CHECK(s_requests() == requests, "nor asked the Overlay Host for its API again");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0 && logged(NO_PANEL_LINE) == 0, "nothing was refused");
 
@@ -841,7 +856,7 @@ static void run_second_loaded(void)
     CHECK(logged(REPEATED_LINE) == 1 && logged(VERSION_LINE) == 1 && logged(ADMISSION_LINE) == 1,
           "after 3 ticks: one repeat line, one version line, admission started once");
     check_full_window("after 3 ticks");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- null-panel ------------------------------------------------------------------------------------------------ */
@@ -851,17 +866,17 @@ static void run_null_panel(void)
     s_refuse_panels(1);
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_register_calls() == 2 && s_panel_count() == 0,
-          "DBF asked the Overlay Host for its window and its list once each, and got neither");
-    CHECK(logged(NO_PANEL_LINE) == 1 && logged(NO_LIST_LINE) == 1, "and logged both refusals once");
+    CHECK(s_register_calls() == 1 && s_panel_count() == 0,
+          "DBF asked the Overlay Host for its settings window once and was refused");
+    CHECK(logged(NO_PANEL_LINE) == 1, "and logged the refusal once");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0, "the host was found and the tick registered");
     CHECK(g_ticker_count == 1 && g_tickers[0].mod == &g_mod, "the tick goes through HellForge's on_game_thread");
     CHECK(s_draw(0) == 0, "there is no window to draw");
 
     for (int i = 0; i < TICKS; i++) do_tick();
-    CHECK(logged(NO_PANEL_LINE) == 1 && s_register_calls() == 2, "the ticks ask nothing more of the host");
+    CHECK(logged(NO_PANEL_LINE) == 1 && s_register_calls() == 1, "the ticks ask nothing more of the host");
     CHECK(logged(ADMISSION_LINE) == 1 && g_read_calls > 0, "the ticks still run: admission started and the game was read");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- on-fails -------------------------------------------------------------------------------------------------- */
@@ -933,7 +948,7 @@ static void run_masked_log(void)
     check_full_window("a second after the unrewritten byte was put right");
     CHECK(logged(a_line) == 1 && logged(b_line) == 1 && logged_ending(MASKED_TAIL) == 2,
           "admitted, the counts were logged once each");
-    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
 /* --- the code-entry cases (Plan 2, Task 12) --------------------------------------------------------------------- */
@@ -945,7 +960,6 @@ static void run_masked_log(void)
 #define INTERVAL_MS 60u /* the settings' input_interval_ms in the paced cases */
 #define SOUND_GAP_MS 80u /* more than sound.h's 60 ms between a sound and a move sound */
 #define WAIT_MS 3000u   /* the longest a case waits for a code */
-#define ACCENT_TOKEN 7  /* OV_THEME_ACCENT: fake_ov's theme answers 0xFFC0DE00 + token */
 #define ENGINE_AT ((uintptr_t)0x2c100000000ull) /* the audio engine (native.lua:328-330), anywhere plausible */
 #define EFFECTS_AT ((uintptr_t)0x2d000000000ull)
 
@@ -1133,17 +1147,39 @@ static bool set_menu_in_game(bool open)
         && syn_poke_u32(at, open ? word | DBF_VAL_MENU_ACTIVE_MASK : word & ~(uint32_t)DBF_VAL_MENU_ACTIVE_MASK);
 }
 
+/* R46 native.lua: text targets and their checked children, relative to the card. */
+static const struct { uint32_t container, child; } CARD_TEXT[] = {
+    { 0x1f18u, 0x2028u }, { 0x24a8u, 0x25b8u }, { 0x2870u, 0x2980u }
+};
+static const float TEXT_STYLE[4] = { 0.625f, 0.875f, 0.5f, 0.25f };
+static const float CARD_SCALE[2] = { 1.0f, 0.75f };
+
+static bool build_card_graphics(uintptr_t card)
+{
+    if (!syn_poke(card + 0x14u, CARD_SCALE, sizeof CARD_SCALE)) return false;
+    for (size_t j = 0; j < sizeof CARD_TEXT / sizeof CARD_TEXT[0]; j++) {
+        uintptr_t widget = card + CARD_TEXT[j].container;
+        if (!syn_poke_u64(widget + 0xf0u, card)
+            || !syn_poke_u64(card + CARD_TEXT[j].child + 0xf0u, widget)
+            || !syn_poke(widget + 0x44u, TEXT_STYLE, sizeof TEXT_STYLE)) return false;
+    }
+    return true;
+}
+
 static bool build_scene(const SynScene* scene)
 {
     g_scene = *scene;
-    return syn_build(scene) && place_stubs();
+    if (!syn_build(scene) || !place_stubs()) return false;
+    for (int i = 0; i < 16; i++)
+        if (!build_card_graphics(syn_card(i))) return false;
+    return true;
 }
 
 /* The witnesses a stub overlaps, and how many of their bytes it covers. */
 static int overlap(const DbfWitness* w)
 {
     int n = 0;
-    for (int i = 0; i < FN_COUNT; i++)
+    for (int i = 0; i < FN_HOOK_COUNT; i++)
         for (unsigned b = 0; b < STUB_BYTES; b++) {
             uint32_t at = g_fns[i].rva + b;
             if (at >= w->rva && at - w->rva < w->size) n++;
@@ -1166,7 +1202,7 @@ static bool entry_prepare(const SynScene* scene, const char* settings, uint32_t 
     CHECK(add_range && s_byte_calls && prepare_appdata(CASES[g_case].name, settings),
           "settings.ini is written, and the stub loader takes the stubs' ranges");
     if (!add_range || !s_byte_calls) return false;
-    for (int i = 0; i < FN_COUNT; i++) add_range(g_fns[i].rva, STUB_BYTES);
+    for (int i = 0; i < FN_HOOK_COUNT; i++) add_range(g_fns[i].rva, STUB_BYTES);
     syn_input_reset();
     syn_input_expect(kind, code, n);
     syn_menu_reset();
@@ -1270,15 +1306,38 @@ static bool checkpoints(void)
     return false;
 }
 
-/* The HUD list as the host draws it, with `name` drawn in the accent: the chosen row. */
-static bool hud_chosen(const char* name)
+/* R46 native.lua reads the widget scale as a float pair at +0x14. Using different X/Y
+ * values also catches code that replaces both axes with a single absolute scale. */
+static bool native_chosen(int selected)
 {
-    char line[LINE_SIZE];
-    snprintf(line, sizeof line, "dtext:%08X:%s", 0xFFC0DE00u + ACCENT_TOKEN, name);
-    if (!s_draw(1)) return false;
-    if (find_line(line) >= 0) return true;
-    print_drawing();
-    return false;
+    for (int i = 0; i < 16; i++) {
+        float scale[2];
+        float factor = i == selected ? 1.10f : 1.0f;
+        if (syn_read(syn_card(i) + 0x14u, scale, sizeof scale) != 0) return false;
+        for (int axis = 0; axis < 2; axis++) {
+            float expected = CARD_SCALE[axis] * factor;
+            if (!(scale[axis] >= expected - 0.00001f && scale[axis] <= expected + 0.00001f)) {
+                printf("  card %d scale[%d] is %g, expected %g\n", i, axis, scale[axis], expected);
+                return false;
+            }
+        }
+        /* Empty cards have no row to dim. Closing the list or starting a slot hotkey
+         * restores the same native style on every previously dimmed container. */
+        bool dimmed = selected >= 0 && i != selected && g_scene.card_entry[i] != SYN_INACTIVE;
+        for (size_t j = 0; j < sizeof CARD_TEXT / sizeof CARD_TEXT[0]; j++) {
+            float style[4];
+            if (syn_read(syn_card(i) + CARD_TEXT[j].container + 0x44u, style, sizeof style) != 0) return false;
+            for (int k = 0; k < 4; k++) {
+                float expected = TEXT_STYLE[k] * (dimmed && k != 0 ? 0.35f : 1.0f);
+                if (!(style[k] >= expected - 0.00001f && style[k] <= expected + 0.00001f)) {
+                    printf("  card %d container %x style[%d] is %g, expected %g\n", i, CARD_TEXT[j].container,
+                           k, style[k], expected);
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 static bool status_has(const char* line)
@@ -1334,28 +1393,20 @@ static void run_list_confirm(void)
     CHECK(status_has("text:Bindings: key:f21 / key:f22 / key:f23") && status_has("text:Settings: settings.ini (0 problems)")
               && status_has("text:Entry: idle"),
           "the Status tab shows the bindings, the settings file and an idle entry");
-    CHECK(hud_chosen(dbf_kind_names[118]), "the HUD list shows the stratagems, the top row chosen");
+    CHECK(native_chosen(0), "only the top native card is enlarged");
 
-    {
-        void (*set_capturing)(int) = (void (*)(int))need(g_stub, "stub_set_capturing");
-        if (set_capturing) {
-            set_capturing(1); /* a host window opens: the list's frame says capturing */
-            s_draw(1);
-            tap(KEY_NEXT);
-            CHECK(hud_chosen(dbf_kind_names[118]) && g_sound_count == 0, "while a host window has the input, Next does nothing");
-            set_capturing(-1);
-            s_draw(1);
-            entry_tick();
-        }
-        CHECK(set_capturing != NULL, "the stub host can say a window has the input");
-    }
+    s_set_capturing(1);
+    tap(KEY_NEXT);
+    CHECK(native_chosen(0) && g_sound_count == 0, "API 8 capture blocks Next without a panel draw");
+    s_set_capturing(0);
+    entry_tick();
     CHECK(syn_poke_u32(syn_ui() + 0x429cu + 20u, 1), "a game menu covers the HUD (R46 input.lua:294-295)");
     tap(KEY_NEXT);
-    CHECK(hud_chosen(dbf_kind_names[118]) && g_sound_count == 0, "while the UI is obstructed, Next does nothing");
+    CHECK(native_chosen(0) && g_sound_count == 0, "while the UI is obstructed, Next does nothing");
     CHECK(syn_poke_u32(syn_ui() + 0x429cu + 20u, 0), "the game menu goes");
     entry_tick();
     tap(KEY_NEXT);
-    CHECK(hud_chosen(dbf_kind_names[4]), "Next chooses the second row");
+    CHECK(native_chosen(1), "Next chooses the second row");
     CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE, "and plays the move sound");
 
     key(KEY_CONFIRM, true);
@@ -1371,7 +1422,7 @@ static void run_list_confirm(void)
     CHECK(ended("Code entry done: Orbital Gatling Barrage (every change put back)"), "and the log says so");
     CHECK(sounds_are(SOUNDS, 2), "two sounds in all: the move and the confirm");
     CHECK(checkpoints(), "every handler call came right after its checkpoint line");
-    CHECK(syn_mapped_write_count() >= 2 * st->code_len && syn_write_count() == 0, "a press and a release per direction");
+    CHECK(g_write_no >= 2 * st->code_len && syn_write_count() == 0, "a press and a release per direction");
     CHECK(g_calls[FN_OPEN] == 0 && g_calls[FN_CLOSE] == 0 && g_calls[FN_REQUEST] == 0,
           "a List job opens, closes and requests nothing");
     end_keys();
@@ -1446,9 +1497,10 @@ static void run_interrupted(bool mission)
           "the Status tab says why");
     if (!mission) {
         int before = g_calls[FN_INPUT];
+        CHECK(native_chosen(-1), "closing the menu restores native scale on every card");
         CHECK(set_menu_in_game(true), "the player holds the menu again");
         entry_tick();
-        CHECK(hud_chosen(dbf_kind_names[118]), "the list opens as before, the top row chosen");
+        CHECK(native_chosen(0), "the list opens as before, the top row chosen");
         syn_input_reset();
         syn_input_expect(st->kind, st->code, st->code_len);
         CHECK(syn_poke_u32(syn_local_component(), 0) && syn_poke_u32(syn_local_component() + 0x14u, 0),
@@ -1555,12 +1607,7 @@ static void run_shortcut(void)
     Sleep(SOUND_GAP_MS); /* past the move sound's throttle, so a move would be heard */
     tap(KEY_NEXT);
     CHECK(g_sound_count == 1, "Next during a slot hotkey moves nothing (List Select sees a closed list)");
-    {
-        char line[LINE_SIZE];
-        snprintf(line, sizeof line, "dtext:%08X:%s", 0xFFC0DE00u + ACCENT_TOKEN, dbf_kind_names[10]);
-        CHECK(s_draw(1) && find_line(line) < 0 && s_count_prefix("dtext:") > 0,
-              "and the HUD list shows the rows with none chosen (the top one would be kind 10)");
-    }
+    CHECK(native_chosen(-1), "all native cards retain their original scale during the slot hotkey");
     tick_until_calls(st->code_len);
     CHECK(handler_took(st->code, st->code_len), "the handler took slot 1's code");
     CHECK(latched(), "the code is in; the latch stays until the game closes the menu");
@@ -1643,10 +1690,11 @@ static void run_mod_stratagem(void)
     CHECK(row != 0 && syn_set_code(row, (uintptr_t)area(&size), 4, MOD_CODE) && size >= 16
               && syn_poke_u32(payload + DBF_OFF_PAYLOAD_KINDS_OFFSET + DBF_OFF_PAYLOAD_ENTRY_STRIDE * 1u, 151),
           "kind 151 is in the payload (the second card), its code array inside hellforge_modloader.dll's image");
+    CHECK(build_card_graphics(syn_card(1)), "the game repaints the replacement card with its original style");
     entry_tick();
     CHECK(status_has("text:Stratagem 151") && status_has("text:< v > ^"), "the Status tab lists it with its code");
     tap(KEY_NEXT);
-    CHECK(hud_chosen("Stratagem 151"), "Next chooses it");
+    CHECK(native_chosen(1), "Next chooses it");
     tap(KEY_CONFIRM);
     tick_until_calls(4);
     CHECK(handler_took(MOD_CODE, 4) && actions_idle(), "its code is entered");
@@ -1668,7 +1716,7 @@ static void run_scramble(void)
     CHECK(g_calls[FN_SCRAMBLE] > 0 && status_has("text:Scrambled codes: OK") && !status_has("text:Codes do not follow scrambling yet"),
           "the scramble query runs, and the codes follow it");
     tap(KEY_NEXT);
-    CHECK(hud_chosen(dbf_kind_names[4]), "Next chooses kind 4");
+    CHECK(native_chosen(1), "Next chooses kind 4");
     tap(KEY_CONFIRM);
     tick_until_calls(shown->code_len);
     CHECK(handler_took(shown->code, shown->code_len), "the remapped code (kind 118's) is entered");
@@ -1694,17 +1742,32 @@ static void run_no_entry_admission(void)
     snprintf(line, sizeof line, "text:Code entry: Waiting (%s)", why);
     CHECK(status_has(line), "the Status tab says code entry waits, and why");
     tap(KEY_NEXT);
-    CHECK(hud_chosen(dbf_kind_names[4]) && g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE,
+    CHECK(native_chosen(1) && g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE,
           "Next still moves the choice, with its sound");
     tap(KEY_CONFIRM);
     entry_tick();
     entry_tick();
-    CHECK(g_calls[FN_INPUT] == 0 && syn_mapped_write_count() == 0 && g_sound_count == 1,
+    CHECK(g_calls[FN_INPUT] == 0 && g_write_no == 0 && g_sound_count == 1,
           "Confirm sends nothing, writes nothing and plays no confirm sound");
     snprintf(line, sizeof line, "text:Entry: failed: Code entry: %s", why);
     CHECK(status_has(line), "the Status tab says why the code was not entered");
     snprintf(line, sizeof line, "Orbital Gatling Barrage not entered: Code entry: %s", why);
     CHECK(ended(line), "and so does the log");
+    end_keys();
+}
+
+/* A compatible settings window on API 5 still lacks the capture query. */
+static void run_old_host_input(void)
+{
+    SynScene scene;
+    syn_default(&scene);
+    const SynStratagem* st = &scene.stratagems[0];
+    if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    CHECK(s_panel_count() == 1, "the old host registers the settings window");
+    tap(KEY_NEXT);
+    tap(KEY_CONFIRM);
+    CHECK(native_chosen(0) && actions_idle() && g_calls[FN_INPUT] == 0 && g_sound_count == 0,
+          "the old host blocks Next and Confirm before any window draws");
     end_keys();
 }
 
@@ -1716,6 +1779,7 @@ static void run_no_host_entry(void)
     syn_default(&scene);
     st = &scene.stratagems[0];
     if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    CHECK(native_chosen(0), "the native card graphics work without an Overlay Host");
     CHECK(logged(NO_HOST_LINE) == 1 && g_ticker_count == 1, "one line says what runs without the host; HellForge's tick");
     tap(KEY_CONFIRM);
     tick_until_calls(st->code_len);
@@ -1789,20 +1853,17 @@ static void run_card_gone(void)
     end_keys();
 }
 
-static void (*s_set_capturing)(int);
-
-/* shortcut-blocked: a host window opens (the list's frames say capturing) after a slot hotkey's first direction. */
+/* shortcut-blocked: API 8 reports capture after a slot hotkey's first direction. */
 static void run_shortcut_blocked(void)
 {
     static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
     char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
     SynScene scene;
     const SynStratagem* st;
-    s_set_capturing = (void (*)(int))need(g_stub, "stub_set_capturing");
     shortcut_scene(&scene);
     st = &scene.stratagems[4];
     snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
-    if (!s_set_capturing || !entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
     CHECK(set_menu_in_game(false), "(the menu is closed in the game)");
     entry_tick();
     press_slot1(0);
@@ -1810,14 +1871,13 @@ static void run_shortcut_blocked(void)
     entry_tick();
     CHECK(g_calls[FN_INPUT] == 1, "the first direction went");
     s_set_capturing(1);
-    s_draw(1);
     entry_tick();
     CHECK(g_calls[FN_INPUT] == 1 && actions_idle(), "no direction goes after that; the action bytes are 0");
     CHECK(ended("Code entry failed: an Overlay Host window is open (every change put back)"),
           "failed: an Overlay Host window is open");
     CHECK(originals(), "the menu binding is Hold again, both dwords 2");
     CHECK(g_calls[FN_CLOSE] == 1 && checkpoints(), "the menu DBF opened is closed");
-    s_set_capturing(0); /* The HUD was hidden while capturing. It never draws the release frame. */
+    s_set_capturing(0);
     entry_tick();
     CHECK(syn_poke_u32(syn_local_component(), 0), "the game clears the cancelled direction when its menu closes");
     press_slot1(1);
@@ -1891,7 +1951,7 @@ int main(int argc, char** argv)
         puts("usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll>] [<hellforge_modloader.dll>]\n"
              "cases: no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel"
              " on-fails masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem"
-             " scramble no-entry-admission no-host-entry release-retry card-gone shortcut-blocked latch-retry");
+             " scramble no-entry-admission old-host-input no-host-entry release-retry card-gone shortcut-blocked latch-retry");
         return 2;
     }
     name = argv[2];
@@ -1971,6 +2031,7 @@ int main(int argc, char** argv)
     case C_MOD_STRATAGEM: run_mod_stratagem(); break;
     case C_SCRAMBLE: run_scramble(); break;
     case C_NO_ENTRY_ADMISSION: run_no_entry_admission(); break;
+    case C_OLD_HOST_INPUT: run_old_host_input(); break;
     case C_NO_HOST_ENTRY: run_no_host_entry(); break;
     case C_RELEASE_RETRY: run_release_retry(); break;
     case C_CARD_GONE: run_card_gone(); break;

@@ -145,17 +145,17 @@ run_wine_tests() {
   # Each case in a process of its own (the DLL keeps static state); its full output is kept in build/wine/<case>.log.
   local passed=0 failed=0 skipped=0 name status stubs
   # The code-entry cases (Plan 2, Task 12) drive the real DLL end to end: a stub at each game function, settings.ini,
-  # keys pressed in a window of the host's own; each runs with the API 5 stub host and the stub loader (no-host-entry with
+  # keys pressed in a window of the host's own; use the API 8 stub host and the stub loader (old-host-input with API 5, no-host-entry with
   # the loader alone).
   for name in no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel on-fails \
               masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem scramble \
-              no-entry-admission no-host-entry release-retry card-gone shortcut-blocked latch-retry; do
+              no-entry-admission old-host-input no-host-entry release-retry card-gone shortcut-blocked latch-retry; do
     case $name in
       no-host) stubs=() ;;
-      host-api5|list-confirm|instant|menu-close|mission-end|shortcut|shortcut-hud|mod-stratagem|scramble|no-entry-admission|\
-      release-retry|card-gone|latch-retry)
-        stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
-      shortcut-blocked) stubs=("$(w "$out/overlay-api8/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      host-api5|old-host-input) stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      list-confirm|instant|menu-close|mission-end|shortcut|shortcut-hud|mod-stratagem|scramble|no-entry-admission|\
+      release-retry|card-gone|latch-retry|shortcut-blocked)
+        stubs=("$(w "$out/overlay-api8/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       no-host-entry) stubs=("$(w "$out/modloader/hellforge_modloader.dll")") ;;
       masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       host-api3|host-api4) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
