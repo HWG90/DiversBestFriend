@@ -28,7 +28,7 @@ local function binding_warning(bridge)
         local x = (w - width) / 2
         local font = 'core/performance_hud/debug'
         lease.api.rect(lease.gui, sr.Vector3(x, 16, 950), sr.Vector2(width, size + 20), color('hud_plate'))
-        lease.api.text(lease.gui, text, font, size, font, sr.Vector3(x + 14, 26, 951), color('accent'))
+        lease.api.text(lease.gui, text, font, size, font, sr.Vector3(x + 14, 26, 951), color('yellow'))
         lease.show()
         signature = key
     end
