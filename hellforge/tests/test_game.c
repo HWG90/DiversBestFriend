@@ -169,7 +169,7 @@ static void test_reads_the_mission(void)
           "gameplay, HUD ready, menu open, local player found");
     CHECK(reason_is(v, ""), "nothing is missing: reason is empty");
     CHECK(v->table_rva == VANILLA_TABLE, "the vanilla definition table");
-    CHECK(!v->scramble_known, "scramble_known is false: codes are not remapped");
+    CHECK(!v->scramble_known, "scramble_known is false: the test table maps no scramble witness, so no query ran");
     CHECK(v->row_count == 4, "four active cards, four rows");
     for (int i = 0; i < v->row_count && i < 4; i++) {
         char text[96];
@@ -275,9 +275,10 @@ static void test_definition_table(void)
           "the rows and their kinds are still read");
 
     struct { uint32_t rva; const char* reason; const char* text; } cases[] = {
-        { SYN_IMAGE_SIZE - 8u, "definition table unrecognised", "image_size - 8: below the reservation" },
+        { SYN_IMAGE_SIZE - 8u, "definition table unrecognised", "image_size - 8: inside the image" },
         { SYN_IMAGE_SIZE + 0x1004u, "definition table unrecognised", "image_size + 0x1004: not 8-aligned" },
-        { SYN_IMAGE_SIZE + 0x400000u, "definition table unrecognised", "image_size + 0x400000: past the reservation" },
+        { SYN_IMAGE_SIZE + 0x400000u, "definition table unreadable",
+          "image_size + 0x400000: HellForge's block may be anywhere within 2 GiB; nothing there, unreadable" },
         { VANILLA_TABLE + 8u, "definition table unrecognised", "0x37cb608: inside the image, not the vanilla table" },
         { SYN_IMAGE_SIZE + 0x3ffff8u, "definition table unreadable", "image_size + 0x3ffff8: accepted but unreadable" },
     };
@@ -457,8 +458,9 @@ static void test_entries_and_kinds(void)
     start(&s);
     v = read_view();
     CHECK(v->row_count == 4 && v->rows[1].kind == 150 && v->rows[1].code_len == 0 && v->rows[2].kind == 0
-              && v->rows[2].code_len == 0 && row_is(&v->rows[0], 0, &s, 0) && reason_is(v, ""),
-          "kind 150 (a HellForge mod's) and kind 0: listed without a code or a reason");
+              && v->rows[2].code_len == 0 && row_is(&v->rows[0], 0, &s, 0) && reason_is(v, "unknown stratagem kind"),
+          "kind 150 with the vanilla table (no HellForge mod stratagems) and kind 0: listed without a code; 150 is "
+          "\"unknown stratagem kind\"");
 
     start_default(&s);
     syn_poke_u32(syn_payload(s.local_entry) + DBF_OFF_PAYLOAD_COUNT_OFFSET, 33);
@@ -515,7 +517,7 @@ static void test_codes(void)
     start_default(&s);
     syn_poke_u64(syn_definition(50) + DBF_OFF_DEFINITION_CODE_OFFSET, syn_settings() + DBF_OFF_SETTINGS_SIZE - 8u);
     v = read_view();
-    CHECK(v->rows[2].code_len == 0 && reason_is(v, "code array outside the settings block"),
+    CHECK(v->rows[2].code_len == 0 && reason_is(v, "code outside the game and HellForge"),
           "a code array running past the settings block: no code (R46's HD2Runtime owner is not ported)");
     {
         uintptr_t at = syn_settings() + DBF_OFF_SETTINGS_SIZE - 6u * DBF_OFF_CODE_STRIDE;

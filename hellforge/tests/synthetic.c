@@ -32,6 +32,18 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define RVA_DISPLACEMENT 0x66d550u  /* native.lua:51 */
 #define RVA_TABLE 0x37cb600u        /* native.lua:52 */
 #define TABLE_ENTRIES 150u          /* entries 0..149, 8 bytes each (native.lua:55) */
+#define RVA_POSITIONS 0x3326508u    /* input.lua:150 */
+
+/* HellForge's moved definition table (HF stratagems.c:42-44, 372-387): 198 slots (150 + 48), the names (198 + 1), then a
+ * 400-byte row per new type. */
+#define HF_SLOTS 198u
+#define HF_ROWS_AT (HF_SLOTS * 8u + HF_SLOTS * 8u + 8u)
+#define HF_ROW 400u
+#define HF_NEW 48u
+#define LOADER_MOD_CODES 0x1000u    /* the fake loader image: one 64-byte array per new type from here */
+#define LOADER_SPARES 0x8000u       /* and 64 spare 64-byte arrays from here (a Lua mod's set_code) */
+#define LOADER_ARRAY 0x40u
+#define LOADER_SPARE_COUNT 64
 
 /* The game's objects, at fixed fake addresses (user space, 8-aligned, far apart). */
 #define AT_HUD_ROOT ((uintptr_t)0x20000000000ull)
@@ -46,6 +58,8 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define AT_LOOKUPS ((uintptr_t)0x29000000000ull)
 #define AT_UI ((uintptr_t)0x2a000000000ull)
 #define AT_CONTROLS ((uintptr_t)0x2b000000000ull)
+#define AT_POSITIONS ((uintptr_t)0x2f000000000ull)
+#define AT_POSITION_ENTRIES ((uintptr_t)0x2f100000000ull)
 
 /* HUD (native.lua:76-100, 203-281). */
 #define HUD_READY 0x24e334u            /* native.lua:78 */
@@ -98,6 +112,11 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define ACTIONS 0x4118u
 #define INPUT_OWNER 0x150u
 #define UI_OBSTRUCTION (0x429cu + 20u) /* input.lua:295 */
+#define AVATAR_SEED 0x11b8u           /* input.lua:157: the scramble remap's seed */
+#define POSITIONS_LOOKUP 0x40u         /* input.lua:151 */
+#define POSITIONS_ENTRIES 0x68u        /* input.lua:152 */
+#define POSITION_STRIDE 0x308u         /* input.lua:152 */
+#define POSITION_AT 0x2e0u             /* input.lua:152: 12 bytes */
 #define SESSION_PEER 0xb398u
 #define MISSION_STRIDE 0x1690u
 #define MISSION_PAYLOAD 0x38u
@@ -128,6 +147,8 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define OTHER_AVATAR 0u
 #define OTHER_CONTEXT 0x15u
 #define OTHER_PLAYER 0u
+#define LOCAL_POSITION 6u
+#define OTHER_POSITION 2u
 #define PROBE_AT 0x8c4cu     /* syn_registry_probe's slots: 4 mod 8, as the registry's */
 #define PROBE_MAX 1024u
 #define PROBE_FILLER 0x100000u /* keys that are neither the local network index nor the empty key */
@@ -141,6 +162,9 @@ static uint8_t* g_page_data[SYN_MAX_PAGES];
 static int g_writes;
 static bool g_built;
 static SynScene g_scene;
+static uintptr_t g_block;               /* HellForge's moved block (syn_move_table); 0 when the table is not moved */
+static uintptr_t g_mod_row[HF_NEW];     /* rows of the mod stratagems added (by kind - 150); 0 when not added */
+static bool g_mod_tomb[HF_NEW];         /* tombstoned: stratagem_row says 0 */
 
 /* --- pages ----------------------------------------------------------------------------------------------------- */
 
@@ -363,10 +387,16 @@ static uint64_t other_peer(const SynScene* s, int entry)
     return s->peer ^ (0x0101010101010101ull * (uint64_t)(entry + 1));
 }
 
+/* game.dll + the displacement, sign-extended as the CPU extends the instruction's disp32. */
+static uintptr_t table_at(uint32_t rva)
+{
+    return SYN_GAME_BASE + (uintptr_t)(int64_t)(int32_t)rva;
+}
+
 static void put_table(Builder* b, uint32_t rva)
 {
-    put64(b, SYN_GAME_BASE + rva, 0); /* kind 0 has no definition */
-    for (uint32_t kind = 1; kind < TABLE_ENTRIES; kind++) put64(b, SYN_GAME_BASE + rva + kind * 8u, syn_definition(kind));
+    put64(b, table_at(rva), 0); /* kind 0 has no definition */
+    for (uint32_t kind = 1; kind < TABLE_ENTRIES; kind++) put64(b, table_at(rva) + kind * 8u, syn_definition(kind));
 }
 
 static void put_code(Builder* b, uint32_t kind, int n, const uint8_t* code)
@@ -392,6 +422,9 @@ bool syn_build(const SynScene* s)
     syn_free();
     g_scene = *s;
     g_built = true;
+    g_block = 0;
+    memset(g_mod_row, 0, sizeof g_mod_row);
+    memset(g_mod_tomb, 0, sizeof g_mod_tomb);
 
     /* The modules: headers, then every witness, then the globals (a global wins over a witness byte). */
     put_header(&b, SYN_GAME_BASE, SYN_GAME_STAMP, SYN_IMAGE_SIZE);
@@ -409,7 +442,11 @@ bool syn_build(const SynScene* s)
     put64(&b, SYN_GAME_BASE + RVA_SETTINGS, AT_SETTINGS);
     put32(&b, SYN_GAME_BASE + RVA_DISPLACEMENT, s->table_rva);
     put_table(&b, RVA_TABLE); /* the vanilla table is always there; a moved one is a copy */
-    if (s->table_rva != RVA_TABLE) put_table(&b, s->table_rva);
+    if (s->table_rva != RVA_TABLE) { /* moved before the first read: a block of HellForge's shape */
+        put_table(&b, s->table_rva);
+        for (uint32_t kind = TABLE_ENTRIES; kind < HF_SLOTS; kind++) put64(&b, table_at(s->table_rva) + kind * 8u, 0);
+        g_block = table_at(s->table_rva);
+    }
 
     /* Game state and HUD. */
     put32(&b, AT_STATE + STATE_MODE, s->game_mode);
@@ -462,6 +499,20 @@ bool syn_build(const SynScene* s)
             put32(&b, avatar + AVATAR_MENU, i == 0 ? MENU_ACTIVE_BIT | 0x5u : 0u);
         }
         put_lookup(&b, AT_PLAYERS, PLAYERS_LOOKUP, AT_LOOKUPS + 0x2000u, 32, 0xc2b2ae35u, 0, 2, CONTEXTS, PLAYERS);
+        /* The scramble query's positions (input.lua:150-152): the avatars' keys to their position entries, each with
+         * its 12 bytes; and the local avatar's scramble seed (input.lua:157). */
+        {
+            static const uint32_t POSITIONS[2] = { LOCAL_POSITION, OTHER_POSITION };
+            put64(&b, SYN_GAME_BASE + RVA_POSITIONS, AT_POSITIONS);
+            put_lookup(&b, AT_POSITIONS, POSITIONS_LOOKUP, AT_LOOKUPS + 0x3000u, 16, 0x27d4eb2fu, 0xffffffffu, 2, KEYS,
+                       POSITIONS);
+            put64(&b, AT_POSITIONS + POSITIONS_ENTRIES, AT_POSITION_ENTRIES);
+            for (int i = 0; i < 2; i++) {
+                float where[3] = { 10.0f * (float)i, 2.5f, -7.0f };
+                put(&b, syn_position(POSITIONS[i]), where, sizeof where);
+            }
+            put32(&b, syn_local_avatar() + AVATAR_SEED, s->scramble_seed);
+        }
         put64(&b, AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * LOCAL_PLAYER, s->peer);
         put64(&b, AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * OTHER_PLAYER, other_peer(s, 32));
         put64(&b, AT_SESSION + SESSION_PEER, s->peer);
@@ -529,10 +580,84 @@ void syn_default(SynScene* s)
 
 bool syn_relocate_table(uint32_t rva)
 {
-    uint8_t table[TABLE_ENTRIES * 8u];
-    if (!g_built || syn_read(SYN_GAME_BASE + RVA_TABLE, table, sizeof table) != 0) return false;
-    return syn_poke(SYN_GAME_BASE + rva, table, sizeof table) && syn_poke_u32(SYN_GAME_BASE + RVA_DISPLACEMENT, rva);
+    return syn_move_table((int32_t)rva);
 }
+
+/* HellForge's StratagemBlock and StratagemMove (HF stratagems.c:372-388, 427-437): the vanilla list copied into the
+ * block's first 150 slots (the other 48 zero, as VirtualAlloc gives them), then the instruction's disp32 pointed at it. */
+bool syn_move_table(int32_t displacement)
+{
+    uint8_t table[HF_SLOTS * 8u];
+    uintptr_t block = SYN_GAME_BASE + (uintptr_t)(int64_t)displacement;
+    memset(table, 0, sizeof table);
+    if (!g_built || syn_read(SYN_GAME_BASE + RVA_TABLE, table, TABLE_ENTRIES * 8u) != 0) return false;
+    if (!syn_poke(block, table, sizeof table) || !syn_poke_u32(SYN_GAME_BASE + RVA_DISPLACEMENT, (uint32_t)displacement))
+        return false;
+    g_block = block;
+    memset(g_mod_row, 0, sizeof g_mod_row);
+    memset(g_mod_tomb, 0, sizeof g_mod_tomb);
+    return true;
+}
+
+uintptr_t syn_table(void)
+{
+    uint32_t rva = 0;
+    if (!g_built || syn_read(SYN_GAME_BASE + RVA_DISPLACEMENT, &rva, sizeof rva) != 0) return 0;
+    return table_at(rva);
+}
+
+uintptr_t syn_mod_code(uint32_t kind)
+{
+    return SYN_LOADER_BASE + LOADER_MOD_CODES + (uintptr_t)(kind - SYN_MOD_FIRST) * LOADER_ARRAY;
+}
+
+uintptr_t syn_loader_spare(int slot)
+{
+    if (slot < 0 || slot >= LOADER_SPARE_COUNT) return 0;
+    return SYN_LOADER_BASE + LOADER_SPARES + (uintptr_t)slot * LOADER_ARRAY;
+}
+
+bool syn_set_code(uintptr_t definition, uintptr_t array, int n, const uint8_t* code)
+{
+    bool ok = g_built && n >= 0 && n <= SYN_CODE_MAX && syn_poke_u64(definition + DEF_CODE, array)
+        && syn_poke_u32(definition + DEF_COUNT, (uint32_t)n);
+    for (int i = 0; ok && code && i < n; i++) ok = syn_poke_u32(array + (uintptr_t)i * 4u, code[i]);
+    return ok;
+}
+
+/* HellForge's StratagemRow (HF stratagems.c:390-424): the row names the new type at +0, its code at +0x40 is the loader's
+ * array (home->code) and +0x48 its length; the row goes into the table's slot for the type (stratagems.c:504). */
+uintptr_t syn_add_mod_stratagem(uint32_t kind, int n, const uint8_t* code)
+{
+    uintptr_t row;
+    if (!g_built || g_block == 0 || kind < SYN_MOD_FIRST || kind > SYN_MOD_LAST || n < 0 || n > SYN_CODE_MAX
+        || (n > 0 && !code))
+        return 0;
+    row = g_block + HF_ROWS_AT + (uintptr_t)(kind - SYN_MOD_FIRST) * HF_ROW;
+    if (!syn_poke_u32(row, kind) || !syn_set_code(row, syn_mod_code(kind), n, code)
+        || !syn_poke_u64(g_block + (uintptr_t)kind * 8u, row))
+        return 0;
+    g_mod_row[kind - SYN_MOD_FIRST] = row;
+    g_mod_tomb[kind - SYN_MOD_FIRST] = false;
+    return row;
+}
+
+uintptr_t syn_stratagem_row(uint32_t type)
+{
+    if (!g_built || type < SYN_MOD_FIRST || type > SYN_MOD_LAST || g_mod_tomb[type - SYN_MOD_FIRST]) return 0;
+    return g_mod_row[type - SYN_MOD_FIRST];
+}
+
+bool syn_tombstone(uint32_t kind)
+{
+    if (!g_built || kind < SYN_MOD_FIRST || kind > SYN_MOD_LAST || g_mod_row[kind - SYN_MOD_FIRST] == 0) return false;
+    g_mod_tomb[kind - SYN_MOD_FIRST] = true;
+    return true;
+}
+
+uintptr_t syn_positions(void) { return AT_POSITIONS; }
+uintptr_t syn_position(uint32_t index) { return AT_POSITION_ENTRIES + (uintptr_t)index * POSITION_STRIDE + POSITION_AT; }
+uint32_t syn_local_position_index(void) { return LOCAL_POSITION; }
 
 uintptr_t syn_alternate_definition(uint32_t kind, int n, const uint8_t* code)
 {

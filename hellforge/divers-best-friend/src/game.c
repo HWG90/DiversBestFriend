@@ -1,18 +1,19 @@
 /* game: the read-only readers (see game.h), ported from R46's native.lua (hud, valid, snapshot) and input.lua (lookup,
- * context, code, decorate's payload and kinds). Portable C11: standard headers, memory.h, admission.h and the generated address
- * header only. Every number below is a DBF_RVA_*, DBF_OFF_* or DBF_VAL_* from that header, each with its R46 line, except
- * LOOKUP_PROBE_LIMIT, which is DBF's own (Plan 1's final review). */
+ * context, decorate's payload and kinds); the definition table and the codes are codes.c's. Portable C11: standard
+ * headers, memory.h, admission.h, codes.h and the generated address header only. Every number below is a DBF_RVA_*,
+ * DBF_OFF_* or DBF_VAL_* from that header, each with its R46 line, except LOOKUP_PROBE_LIMIT, which is DBF's own (Plan
+ * 1's final review). */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include "addresses_25480438.h"
 #include "admission.h"
+#include "codes.h"
 #include "game.h"
 #include "memory.h"
 
 _Static_assert(DBF_VAL_CODE_MAX <= DBF_CODE_CAPACITY, "DbfRow.code holds R46's longest code");
-_Static_assert(DBF_OFF_CODE_STRIDE == sizeof(uint32_t), "a code array is read whole as uint32_t directions");
 _Static_assert(sizeof(float) == sizeof(uint32_t), "a card's layout target is two 4-byte floats (R46 native.lua:65-70)");
 
 /* Not from R46 (which probed up to the whole capacity, 65536 reads for one lookup): Plan 1's final review capped the
@@ -20,9 +21,6 @@ _Static_assert(sizeof(float) == sizeof(uint32_t), "a card's layout target is two
 #define LOOKUP_PROBE_LIMIT 256u
 
 static uintptr_t g_base; /* game.dll; 0 before game_init */
-static uint32_t g_image_size;
-static bool g_table_ok; /* g_table_rva passed R46's rule and its entries were readable */
-static uint32_t g_table_rva;
 static bool g_have_identity; /* the local identity of the last read that found one */
 static uint64_t g_identity_peer;
 static uintptr_t g_identity_payload;
@@ -234,7 +232,7 @@ static bool read_local_player(GameView* v, const Local* local, GameLocal* out)
     return true;
 }
 
-/* --- payload, definitions and codes (R46 input.lua:141-179, 230-234; native.lua:47-55) ------------------------- */
+/* --- payload, definitions and codes (R46 input.lua:230-234; the table and codes are codes.c's) ------------------ */
 
 static bool read_entry_count(GameView* v, uintptr_t payload, uint32_t* count)
 {
@@ -243,72 +241,30 @@ static bool read_entry_count(GameView* v, uintptr_t payload, uint32_t* count)
     return true;
 }
 
-/* native.lua:51-55: the definition table is where the live displacement of [image + kind*8 + disp] says. Accepted: the
- * vanilla 0x37cb600, or an 8-aligned RVA in HellForge's reservation [image_size, image_size + 0x400000); and its entries
- * for kinds 1 to 149 must be readable. An accepted RVA is not checked again until the displacement changes. */
+/* The definition table, read again on every read (codes_table): its reason is the view's. */
 static bool read_table(GameView* v)
 {
-    uint8_t entries[DBF_VAL_VANILLA_KINDS * DBF_OFF_DEFINITION_STRIDE];
-    uint32_t rva;
-    if (!mem_u32(g_base + DBF_RVA_DEFINITION_DISPLACEMENT, &rva)) {
-        g_table_ok = false;
-        return fail(v, "definition table unreadable");
-    }
-    if (g_table_ok && rva == g_table_rva) return true;
-    g_table_ok = false;
-    if (rva != DBF_RVA_DEFINITION_TABLE_VANILLA
-        && (rva % DBF_VAL_DEFINITION_TABLE_ALIGN != 0 || rva < g_image_size
-            || (uint64_t)rva >= (uint64_t)g_image_size + DBF_VAL_DEFINITION_RELOCATION_SPAN))
-        return fail(v, "definition table unrecognised");
-    if (!mem_read(g_base + rva + DBF_OFF_DEFINITION_STRIDE, entries, sizeof entries))
-        return fail(v, "definition table unreadable");
-    g_table_ok = true;
-    g_table_rva = rva;
-    return true;
+    char why[DBF_REASON_SIZE];
+    uint32_t max_kind;
+    if (codes_table(&max_kind, why, sizeof why)) return true;
+    return fail(v, why);
 }
 
-/* input.lua:160-177 without the scramble remap: the kind's definition is a settings descriptor (4-aligned, inside the
- * settings block, naming the kind), its code array (4-aligned, 1 to 12 directions, inside the settings block) holds
- * directions 1 to 4. Any failure leaves the row without a code. */
-static void read_code(GameView* v, DbfRow* row)
+/* The row's code (codes_read, with the scramble remap when the code-entry context is given). A row without a kind (its
+ * entry is not in the payload) gets none and no reason; any other failure leaves the row without a code and gives the
+ * reason. Returns the kind whose code was read (the scramble may remap it), 0 for none. */
+static uint32_t read_code(GameView* v, DbfRow* row, const GameLocal* local)
 {
-    uintptr_t settings, info, data;
-    uint32_t kind = row->kind, named, n, d[DBF_VAL_CODE_MAX];
-    if (kind == 0 || kind >= DBF_VAL_KIND_LIMIT) return; /* no vanilla definition (input.lua:5) */
-    if (!mem_ptr(g_base + DBF_RVA_SETTINGS, &settings)) {
-        fail(v, "settings unreadable");
-        return;
+    DbfCode code;
+    char why[DBF_REASON_SIZE];
+    if (row->kind == 0) return 0;
+    if (!codes_read(row->kind, local, &code, why, sizeof why)) {
+        if (why[0] != '\0') fail(v, why);
+        return 0;
     }
-    if (!mem_ptr_aligned(g_base + g_table_rva + (uintptr_t)kind * DBF_OFF_DEFINITION_STRIDE, &info,
-                         DBF_VAL_DEFINITION_ALIGN)
-        || info < settings || info + DBF_OFF_DEFINITION_SIZE > settings + DBF_OFF_SETTINGS_SIZE || !mem_u32(info, &named)
-        || named != kind) {
-        fail(v, "invalid definition");
-        return;
-    }
-    if (!mem_u32(info + DBF_OFF_DEFINITION_CODE_COUNT_OFFSET, &n)
-        || !mem_ptr_aligned(info + DBF_OFF_DEFINITION_CODE_OFFSET, &data, DBF_VAL_CODE_ALIGN) || n < DBF_VAL_CODE_MIN
-        || n > DBF_VAL_CODE_MAX) {
-        fail(v, "invalid code array");
-        return;
-    }
-    /* R46 took an array outside the block only when the Lua HD2Runtime mod owned it (input.lua:167-168). */
-    if (data < settings || data + (uintptr_t)n * DBF_OFF_CODE_STRIDE > settings + DBF_OFF_SETTINGS_SIZE) {
-        fail(v, "code array outside the settings block");
-        return;
-    }
-    if (!mem_read(data, d, (size_t)n * DBF_OFF_CODE_STRIDE)) {
-        fail(v, "code array unreadable");
-        return;
-    }
-    for (uint32_t i = 0; i < n; i++) {
-        if (d[i] < DBF_VAL_DIRECTION_MIN || d[i] > DBF_VAL_DIRECTION_MAX) {
-            fail(v, "invalid direction");
-            return;
-        }
-    }
-    for (uint32_t i = 0; i < n; i++) row->code[i] = (uint8_t)d[i];
-    row->code_len = (uint8_t)n;
+    memcpy(row->code, code.dir, code.len);
+    row->code_len = code.len;
+    return code.kind_used;
 }
 
 /* --- the list cards (R46 native.lua:85-100, 264-278; input.lua:230-237) ---------------------------------------- */
@@ -319,10 +275,11 @@ static bool position_ok(float f)
     return f >= -(float)DBF_VAL_CARD_POSITION_MAX && f <= (float)DBF_VAL_CARD_POSITION_MAX; /* false for NaN */
 }
 
-/* Codes are read only when `with_codes`: the definition table was accepted and the code-entry chain held. */
+/* Codes are read only when `local` is not NULL: the definition table was accepted and the code-entry chain held. */
 static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have_kinds, uint32_t entries,
-                       bool with_codes)
+                       const GameLocal* local)
 {
+    uint32_t used[DBF_VAL_CARD_COUNT]; /* per row: the kind whose code it got, 0 for none */
     uintptr_t panel = root + DBF_OFF_HUD_PANEL_OFFSET, list = panel + DBF_OFF_LIST_OFFSET;
     const struct {
         uintptr_t node, parent;
@@ -383,8 +340,16 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
             row->kind = 0;
             fail(v, "stratagem entries unreadable");
         }
-        if (with_codes) read_code(v, row);
+        used[v->row_count] = local ? read_code(v, row, local) : 0;
         v->row_count++;
+    }
+    /* Two kinds on one HellForge array (codes.h, rule 3): the kind read first got its code before the second showed the
+     * share, so it is dropped here, and both rows go without. */
+    for (int i = 0; i < v->row_count; i++) {
+        if (used[i] == 0 || !codes_shared(used[i])) continue;
+        memset(v->rows[i].code, 0, sizeof v->rows[i].code);
+        v->rows[i].code_len = 0;
+        fail(v, "shared code array");
     }
 }
 
@@ -392,12 +357,10 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
 
 void game_init(uintptr_t game_dll_base, uint32_t image_size)
 {
-    /* Both or neither (Plan 1's final review): with a size of 0 the moved-table rule would accept any 8-aligned RVA
-     * below 0x400000. */
+    /* Both or neither (Plan 1's final review): codes' moved-table rule needs the image's size to tell inside from
+     * outside. */
     g_base = image_size != 0 ? game_dll_base : 0;
-    g_image_size = g_base != 0 ? image_size : 0;
-    g_table_ok = false;
-    g_table_rva = 0;
+    codes_set_image(g_base, g_base != 0 ? image_size : 0);
     g_have_identity = false;
     g_identity_peer = 0;
     g_identity_payload = 0;
@@ -454,10 +417,11 @@ void game_read(GameView* out)
     if (admitted(out, FEAT_STRATAGEMS)) {
         have_kinds = read_entry_count(out, local.payload, &entries);
         have_table = read_table(out);
-        if (have_table) out->table_rva = g_table_rva;
+        if (have_table) out->table_rva = (uint32_t)(codes_table_at() - g_base); /* the disp32: negative below the image */
     }
 
     /* The cards, open menu or closed; not when the menu-open byte is not a flag (R46 drops the snapshot then). */
     if (!open_ok || !admitted(out, FEAT_HUD_READ)) return;
-    read_cards(out, root, local.payload, have_kinds, entries, have_table && out->local_ok);
+    read_cards(out, root, local.payload, have_kinds, entries, have_table && out->local_ok ? &out->local : NULL);
+    out->scramble_known = have_table && codes_scramble_asked();
 }

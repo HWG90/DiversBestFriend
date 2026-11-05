@@ -25,8 +25,9 @@
  * Each part is read only while admission admits its feature (adm_feature() == ADMIT_OK):
  *   FEAT_STATE       the game state, the HUD ready byte, the menu-open byte, the display path and the code-entry chain;
  *                    without it nothing is read
- *   FEAT_STRATAGEMS  the payload's kinds, the definition table and the codes
+ *   FEAT_STRATAGEMS  the payload's kinds, the definition table and the codes (codes.h)
  *   FEAT_HUD_READ    the list cards
+ *   FEAT_SCRAMBLE    the scramble remap of the codes (codes.h); without it the codes are the definitions' own
  * A part that is not admitted or not readable is left empty, and `reason` says why.
  *
  * reason: the first reason met in read order (state, HUD, local payload, code-entry chain, payload entries, definitions,
@@ -35,7 +36,7 @@
  * "local mission payload unavailable", "local payload changed", "no local player", "lookup probe limit",
  * "local peer mismatch", "UI unreadable", "definition table unrecognised",
  * "HUD hierarchy not recognized: list parent mismatch", "card 3 parent mismatch", "card 3 layout unavailable",
- * "invalid definition".
+ * "invalid definition", "shared code array", and the other reasons of codes.h.
  *
  * Where it differs from R46, on purpose:
  * - Rows are read whether the menu is open or closed (R46's include_closed), for the cooldown display.
@@ -46,24 +47,25 @@
  *   display_codes skipped it too, by passing allow_closed), and it skips R46's whole-HUD check (input.lua:99): here the
  *   HUD hierarchy is checked by the card reads, so one bad card costs that card, not every code.
  * - A lookup gives up after 256 probes (see Lookups above).
- * - Codes are read only for vanilla kinds (1 to 149), and only from code arrays inside the settings block: R46 accepted
- *   an array elsewhere only when the Lua HD2Runtime mod owned it, which has no counterpart here. Kinds from HellForge
- *   mods (150 and up) are listed without a code and without a reason.
- * - Not ported (drawing and entry, later plans): HUD visibility bits, geometry and card sizes, the scramble query's
- *   position read.
+ * - The codes are codes.h's: vanilla kinds and HellForge mod stratagems (150 to 197) through the definition table,
+ *   vanilla or HellForge's moved copy, with code arrays in the settings block or in HellForge's loader image. R46 knew
+ *   neither HellForge nor its table and accepted an array outside the settings block only when the Lua HD2Runtime mod
+ *   owned it, which has no counterpart here. Two rows whose kinds share a HellForge array both go without a code.
+ * - Not ported (drawing and entry, later plans): HUD visibility bits, geometry and card sizes.
  *
  * Scramble: under a scramble effect R46 remapped the kind before reading its code (input.lua:150-157) after asking the
- * game through a native call (the scramble effect query, 0xa10820). This plan calls no game code, so codes are the
- * definition's own, never remapped, and scramble_known is always false: while a scramble effect is on, a code may not be
- * the one the game expects. Plan 2 adds the remap.
+ * game (the scramble effect query, 0xa10820). codes_read does the same through native.h for each row, with the
+ * code-entry context; scramble_known says that the query ran for this read's codes. When it did not (SCRAMBLE not
+ * admitted, native without the query, the game.dll base or the effects pointer, or no code-entry chain), the codes are
+ * the definitions' own: while a scramble effect is on, such a code may not be the one the game expects.
  *
- * Kept across reads: the image bounds (game_init), the definition table's RVA once accepted (accepted again whenever the
- * displacement changes), and the local identity (the display path's session peer and payload address) of the last read
- * that found one, so the read on which it changes says "local payload changed", has local_ok false and serves no rows;
- * the next read takes the new identity. Rows are never kept.
+ * Kept across reads: the image bounds (game_init, which hands them to codes_set_image) and the local identity (the
+ * display path's session peer and payload address) of the last read that found one, so the read on which it changes
+ * says "local payload changed", has local_ok false and serves no rows; the next read takes the new identity. The
+ * definition table is checked again on every read (codes_table). Rows are never kept.
  *
- * Portable C11: standard headers, memory.h, admission.h and the generated header only. Not thread-safe: only the game
- * thread calls it. */
+ * Portable C11: standard headers, memory.h, admission.h and the generated header only (game.c adds codes.h). Not
+ * thread-safe: only the game thread calls it. */
 #ifndef DBF_GAME_H
 #define DBF_GAME_H
 
@@ -82,8 +84,8 @@ typedef struct DbfRow {
                                                  (+0x3740, R46 native.lua:274-276); R46 orders rows by it */
     uint32_t kind;                            /* the stratagem type (149 vanilla on 25480438; 150 and up from
                                                  HellForge mods); 0 when the card's entry is not in the payload */
-    uint8_t code[DBF_CODE_CAPACITY];          /* directions 1 up, 2 right, 3 down, 4 left, as the definition gives them
-                                                 (no scramble remap in this plan: see scramble_known) */
+    uint8_t code[DBF_CODE_CAPACITY];          /* directions 1 up, 2 right, 3 down, 4 left: the definition's, or the
+                                                 remapped kind's under a scramble effect (see scramble_known) */
     uint8_t code_len;                         /* 0 when there is no code */
     uint32_t entry;                           /* the payload entry the card shows (+0x3748) */
     uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];   /* the card's timer block (+0x3718), decoded by Plan 3 */
@@ -102,21 +104,25 @@ typedef struct GameView {
     bool build_ok, in_gameplay, hud_ready, menu_open;
     bool local_ok;                            /* the code-entry chain held (codes are read only then); rows do not
                                                  need it */
-    bool scramble_known;                      /* always false in this plan: codes are not scramble-remapped */
-    uint32_t table_rva;                       /* where the definition table is: 0x37cb600 or HellForge's moved copy;
-                                                 0 when it was not read or not accepted */
+    bool scramble_known;                      /* the game's scramble query ran for this read's codes: they follow a
+                                                 scramble effect (codes.h) */
+    uint32_t table_rva;                       /* the definition table's disp32: 0x37cb600, or HellForge's moved copy at
+                                                 game.dll + (int32_t)table_rva (negative: below the image); 0 when it
+                                                 was not read or not accepted */
     int row_count;                            /* active cards, in list order; rows past it are zero */
     DbfRow rows[DBF_VAL_CARD_COUNT];
     GameLocal local;                          /* the code-entry context; zero unless local_ok */
     char reason[DBF_REASON_SIZE];             /* why a part is missing; "" when nothing is */
 } GameView;
 
-/* Sets where game.dll is and its image size (SizeOfImage), and forgets everything kept from earlier reads. A base of 0
- * or an image size of 0 leaves the reader uninitialised (game_read says "not initialised"). */
+/* Sets where game.dll is and its image size (SizeOfImage), for codes too (codes_set_image), and forgets everything kept
+ * from earlier reads. A base of 0 or an image size of 0 leaves the reader uninitialised (game_read says "not
+ * initialised"). */
 void game_init(uintptr_t game_dll_base, uint32_t image_size);
 
-/* Never fails: fills what it can and says why in reason. Uses the memory port of mem_init and the admission of
- * adm_init. NULL is ignored. */
+/* Never fails: fills what it can and says why in reason. Uses the memory port of mem_init, the admission of adm_init, and
+ * codes (codes_init's port, codes_table once per read, codes_read per row) and native (the scramble query). NULL is
+ * ignored. */
 void game_read(GameView* out);
 
 /* R46's lookup (input.lua:74-94), for other units (codes): the open-addressing table at owner + offset maps `key` to an
