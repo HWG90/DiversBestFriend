@@ -11,8 +11,10 @@
  * (whichever table is linked: tests/test_witnesses.h under DBF_TEST_WITNESSES, else the generated one), the globals, the
  * game state, the HUD root with its ready byte, the stratagem panel with the menu-open byte and the parent links of the
  * HUD container, fade, content, list and all 16 cards, the players / registry / avatars / units chain of the local
- * player, the session peer, the mission entries with the local payload, the settings block with a definition and a code
- * for every vanilla kind, and the definition table with the displacement that points at it.
+ * player (its avatar's menu-active word with bit 9 set), the session peer, the mission entries with the local payload,
+ * the UI (unobstructed) and the controls, the settings block with a definition and a code for every vanilla kind, and
+ * the definition table with the displacement that points at it. Each active card's timer block holds its layout target
+ * (+0x3740, inside the block), whose second float is syn_list_y(card).
  *
  * The ports: syn_mem_port() reads the image and refuses every write (counting it, so a test can prove the readers wrote
  * nothing); syn_adm_port() serves the two modules, reads code from the same image, and says HellForge may rewrite the
@@ -102,9 +104,18 @@ uintptr_t syn_payload(int mission_entry);
 uintptr_t syn_settings(void);
 uintptr_t syn_definition(uint32_t kind); /* the definition (settings descriptor) of a vanilla kind */
 uintptr_t syn_code_array(uint32_t kind);
+uintptr_t syn_ui(void);       /* the UI object: its obstruction word (+0x429c+20) is 0 */
+uintptr_t syn_controls(void); /* the controls object */
+/* The local player's code-entry context as R46's context() returns it (input.lua:114-137). */
+uintptr_t syn_local_component(void);
+uintptr_t syn_local_actions(void);
+uintptr_t syn_local_input_owner(void);
+uint32_t syn_local_key(void);
+uint32_t syn_local_index(void); /* its avatar index */
+float syn_list_y(int card);     /* the list position syn_build gives card `card` (the second float at +0x3740) */
 
 /* The timer block syn_build gives list card `card` showing payload entry `entry` of kind `kind` (0 when the entry is not
- * in the payload). The card's entry field (+0x3748) lies inside the block, at +0x30. */
+ * in the payload). The card's layout target (+0x3740) and entry field (+0x3748) lie inside the block, at +0x28 and +0x30. */
 void syn_timer_bytes(int card, uint32_t entry, uint32_t kind, uint8_t out[DBF_OFF_CARD_TIMER_SIZE]);
 
 /* HellForge's move: copies the table's 150 entries to `rva` and points the displacement at it. */
@@ -117,5 +128,10 @@ uintptr_t syn_alternate_definition(uint32_t kind, int n, const uint8_t* code);
 
 /* A new session for the same player: the session, the player manager and the local mission entry all get `peer`. */
 bool syn_change_peer(uint64_t peer);
+
+/* Lays the registry's lookup out again with `capacity` slots (a power of two up to 1024), every slot holding some other
+ * key except the local player's network index at probe `position` (from its hash; -1: not there) and the empty key at
+ * probe `empty_at` (-1: none). False when the arguments are out of range or a write fails. */
+bool syn_registry_probe(uint32_t capacity, int position, int empty_at);
 
 #endif

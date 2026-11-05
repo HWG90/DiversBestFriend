@@ -4,7 +4,8 @@
  * header's extern declarations and builds its synthetic game image from it.
  *
  * Shape: two features share alpha (STATE, HUD_READ), HUD_READ has two witnesses (alpha, charlie), charlie spans two
- * 64-byte read chunks, and nothing maps LIST_OPACITY, ENTRY, SCRAMBLE, CAMERA, LATCH, DOCK, WEAPON or TERMINAL. */
+ * 64-byte read chunks, and nothing maps LIST_OPACITY, ENTRY, SCRAMBLE, CAMERA, LATCH, DOCK, WEAPON or TERMINAL. A test
+ * that also defines DBF_TEST_LONG_WITNESS gets a fifth witness, echo_…, whose name is 200 bytes long. */
 #ifndef DBF_TEST_WITNESSES_H
 #define DBF_TEST_WITNESSES_H
 
@@ -24,12 +25,24 @@ static const uint8_t tw_charlie[100] = {
     0xd2, 0xd7, 0xf8, 0x89,
 };
 static const uint8_t tw_delta[4] = { 0x41, 0x0f, 0xb6, 0x8e };
+#ifdef DBF_TEST_LONG_WITNESS
+static const uint8_t tw_echo[4] = { 0x48, 0x83, 0xec, 0x28 };
+#endif
 
 const DbfWitness dbf_witnesses[] = {
     { "alpha", 0x100u, 16, (1u << DBF_FEATURE_STATE) | (1u << DBF_FEATURE_HUD_READ), tw_alpha },
     { "bravo", 0x140u, 8, (1u << DBF_FEATURE_STRATAGEMS), tw_bravo },
     { "charlie", 0x200u, 100, (1u << DBF_FEATURE_HUD_READ) | (1u << DBF_FEATURE_POINTING), tw_charlie },
     { "delta", 0x300u, 4, (1u << DBF_FEATURE_SOUND), tw_delta },
+#ifdef DBF_TEST_LONG_WITNESS
+    /* A 200-byte name, for test_game's reason truncation: it gates STRATAGEMS after bravo, so bravo's reason still
+     * comes first when both differ. */
+    { "echo_a_witness_name_far_longer_than_any_reason_buffer_a_witn"
+      "ess_name_far_longer_than_any_reason_buffer_a_witness_name_fa"
+      "r_longer_than_any_reason_buffer_a_witness_name_far_longer_th"
+      "an_any_reason_buffer",
+      0x380u, 4, (1u << DBF_FEATURE_STRATAGEMS), tw_echo },
+#endif
 };
 const int dbf_witness_count = (int)(sizeof dbf_witnesses / sizeof dbf_witnesses[0]);
 

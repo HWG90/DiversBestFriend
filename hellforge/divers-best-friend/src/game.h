@@ -1,10 +1,11 @@
 /* game: what DBF reads from the game, read-only, ported from R46 (the Lua DBF for build 25480438).
  *
  * game_read fills a GameView each tick: whether a mission is being played, whether the gameplay HUD is up, whether the
- * stratagem menu is open, whether the local player could be followed to its input owner, and the HUD's stratagem list:
- * its active cards in list order, each with the payload entry it shows, that entry's kind and code, and the card's timer
- * block. It never writes game memory and never calls game code: every read goes through memory.h (mem_read, mem_u8,
- * mem_u32, mem_u64, mem_ptr, mem_ptr_aligned) and every address, offset and constant comes from addresses_25480438.h.
+ * stratagem menu is open, whether the local player could be followed to its input owner (and, when it could, that
+ * player's code-entry context: GameView.local), and the HUD's stratagem list: its active cards in list order, each with
+ * its address and list position, the payload entry it shows, that entry's kind and code, and the card's timer block. It
+ * never writes game memory and never calls game code: every read goes through memory.h (mem_read, mem_u8, mem_u32,
+ * mem_u64, mem_ptr, mem_ptr_aligned) and every address, offset and constant comes from addresses_25480438.h.
  *
  * Two paths lead to the local player, as in R46:
  *   the display path (input.lua:218-234, R46's decorate, what its list highlight and cooldown dock used): the session's
@@ -12,8 +13,14 @@
  *     finds no payload, row_count is 0.
  *   the code-entry chain (input.lua:102-126, R46's context, what its display_codes and code entry used): player manager,
  *     network index, registry key, avatar (unit and input owner agree), player context, and that player's peer, which
- *     must be the session's. local_ok says it held; the codes need it. When it fails (while dead, or dropping in, the
- *     list can still be up), the rows and kinds are still served, without codes, and reason names the failing step.
+ *     must be the session's (and not 0). local_ok says it held; the codes and GameView.local need it. When it fails
+ *     (while dead, or dropping in, the list can still be up), the rows and kinds are still served, without codes, local
+ *     is zero, and reason names the failing step. The controls and the UI word (read by R46's release paths, not by its
+ *     context) do not belong to the chain: when they cannot be read, local.controls is 0, local.unobstructed false,
+ *     local_ok stays true, and reason says "controls unreadable" or "UI unreadable".
+ *
+ * Lookups (the registry's, the avatars', the players') stop after LOOKUP_PROBE_LIMIT (256) probes, a cap Plan 1's final
+ * review set (R46 walked the whole table): "lookup probe limit". game_lookup is the same lookup for other units.
  *
  * Each part is read only while admission admits its feature (adm_feature() == ADMIT_OK):
  *   FEAT_STATE       the game state, the HUD ready byte, the menu-open byte, the display path and the code-entry chain;
@@ -25,22 +32,25 @@
  * reason: the first reason met in read order (state, HUD, local payload, code-entry chain, payload entries, definitions,
  * cards), cut to fit; "" when everything was read. Examples: "<feature name>: <admission reason>"
  * ("Stratagems: witness bravo differs"), "not initialised", "not in gameplay", "HUD not ready", "invalid menu-open flag",
- * "local mission payload unavailable", "local payload changed", "no local player", "local peer mismatch",
- * "definition table unrecognised",
- * "HUD hierarchy not recognized: list parent mismatch", "card 3 parent mismatch", "invalid definition".
+ * "local mission payload unavailable", "local payload changed", "no local player", "lookup probe limit",
+ * "local peer mismatch", "UI unreadable", "definition table unrecognised",
+ * "HUD hierarchy not recognized: list parent mismatch", "card 3 parent mismatch", "card 3 layout unavailable",
+ * "invalid definition".
  *
  * Where it differs from R46, on purpose:
  * - Rows are read whether the menu is open or closed (R46's include_closed), for the cooldown display.
- * - A card whose parent link or state byte is wrong is skipped (and named in reason); R46 dropped the whole list. A wrong
- *   link above the cards (panel, HUD container, fade, content, list) still drops the whole list.
- * - The code-entry chain is followed without its menu-active bit (input.lua:118; R46's display_codes skipped it too, by
- *   passing allow_closed) and without R46's whole-HUD check (input.lua:99): here the HUD hierarchy is checked by the
- *   card reads, so one bad card costs that card, not every code.
+ * - A card whose parent link or state byte is wrong, or whose layout target is not two usable floats (R46's pair(),
+ *   native.lua:71: a NaN or a magnitude over 100000), is skipped (and named in reason); R46 dropped the whole list. A
+ *   wrong link above the cards (panel, HUD container, fade, content, list) still drops the whole list.
+ * - The code-entry chain reads the menu-active bit (input.lua:118) into local.menu_active but does not require it (R46's
+ *   display_codes skipped it too, by passing allow_closed), and it skips R46's whole-HUD check (input.lua:99): here the
+ *   HUD hierarchy is checked by the card reads, so one bad card costs that card, not every code.
+ * - A lookup gives up after 256 probes (see Lookups above).
  * - Codes are read only for vanilla kinds (1 to 149), and only from code arrays inside the settings block: R46 accepted
  *   an array elsewhere only when the Lua HD2Runtime mod owned it, which has no counterpart here. Kinds from HellForge
  *   mods (150 and up) are listed without a code and without a reason.
- * - Not ported (drawing and entry, later plans): HUD visibility bits, geometry and card sizes, the menu-active bit, the
- *   scramble query's position read.
+ * - Not ported (drawing and entry, later plans): HUD visibility bits, geometry and card sizes, the scramble query's
+ *   position read.
  *
  * Scramble: under a scramble effect R46 remapped the kind before reading its code (input.lua:150-157) after asking the
  * game through a native call (the scramble effect query, 0xa10820). This plan calls no game code, so codes are the
@@ -67,6 +77,9 @@
 #define DBF_REASON_SIZE 96
 
 typedef struct DbfRow {
+    uintptr_t card;                           /* the card's address in the HUD list */
+    float list_y;                             /* the card's list position: the second float of its layout target
+                                                 (+0x3740, R46 native.lua:274-276); R46 orders rows by it */
     uint32_t kind;                            /* the stratagem type (149 vanilla on 25480438; 150 and up from
                                                  HellForge mods); 0 when the card's entry is not in the payload */
     uint8_t code[DBF_CODE_CAPACITY];          /* directions 1 up, 2 right, 3 down, 4 left, as the definition gives them
@@ -77,6 +90,14 @@ typedef struct DbfRow {
     bool active;                              /* true for every row served (rows are the active cards) */
 } DbfRow;
 
+/* R46's code-entry context (input.lua:114-137, 294-295, 313), filled when GameView.local_ok; all zero otherwise. */
+typedef struct GameLocal {
+    uintptr_t manager, avatar, component, actions, input_owner, payload, controls;
+    uint32_t key, index;
+    bool menu_active;   /* bit 9 of u32 avatar+0xfd8 (R46 input.lua:118-119) */
+    bool unobstructed;  /* u32 [UI]+0x429c+20 == 0 (R46 input.lua:294-295) */
+} GameLocal;
+
 typedef struct GameView {
     bool build_ok, in_gameplay, hud_ready, menu_open;
     bool local_ok;                            /* the code-entry chain held (codes are read only then); rows do not
@@ -86,15 +107,22 @@ typedef struct GameView {
                                                  0 when it was not read or not accepted */
     int row_count;                            /* active cards, in list order; rows past it are zero */
     DbfRow rows[DBF_VAL_CARD_COUNT];
+    GameLocal local;                          /* the code-entry context; zero unless local_ok */
     char reason[DBF_REASON_SIZE];             /* why a part is missing; "" when nothing is */
 } GameView;
 
 /* Sets where game.dll is and its image size (SizeOfImage), and forgets everything kept from earlier reads. A base of 0
- * leaves the reader uninitialised. */
+ * or an image size of 0 leaves the reader uninitialised (game_read says "not initialised"). */
 void game_init(uintptr_t game_dll_base, uint32_t image_size);
 
 /* Never fails: fills what it can and says why in reason. Uses the memory port of mem_init and the admission of
  * adm_init. NULL is ignored. */
 void game_read(GameView* out);
+
+/* R46's lookup (input.lua:74-94), for other units (codes): the open-addressing table at owner + offset maps `key` to an
+ * index, which must be below `limit`. True with *index set; false (no reason, *index left alone) when the table cannot
+ * be read or is not one, the key is not in it, the index is out of bounds, or LOOKUP_PROBE_LIMIT (256) probes found
+ * neither the key nor an empty slot. Reads through memory.h only; it checks no admission and needs no game_init. */
+bool game_lookup(uintptr_t owner, uint32_t offset, uint32_t key, uint32_t limit, uint32_t* index);
 
 #endif

@@ -37,6 +37,7 @@
 #define DBF_OFF_CARD_STRIDE 0x3760u /* R46 native.lua:98, native.lua:266 */
 #define DBF_OFF_CARD_ACTIVE_OFFSET 0x36f0u /* R46 native.lua:267 */
 #define DBF_OFF_CARD_ENTRY_OFFSET 0x3748u /* R46 native.lua:276 */
+#define DBF_OFF_CARD_TARGET_OFFSET 0x3740u /* R46 native.lua:60 */
 #define DBF_OFF_CARD_TIMER_OFFSET 0x3718u /* R46 input.lua:25 */
 #define DBF_OFF_CARD_TIMER_SIZE 0x44u /* R46 input.lua:25 */
 #define DBF_RVA_PLAYERS 0x3326468u /* R46 input.lua:102 */
@@ -48,6 +49,7 @@
 #define DBF_OFF_AVATAR_STRIDE 0x1238u /* R46 input.lua:114 */
 #define DBF_OFF_ACTIONS_STRIDE 0xa7aecu /* R46 input.lua:137 */
 #define DBF_OFF_ACTIONS_OFFSET 0x4118u /* R46 input.lua:137 */
+#define DBF_OFF_INPUT_OWNER_OFFSET 0x150u /* R46 input.lua:137 */
 #define DBF_RVA_SESSION 0x347cef0u /* R46 input.lua:125, input.lua:218 */
 #define DBF_OFF_SESSION_PEER_OFFSET 0xb398u /* R46 input.lua:126, input.lua:218 */
 #define DBF_RVA_MISSION 0x347ce50u /* R46 input.lua:127, input.lua:220 */
@@ -59,6 +61,8 @@
 #define DBF_RVA_DEFINITION_TABLE_VANILLA 0x37cb600u /* R46 native.lua:52 */
 #define DBF_RVA_UI 0x347ce28u /* R46 input.lua:294 */
 #define DBF_RVA_CONTROLS 0x347cf18u /* R46 input.lua:313 */
+#define DBF_OFF_UI_OBSTRUCTION_OFFSET 0x429cu /* R46 input.lua:295 */
+#define DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET 0x14u /* R46 input.lua:295 */
 #define DBF_RVA_CAMERA_OWNER 0x346d560u /* R46 camera.lua:7, camera.lua:13 */
 #define DBF_RVA_AUDIO 0x3326318u /* R46 native.lua:328 */
 #define DBF_OFF_STAMINA_OFFSET 0x253ab8u /* 0x24e340+0x5778; R46 native.lua:244 */
@@ -81,6 +85,7 @@
 #define DBF_OFF_UNIT_KEY_OFFSET 0x8u /* R46 input.lua:113 */
 #define DBF_OFF_AVATAR_COMPONENT_OFFSET 0x8d0u /* R46 input.lua:115 */
 #define DBF_OFF_COMPONENT_OWNER_OFFSET 0x28u /* R46 input.lua:116 */
+#define DBF_OFF_AVATAR_MENU_OFFSET 0xfd8u /* R46 input.lua:118 */
 #define DBF_OFF_AVATAR_CONTEXT_OFFSET 0x110cu /* R46 input.lua:120 */
 #define DBF_OFF_PLAYERS_LOOKUP_OFFSET 0xd0u /* R46 input.lua:123 */
 #define DBF_OFF_PLAYERS_PEER_OFFSET 0x2c8u /* R46 input.lua:124 */
@@ -103,12 +108,15 @@
 #define DBF_VAL_CARD_COUNT 16u /* R46 native.lua:193 */
 #define DBF_VAL_CARD_ACTIVE 1u /* R46 native.lua:268, native.lua:269 */
 #define DBF_VAL_CARD_INACTIVE 0u /* R46 native.lua:268 */
+#define DBF_VAL_CARD_POSITION_MAX 100000u /* R46 native.lua:71 */
 #define DBF_VAL_LOOKUP_MAX_CAPACITY 65536u /* R46 input.lua:76 */
 #define DBF_VAL_LOOKUP_ALIGN 4u /* R46 input.lua:83 */
 #define DBF_VAL_NETWORK_LIMIT 0x7fffu /* R46 input.lua:105 */
 #define DBF_VAL_REGISTRY_INDEX_LIMIT 65536u /* R46 input.lua:107 */
 #define DBF_VAL_AVATAR_MAX 8u /* R46 input.lua:110 */
 #define DBF_VAL_PLAYER_INDEX_LIMIT 32u /* R46 input.lua:123 */
+#define DBF_VAL_MENU_ACTIVE_MASK 512u /* R46 input.lua:118 */
+#define DBF_VAL_UI_UNOBSTRUCTED 0u /* R46 input.lua:295 */
 #define DBF_VAL_MISSION_PEER_MAX 32u /* R46 input.lua:129 */
 #define DBF_VAL_PAYLOAD_ENTRY_MAX 32u /* R46 input.lua:230 */
 #define DBF_VAL_KIND_LIMIT 150u /* R46 input.lua:5 */

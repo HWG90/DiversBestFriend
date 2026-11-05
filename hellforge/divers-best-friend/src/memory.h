@@ -8,7 +8,14 @@
  * Not thread-safe by design: only the game thread calls it.
  *
  * The journal is a fixed array (MEM_JOURNAL_ENTRIES entries of up to MEM_SWAP_MAX bytes) and never allocates. Each
- * entry keeps the address, the size, the owner, the original bytes and the value the mod wrote. */
+ * entry keeps the address, the size, the owner, the original bytes and the bytes the mod left there. An owner has at
+ * most one entry per address: swapping the same address and size again re-asserts that entry (see mem_swap).
+ *
+ * When owners' changes overlap (one owner swaps bytes another owner already changed, e.g. LIST then CAMERA on one
+ * address), restore newer owners first: each entry's original is the bytes the owner before it left, so only
+ * newest-first gives the game's original back. Restoring the older owner first leaves the newer owner's bytes alone
+ * (they are not what the older owner wrote), and the newer owner's restore then writes back the older owner's value.
+ * mem_restore_all always goes newest first. */
 #ifndef DBF_MEMORY_H
 #define DBF_MEMORY_H
 
@@ -28,10 +35,11 @@ typedef struct MemPort {
 typedef enum { MEM_OWNER_LIST, MEM_OWNER_LATCH, MEM_OWNER_CAMERA, MEM_OWNER_ENTRY, MEM_OWNER_TERMINAL, MEM_OWNER_COUNT } MemOwner;
 
 typedef enum {
-    MEM_SWAPPED,   /* the bytes held `expect` and now hold `value`; the change is journaled */
+    MEM_SWAPPED,   /* the bytes held `expect` (on a re-assert: the entry's original) and now hold `value`; journaled */
     MEM_ALREADY,   /* the bytes already hold `value`; nothing was written or journaled */
     MEM_DIFFERENT, /* the bytes hold neither; nothing was written or journaled */
-    MEM_FAILED     /* the read or the write failed, the arguments were bad, or the journal is full; nothing is journaled */
+    MEM_FAILED     /* the arguments were bad, the read failed, the journal is full, or the write failed (see mem_swap
+                      for the one case that still journals) */
 } MemSwap;
 
 /* Starts a session: copies the port (NULL leaves no port, so every call fails) and empties the journal. Entries still in
@@ -58,13 +66,25 @@ bool mem_ptr_aligned(uintptr_t a, uintptr_t* v, uintptr_t alignment);
 
 /* Replaces `size` bytes (1 to MEM_SWAP_MAX) at `address` with `value`, only when they equal `expect`, and journals the
  * change under `owner`. A fresh read decides the result: MEM_ALREADY when the bytes already equal `value` (checked
- * first), MEM_DIFFERENT when they do not equal `expect`. A write that fails is MEM_FAILED, and any bytes it did change
- * are put back. A full journal is MEM_FAILED, and then nothing is written. */
+ * first), MEM_DIFFERENT when they do not equal `expect`. A full journal is MEM_FAILED, and then nothing is written.
+ *
+ * Re-assert: when `owner` already has an entry for `address` and the same `size`, no entry is added (the latch calls
+ * this every frame to keep its value in place). MEM_ALREADY when the bytes equal `value`; otherwise, only when they
+ * equal that entry's original (the game wrote it back), `value` is written, becomes what the entry holds, and the result
+ * is MEM_SWAPPED; anything else is MEM_DIFFERENT. `expect` is not consulted then, and a full journal does not matter.
+ * An entry of `owner` at `address` with another size makes the call MEM_FAILED without a write.
+ *
+ * A write that fails is MEM_FAILED. When it may have changed bytes (they read back different, or cannot be read), the
+ * bytes from before the swap are written back. When that rollback fails too (and the bytes do not read back as they
+ * were), the change is journaled under `owner` anyway (a re-assert updates its entry), as {original = the bytes before
+ * the swap, written = the bytes read back after the failed rollback, or `value` when they cannot be read}, so that a
+ * later mem_restore puts the original back while the bytes still hold that. */
 MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_t size, MemOwner owner);
 
-/* Puts back every change of `owner`, newest first. An original is written back only while the bytes still hold the value
- * the mod wrote; otherwise they are left alone. Returns how many entries it could not put back (the read failed, the
- * write failed, or the bytes had changed). All of the owner's entries leave the journal either way. */
+/* Puts back every change of `owner`, newest first. An original is written back only while the bytes still hold what the
+ * entry says the mod left there; otherwise they are left alone. Returns how many entries it could not put back (the read
+ * failed, the write failed, or the bytes had changed). All of the owner's entries leave the journal either way. Owners
+ * whose changes overlap must be restored newer owners first (see the top of this header). */
 int mem_restore(MemOwner owner);
 
 /* The same for every owner, in one newest-first pass over the whole journal. */

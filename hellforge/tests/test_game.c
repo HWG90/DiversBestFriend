@@ -1,9 +1,10 @@
-/* flags: -DDBF_TEST_WITNESSES */
+/* flags: -DDBF_TEST_WITNESSES -DDBF_TEST_LONG_WITNESS */
 /* Tests for src/game.c, the read-only readers, against the synthetic 25480438 image of tests/synthetic.c. Admission runs
  * for real over that image with the small witness table of tests/test_witnesses.h (alpha gates STATE and HUD_READ,
  * bravo STRATAGEMS, charlie HUD_READ): a test refuses a feature by changing a byte of its witness and letting the 30 s
- * grace run out. game.c keeps state in statics, so every test starts with start(), which builds the scene and calls
- * mem_init, adm_init and game_init again; test_before_init must run first. */
+ * grace run out (DBF_TEST_LONG_WITNESS adds echo_…, a STRATAGEMS witness with a 200-byte name, for reason truncation).
+ * game.c keeps state in statics, so every test starts with start(), which builds the scene and calls mem_init, adm_init
+ * and game_init again; test_before_init must run first. */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -55,14 +56,20 @@ static bool code_is(const DbfRow* r, const uint8_t* code, int n)
     return r->code_len == n && memcmp(r->code, code, (size_t)n) == 0;
 }
 
+/* The row is list card `card`: its address and its list position (the second float at +0x3740). */
+static bool card_is(const DbfRow* r, int card)
+{
+    return r->card == syn_card(card) && r->list_y == syn_list_y(card);
+}
+
 /* Row `r` is list card `card` showing payload entry `entry` of the scene, with its kind and code. */
 static bool row_is(const DbfRow* r, int card, const SynScene* s, int entry)
 {
     uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];
     const SynStratagem* st = &s->stratagems[entry];
     syn_timer_bytes(card, (uint32_t)entry, st->kind, timer);
-    return r->active && r->entry == (uint32_t)entry && r->kind == st->kind && code_is(r, st->code, st->code_len)
-        && memcmp(r->timer, timer, sizeof timer) == 0;
+    return r->active && card_is(r, card) && r->entry == (uint32_t)entry && r->kind == st->kind
+        && code_is(r, st->code, st->code_len) && memcmp(r->timer, timer, sizeof timer) == 0;
 }
 
 /* The same row read without kinds and codes. */
@@ -70,7 +77,7 @@ static bool bare_row_is(const DbfRow* r, int card, const SynScene* s, int entry)
 {
     uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];
     syn_timer_bytes(card, (uint32_t)entry, entry < s->stratagem_count ? s->stratagems[entry].kind : 0, timer);
-    return r->active && r->entry == (uint32_t)entry && r->kind == 0 && r->code_len == 0
+    return r->active && card_is(r, card) && r->entry == (uint32_t)entry && r->kind == 0 && r->code_len == 0
         && memcmp(r->timer, timer, sizeof timer) == 0;
 }
 
@@ -80,7 +87,7 @@ static bool kind_row_is(const DbfRow* r, int card, const SynScene* s, int entry)
     uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];
     const SynStratagem* st = &s->stratagems[entry];
     syn_timer_bytes(card, (uint32_t)entry, st->kind, timer);
-    return r->active && r->entry == (uint32_t)entry && r->kind == st->kind && r->code_len == 0
+    return r->active && card_is(r, card) && r->entry == (uint32_t)entry && r->kind == st->kind && r->code_len == 0
         && memcmp(r->timer, timer, sizeof timer) == 0;
 }
 
@@ -107,6 +114,12 @@ static bool rest_is_zero(const GameView* v)
     for (int i = v->row_count; i < (int)DBF_VAL_CARD_COUNT; i++)
         if (memcmp(&v->rows[i], &ZERO, sizeof ZERO) != 0) return false;
     return true;
+}
+
+static bool local_is_zero(const GameView* v)
+{
+    static const GameLocal ZERO;
+    return memcmp(&v->local, &ZERO, sizeof ZERO) == 0;
 }
 
 static bool no_codes(const GameView* v)
@@ -139,7 +152,8 @@ static void test_before_init(void)
 {
     const GameView* v = read_view();
     CHECK(reason_is(v, "not initialised") && !v->build_ok && !v->in_gameplay && !v->hud_ready && !v->menu_open
-              && !v->local_ok && !v->scramble_known && v->table_rva == 0 && v->row_count == 0 && rest_is_zero(v),
+              && !v->local_ok && !v->scramble_known && v->table_rva == 0 && v->row_count == 0 && rest_is_zero(v)
+              && local_is_zero(v),
           "before game_init: nothing read, reason \"not initialised\", every field set");
     game_read(NULL);
     CHECK(1, "game_read(NULL) is ignored");
@@ -632,6 +646,8 @@ static void test_local_player(void)
           "input owner mismatch" },
         { syn_local_avatar() + DBF_OFF_AVATAR_CONTEXT_OFFSET, 4, 0x77, "local ownership mapping unavailable" },
         { pm + DBF_OFF_PLAYERS_PEER_OFFSET + 2u * DBF_OFF_PLAYERS_PEER_STRIDE, 8, OTHER_PEER, "local peer mismatch" },
+        /* R46 input.lua:126: a zero player-manager peer never matches, though the session's is not zero. */
+        { pm + DBF_OFF_PLAYERS_PEER_OFFSET + 2u * DBF_OFF_PLAYERS_PEER_STRIDE, 8, 0, "local peer mismatch" },
     };
     /* The display path fails: no payload, no rows. */
     struct { uintptr_t at; int size; uint64_t value; const char* reason; } payload[] = {
@@ -651,7 +667,7 @@ static void test_local_player(void)
         snprintf(text, sizeof text, "code-entry chain: \"%s\" (case %u), rows and kinds kept, no codes", chain[i].reason,
                  (unsigned)i);
         CHECK(!v->local_ok && reason_is(v, chain[i].reason) && default_rows_without_codes(v, &s) && v->in_gameplay
-                  && v->hud_ready,
+                  && v->hud_ready && local_is_zero(v),
               text);
     }
     for (size_t i = 0; i < sizeof payload / sizeof payload[0]; i++) {
@@ -703,6 +719,212 @@ static void test_first_reason_wins(void)
           "within the cards, list order decides");
 }
 
+/* GameView.local: R46's context (input.lua:114-137) when the code-entry chain holds, zero otherwise. */
+static void test_local_context(void)
+{
+    SynScene s;
+    const GameView* v;
+    uintptr_t menu, ui_word;
+    start_default(&s);
+    v = read_view();
+    CHECK(v->local_ok && reason_is(v, ""), "local context: the chain holds");
+    CHECK(v->local.manager == syn_avatars() && v->local.avatar == syn_local_avatar()
+              && v->local.component == syn_local_component() && v->local.actions == syn_local_actions()
+              && v->local.input_owner == syn_local_input_owner() && v->local.payload == syn_payload(s.local_entry)
+              && v->local.controls == syn_controls() && v->local.key == syn_local_key()
+              && v->local.index == syn_local_index(),
+          "local context: manager, avatar, component, actions, input owner, payload, controls, key and index are the "
+          "synthetic layout's");
+    CHECK(v->local.menu_active && v->local.unobstructed, "local context: menu active (word 0x205), unobstructed (UI word 0)");
+
+    menu = syn_local_avatar() + DBF_OFF_AVATAR_MENU_OFFSET;
+    syn_poke_u32(menu, 0xfffffdffu);
+    v = read_view();
+    CHECK(v->local_ok && !v->local.menu_active && reason_is(v, "") && default_rows(v, &s),
+          "every bit but 9: menu_active false; the chain does not need it (R46's allow_closed)");
+    syn_poke_u32(menu, 0x200u);
+    v = read_view();
+    CHECK(v->local_ok && v->local.menu_active, "bit 9 alone: menu_active true");
+
+    ui_word = syn_ui() + DBF_OFF_UI_OBSTRUCTION_OFFSET + DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET;
+    syn_poke_u32(ui_word, 1);
+    v = read_view();
+    CHECK(v->local_ok && !v->local.unobstructed && reason_is(v, "") && default_rows(v, &s),
+          "UI word 1: obstructed, nothing else changes");
+    syn_poke_u32(ui_word, 0);
+    v = read_view();
+    CHECK(v->local.unobstructed, "UI word 0 again: unobstructed");
+
+    syn_poke_u64(SYN_GAME_BASE + DBF_RVA_UI, 0);
+    v = read_view();
+    CHECK(v->local_ok && !v->local.unobstructed && reason_is(v, "UI unreadable") && default_rows(v, &s)
+              && v->local.component == syn_local_component(),
+          "no UI: obstructed, \"UI unreadable\", the chain and the codes still hold");
+
+    start_default(&s);
+    syn_poke_u64(SYN_GAME_BASE + DBF_RVA_CONTROLS, 0);
+    v = read_view();
+    CHECK(v->local_ok && v->local.controls == 0 && v->local.unobstructed && reason_is(v, "controls unreadable")
+              && default_rows(v, &s) && v->local.actions == syn_local_actions(),
+          "no controls: controls 0, \"controls unreadable\", the rest of the context filled");
+
+    syn_default(&s);
+    s.menu_open = 0;
+    start(&s);
+    v = read_view();
+    CHECK(!v->menu_open && v->local_ok && v->local.menu_active, "the menu-active bit is read apart from the menu-open byte");
+
+    start_default(&s);
+    syn_poke_u32(syn_players() + DBF_OFF_PLAYERS_COUNT_OFFSET, 0);
+    v = read_view();
+    CHECK(!v->local_ok && local_is_zero(v), "chain broken: local is all zero");
+}
+
+/* Plan 1's final review: a lookup probes at most 256 slots (R46 walked the whole table, up to 65536 reads). */
+static void test_lookup_probe_limit(void)
+{
+    SynScene s;
+    const GameView* v;
+    struct { uint32_t capacity; int position, empty_at; bool found; const char* reason; const char* text; } cases[] = {
+        { 512, 255, -1, true, "", "512 full slots, the key at probe 255 (the 256th): found" },
+        { 512, 256, -1, false, "lookup probe limit", "the key at probe 256 (the 257th): past the 256-probe limit" },
+        { 512, 300, -1, false, "lookup probe limit", "300 full slots before the key, no empty slot: the limit" },
+        { 512, -1, -1, false, "lookup probe limit", "512 full slots, no key, no empty slot: the limit" },
+        { 256, -1, -1, false, "local ownership mapping unavailable", "256 full slots, no key: all probed, not found" },
+        { 256, 255, -1, true, "", "256 slots, the key in the last of them: found" },
+        { 64, 4, 3, false, "local ownership mapping unavailable", "the key placed after an empty slot: not found" },
+        { 64, 3, 4, true, "", "the key placed before an empty slot: found" },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        bool laid;
+        start_default(&s);
+        laid = syn_registry_probe(cases[i].capacity, cases[i].position, cases[i].empty_at);
+        v = read_view();
+        CHECK(laid && v->local_ok == cases[i].found && reason_is(v, cases[i].reason)
+                  && (cases[i].found ? default_rows(v, &s) : default_rows_without_codes(v, &s)),
+              cases[i].text);
+    }
+}
+
+/* game_lookup, exported for codes: the same lookup, without a reason. */
+static void test_game_lookup(void)
+{
+    SynScene s;
+    uint32_t index = 77;
+    start_default(&s);
+    CHECK(game_lookup(syn_avatars(), DBF_OFF_AVATARS_LOOKUP_OFFSET, syn_local_key(), DBF_VAL_AVATAR_MAX, &index)
+              && index == syn_local_index(),
+          "game_lookup finds the local avatar's index");
+    index = 77;
+    CHECK(!game_lookup(syn_avatars(), DBF_OFF_AVATARS_LOOKUP_OFFSET, syn_local_key(), syn_local_index(), &index)
+              && index == 77,
+          "an index at the limit fails and leaves the output alone");
+    CHECK(!game_lookup(syn_avatars(), DBF_OFF_AVATARS_LOOKUP_OFFSET, 0x1234u, DBF_VAL_AVATAR_MAX, &index) && index == 77,
+          "a missing key fails and leaves the output alone");
+    CHECK(!game_lookup(syn_avatars(), DBF_OFF_AVATARS_LOOKUP_OFFSET, syn_local_key(), DBF_VAL_AVATAR_MAX, NULL),
+          "a NULL output fails");
+    CHECK(!game_lookup(syn_avatars() + 0x10u, DBF_OFF_AVATARS_LOOKUP_OFFSET, syn_local_key(), DBF_VAL_AVATAR_MAX, &index)
+              && index == 77,
+          "a table that is not there fails");
+}
+
+/* A definition the reader accepts lies in [settings, settings + 80280 - 400] (R46 input.lua:164): `at` gets kind 118's
+ * definition (its kind, code array and count) and the table's entry for 118 points at it. */
+static bool definition_at(uintptr_t at, const SynScene* s)
+{
+    return syn_poke_u32(at, 118) && syn_poke_u64(at + DBF_OFF_DEFINITION_CODE_OFFSET, syn_code_array(118))
+        && syn_poke_u32(at + DBF_OFF_DEFINITION_CODE_COUNT_OFFSET, s->stratagems[0].code_len)
+        && syn_poke_u64(SYN_GAME_BASE + VANILLA_TABLE + 118u * DBF_OFF_DEFINITION_STRIDE, at);
+}
+
+static void test_definition_bounds(void)
+{
+    SynScene s;
+    const GameView* v;
+    uintptr_t low = syn_settings(), high = syn_settings() + 80280u - 400u;
+    struct { uintptr_t at; bool ok; const char* text; } at[] = {
+        { low, true, "a definition starting exactly at the settings block is inside it" },
+        { high, true, "a definition ending exactly at the block's end (settings + 80280 - 400) is inside it" },
+        { low - 1u, false, "a definition one byte below the block is refused" },
+        { high + 1u, false, "a definition one byte past settings + 80280 - 400 is refused" },
+        { low - 4u, false, "a 4-aligned definition below the block is refused by the bound" },
+        { high + 4u, false, "a 4-aligned definition running 4 bytes past the block is refused by the bound" },
+    };
+    for (size_t i = 0; i < sizeof at / sizeof at[0]; i++) {
+        bool laid;
+        start_default(&s);
+        laid = definition_at(at[i].at, &s);
+        v = read_view();
+        if (at[i].ok)
+            CHECK(laid && default_rows(v, &s) && reason_is(v, ""), at[i].text);
+        else
+            CHECK(laid && v->rows[0].kind == 118 && v->rows[0].code_len == 0 && reason_is(v, "invalid definition")
+                      && row_is(&v->rows[1], 1, &s, 1),
+                  at[i].text);
+    }
+}
+
+/* Plan 1's final review: a reason longer than the buffer is cut, never overrun. */
+static void test_reason_truncation(void)
+{
+    static struct { GameView view; unsigned char after[64]; } guarded;
+    static const char START[] = "Stratagems: witness echo_a_witness_name_far_longer";
+    SynScene s;
+    const char* name = NULL;
+    bool intact = true;
+    for (int i = 0; i < dbf_witness_count; i++)
+        if (strlen(dbf_witnesses[i].name) == 200) name = dbf_witnesses[i].name;
+    CHECK(name != NULL, "the test table has a witness whose name is 200 bytes");
+    if (!name) return;
+    start_default(&s);
+    refuse_witness(name, true);
+    memset(&guarded, 0x5a, sizeof guarded);
+    game_read(&guarded.view);
+    for (size_t i = 0; i < sizeof guarded.after; i++)
+        if (guarded.after[i] != 0x5a) intact = false;
+    CHECK(strlen(guarded.view.reason) == DBF_REASON_SIZE - 1 && strncmp(guarded.view.reason, START, sizeof START - 1) == 0,
+          "the 200-byte witness name: \"Stratagems: witness echo_…\" cut to DBF_REASON_SIZE - 1 bytes");
+    CHECK(intact, "nothing past the GameView was written");
+    CHECK(guarded.view.row_count == 4 && no_codes(&guarded.view) && guarded.view.local_ok,
+          "the rows are still read, without codes");
+}
+
+/* DbfRow.list_y is the second float of the card's layout target (+0x3740, R46 native.lua:60, 274-276), and R46's pair()
+ * (native.lua:71) refuses a NaN or a magnitude over 100000 in either float: that card is skipped. */
+static void test_list_position(void)
+{
+    SynScene s;
+    const GameView* v;
+    union { uint32_t bits; float f; } nan = { 0x7fc00000u }, inf = { 0x7f800000u };
+    struct { float x, y; bool ok; const char* text; } cases[] = {
+        { 31.0f, 100000.0f, true, "list_y 100000: the largest R46 accepts" },
+        { -100000.0f, -100000.0f, true, "both floats -100000: accepted" },
+        { 31.0f, 100000.0078125f, false, "list_y just above 100000: card skipped" },
+        { 31.0f, nan.f, false, "list_y NaN: card skipped" },
+        { 31.0f, -inf.f, false, "list_y -infinity: card skipped" },
+        { 200000.0f, 5.0f, false, "the first float out of range: card skipped (R46 checks both)" },
+        { nan.f, 5.0f, false, "the first float NaN: card skipped" },
+    };
+    start_default(&s);
+    v = read_view();
+    CHECK(v->row_count == 4 && card_is(&v->rows[0], 0) && card_is(&v->rows[3], 3) && v->rows[0].list_y == 412.5f
+              && v->rows[3].list_y == 270.75f,
+          "each row carries its card's address and list position");
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        float pair[2] = { cases[i].x, cases[i].y };
+        start_default(&s);
+        syn_poke(syn_card(1) + DBF_OFF_CARD_TARGET_OFFSET, pair, sizeof pair);
+        v = read_view();
+        if (cases[i].ok)
+            CHECK(v->row_count == 4 && v->rows[1].card == syn_card(1) && v->rows[1].list_y == cases[i].y
+                      && v->rows[1].entry == 1 && reason_is(v, ""),
+                  cases[i].text);
+        else
+            CHECK(v->row_count == 3 && row_is(&v->rows[1], 2, &s, 2) && reason_is(v, "card 1 layout unavailable"),
+                  cases[i].text);
+    }
+}
+
 static void test_reinit(void)
 {
     SynScene s;
@@ -714,6 +936,14 @@ static void test_reinit(void)
     game_init(SYN_GAME_BASE, SYN_IMAGE_SIZE);
     v = read_view();
     CHECK(default_rows(v, &s) && reason_is(v, ""), "game_init again: reads again");
+    game_init(SYN_GAME_BASE, 0);
+    v = read_view();
+    CHECK(reason_is(v, "not initialised") && !v->in_gameplay && !v->local_ok && v->row_count == 0 && local_is_zero(v)
+              && v->table_rva == 0,
+          "game_init with image size 0: not initialised, nothing read");
+    game_init(SYN_GAME_BASE, SYN_IMAGE_SIZE);
+    v = read_view();
+    CHECK(default_rows(v, &s) && reason_is(v, ""), "game_init with the size again: reads again");
 }
 
 int main(void)
@@ -733,6 +963,12 @@ int main(void)
     test_display_path();
     test_local_player();
     test_first_reason_wins();
+    test_local_context();
+    test_lookup_probe_limit();
+    test_game_lookup();
+    test_definition_bounds();
+    test_reason_truncation();
+    test_list_position();
     test_reinit();
     CHECK(syn_write_count() == 0, "no reader asked for a single write");
     syn_free();

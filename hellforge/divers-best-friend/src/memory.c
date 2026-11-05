@@ -8,7 +8,7 @@ typedef struct JournalEntry {
     size_t size;
     MemOwner owner;
     uint8_t original[MEM_SWAP_MAX]; /* what the game had */
-    uint8_t written[MEM_SWAP_MAX];  /* what the mod put there */
+    uint8_t written[MEM_SWAP_MAX];  /* what the mod left there (a failed write: what it read back, see mem_swap) */
 } JournalEntry;
 
 static MemPort g_port;
@@ -67,33 +67,66 @@ bool mem_ptr(uintptr_t a, uintptr_t* v)
     return mem_ptr_aligned(a, v, 8);
 }
 
-MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_t size, MemOwner owner)
+/* The owner's entry for `address`, or NULL. An owner has at most one entry per address (mem_swap re-asserts it). */
+static JournalEntry* owner_entry(uintptr_t address, MemOwner owner)
 {
-    uint8_t current[MEM_SWAP_MAX];
-    JournalEntry* entry;
-    if (size == 0 || size > MEM_SWAP_MAX || !expect || !value || (unsigned)owner >= (unsigned)MEM_OWNER_COUNT || !g_port.write)
-        return MEM_FAILED;
-    if (!mem_read(address, current, size)) return MEM_FAILED;
-    if (memcmp(current, value, size) == 0) return MEM_ALREADY;
-    if (memcmp(current, expect, size) != 0) return MEM_DIFFERENT;
-    if (g_count >= MEM_JOURNAL_ENTRIES) return MEM_FAILED;
+    for (size_t i = 0; i < g_count; i++)
+        if (g_journal[i].owner == owner && g_journal[i].address == address) return &g_journal[i];
+    return NULL;
+}
 
-    if (g_port.write(address, value, size) != 0) {
-        /* A write that fails may still have changed some of the bytes: put back what was there. */
-        uint8_t now[MEM_SWAP_MAX];
-        if (mem_read(address, now, size) && memcmp(now, current, size) != 0) (void)g_port.write(address, current, size);
-        return MEM_FAILED;
+/* The write of `value` failed with `before` there before it. Puts `before` back when the bytes may have changed; when
+ * that fails too, returns true with `now` set to what to journal as written: the bytes read back, or `value` when they
+ * cannot be read. False when nothing needs journaling (the bytes are known to be `before` again). */
+static bool roll_back(uintptr_t address, const uint8_t* before, const void* value, size_t size, uint8_t* now)
+{
+    if (mem_read(address, now, size) && memcmp(now, before, size) == 0) return false; /* nothing changed */
+    if (g_port.write(address, before, size) == 0) return false;                       /* put back */
+    if (!mem_read(address, now, size)) {
+        memcpy(now, value, size); /* the best guess: what the failed write meant to leave */
+        return true;
     }
-    entry = &g_journal[g_count++];
+    return memcmp(now, before, size) != 0;
+}
+
+/* A new entry for `owner` with `original`; the caller checked there is room and fills in `written`. */
+static JournalEntry* add_entry(uintptr_t address, size_t size, MemOwner owner, const uint8_t* original)
+{
+    JournalEntry* entry = &g_journal[g_count++];
     entry->address = address;
     entry->size = size;
     entry->owner = owner;
-    memcpy(entry->original, current, size);
+    memcpy(entry->original, original, size);
+    return entry;
+}
+
+MemSwap mem_swap(uintptr_t address, const void* expect, const void* value, size_t size, MemOwner owner)
+{
+    uint8_t current[MEM_SWAP_MAX], now[MEM_SWAP_MAX];
+    JournalEntry* entry;
+    if (size == 0 || size > MEM_SWAP_MAX || !expect || !value || (unsigned)owner >= (unsigned)MEM_OWNER_COUNT || !g_port.write)
+        return MEM_FAILED;
+    entry = owner_entry(address, owner); /* set: this is a re-assert */
+    if (entry && entry->size != size) return MEM_FAILED;
+    if (!mem_read(address, current, size)) return MEM_FAILED;
+    if (memcmp(current, value, size) == 0) return MEM_ALREADY;
+    if (memcmp(current, entry ? entry->original : expect, size) != 0) return MEM_DIFFERENT;
+    if (!entry && g_count >= MEM_JOURNAL_ENTRIES) return MEM_FAILED;
+
+    if (g_port.write(address, value, size) != 0) {
+        /* The rollback failed too: journal what is there now, so a later restore can retry. */
+        if (roll_back(address, current, value, size, now)) {
+            if (!entry) entry = add_entry(address, size, owner, current);
+            memcpy(entry->written, now, size);
+        }
+        return MEM_FAILED;
+    }
+    if (!entry) entry = add_entry(address, size, owner, current);
     memcpy(entry->written, value, size);
     return MEM_SWAPPED;
 }
 
-/* True when the entry's original bytes are back: they are written only while the bytes still hold what the mod wrote. */
+/* True when the entry's original bytes are back: they are written only while the bytes still hold the entry's `written`. */
 static bool put_back(const JournalEntry* entry)
 {
     uint8_t now[MEM_SWAP_MAX];

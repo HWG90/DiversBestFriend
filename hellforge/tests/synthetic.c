@@ -27,6 +27,8 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define RVA_MISSION 0x347ce50u      /* input.lua:127 */
 #define RVA_SESSION 0x347cef0u      /* input.lua:125 */
 #define RVA_SETTINGS 0x348e8f8u     /* input.lua:146 */
+#define RVA_UI 0x347ce28u           /* input.lua:294 */
+#define RVA_CONTROLS 0x347cf18u     /* input.lua:313 */
 #define RVA_DISPLACEMENT 0x66d550u  /* native.lua:51 */
 #define RVA_TABLE 0x37cb600u        /* native.lua:52 */
 #define TABLE_ENTRIES 150u          /* entries 0..149, 8 bytes each (native.lua:55) */
@@ -42,6 +44,8 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define AT_MISSION ((uintptr_t)0x27000000000ull)
 #define AT_SETTINGS ((uintptr_t)0x28000000000ull)
 #define AT_LOOKUPS ((uintptr_t)0x29000000000ull)
+#define AT_UI ((uintptr_t)0x2a000000000ull)
+#define AT_CONTROLS ((uintptr_t)0x2b000000000ull)
 
 /* HUD (native.lua:76-100, 203-281). */
 #define HUD_READY 0x24e334u            /* native.lua:78 */
@@ -58,6 +62,7 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define CARD_ACTIVE 0x36f0u            /* native.lua:267 */
 #define CARD_TIMER 0x3718u             /* input.lua:25 */
 #define CARD_ENTRY 0x3748u             /* native.lua:276 */
+#define CARD_TARGET 0x3740u            /* native.lua:60 (animation_b), its second float the row's list_y (native.lua:276) */
 #define CARDS 16
 
 /* Game state (native.lua:82). */
@@ -87,6 +92,12 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define AVATAR_COMPONENT 0x8d0u
 #define COMPONENT_OWNER 0x28u
 #define AVATAR_CONTEXT 0x110cu
+#define AVATAR_MENU 0xfd8u             /* input.lua:118: bit 9 (/512 % 2) is the menu-active bit */
+#define MENU_ACTIVE_BIT 512u
+#define ACTIONS_STRIDE 0xa7aecu        /* input.lua:137 */
+#define ACTIONS 0x4118u
+#define INPUT_OWNER 0x150u
+#define UI_OBSTRUCTION (0x429cu + 20u) /* input.lua:295 */
 #define SESSION_PEER 0xb398u
 #define MISSION_STRIDE 0x1690u
 #define MISSION_PAYLOAD 0x38u
@@ -117,6 +128,9 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define OTHER_AVATAR 0u
 #define OTHER_CONTEXT 0x15u
 #define OTHER_PLAYER 0u
+#define PROBE_AT 0x8c4cu     /* syn_registry_probe's slots: 4 mod 8, as the registry's */
+#define PROBE_MAX 1024u
+#define PROBE_FILLER 0x100000u /* keys that are neither the local network index nor the empty key */
 
 static void* g_raw;      /* what calloc returned */
 static uint8_t* g_arena; /* g_raw rounded up to 16 */
@@ -274,11 +288,21 @@ uintptr_t syn_payload(int mission_entry) { return AT_MISSION + (uintptr_t)missio
 uintptr_t syn_settings(void) { return AT_SETTINGS; }
 uintptr_t syn_definition(uint32_t kind) { return AT_SETTINGS + (uintptr_t)kind * DEF_STRIDE + (kind & 1u ? 0u : 4u); }
 uintptr_t syn_code_array(uint32_t kind) { return AT_SETTINGS + CODES_AT + (uintptr_t)kind * CODE_STRIDE + (kind & 1u ? 0u : 4u); }
+uintptr_t syn_ui(void) { return AT_UI; }
+uintptr_t syn_controls(void) { return AT_CONTROLS; }
+uintptr_t syn_local_component(void) { return syn_local_avatar() + AVATAR_COMPONENT; }
+uintptr_t syn_local_actions(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + ACTIONS; }
+uintptr_t syn_local_input_owner(void) { return AT_AVATARS + (uintptr_t)LOCAL_AVATAR * ACTIONS_STRIDE + INPUT_OWNER; }
+uint32_t syn_local_key(void) { return LOCAL_KEY; }
+uint32_t syn_local_index(void) { return LOCAL_AVATAR; }
+float syn_list_y(int card) { return 412.5f - 47.25f * (float)card; }
 
 void syn_timer_bytes(int card, uint32_t entry, uint32_t kind, uint8_t out[DBF_OFF_CARD_TIMER_SIZE])
 {
     uint32_t state = 4; /* cooldown (input.lua:27-30) */
     for (unsigned i = 0; i < DBF_OFF_CARD_TIMER_SIZE; i++) out[i] = (uint8_t)(0xa0u + (unsigned)card * 5u + i);
+    float target[2] = { 30.0f + (float)card, syn_list_y(card) };
+    memcpy(out + (CARD_TARGET - CARD_TIMER), target, sizeof target); /* the card's layout target (inside the block) */
     memcpy(out + (CARD_ENTRY - CARD_TIMER), &entry, sizeof entry); /* the card's entry field */
     memcpy(out + 0x34, &kind, sizeof kind);                          /* the kind the timer is for (input.lua:26) */
     memcpy(out + 0x40, &state, sizeof state);                        /* its state (input.lua:27) */
@@ -434,12 +458,20 @@ bool syn_build(const SynScene* s)
             put32(&b, unit + UNIT_KEY, KEYS[i]);
             put32(&b, avatar + AVATAR_COMPONENT + COMPONENT_OWNER, KEYS[i]);
             put32(&b, avatar + AVATAR_CONTEXT, CONTEXTS[i]);
+            /* The local one's menu is active: bit 9 and two other bits, so a reader must test the bit, not the word. */
+            put32(&b, avatar + AVATAR_MENU, i == 0 ? MENU_ACTIVE_BIT | 0x5u : 0u);
         }
         put_lookup(&b, AT_PLAYERS, PLAYERS_LOOKUP, AT_LOOKUPS + 0x2000u, 32, 0xc2b2ae35u, 0, 2, CONTEXTS, PLAYERS);
         put64(&b, AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * LOCAL_PLAYER, s->peer);
         put64(&b, AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * OTHER_PLAYER, other_peer(s, 32));
         put64(&b, AT_SESSION + SESSION_PEER, s->peer);
     }
+
+    /* The UI (unobstructed: its word is 0) and the controls. */
+    put64(&b, SYN_GAME_BASE + RVA_UI, AT_UI);
+    put32(&b, AT_UI + UI_OBSTRUCTION, 0);
+    put64(&b, SYN_GAME_BASE + RVA_CONTROLS, AT_CONTROLS);
+    put32(&b, AT_CONTROLS, 0);
 
     /* The mission: one entry per peer; the local one carries the scene's stratagems, the others two of their own. */
     put32(&b, AT_MISSION + MISSION_COUNT, (uint32_t)s->mission_peers);
@@ -518,4 +550,24 @@ bool syn_change_peer(uint64_t peer)
     return syn_poke_u64(AT_SESSION + SESSION_PEER, peer)
         && syn_poke_u64(AT_PLAYERS + PLAYERS_PEER + PLAYERS_PEER_STRIDE * LOCAL_PLAYER, peer)
         && syn_poke_u64(AT_MISSION + (uintptr_t)g_scene.local_entry * MISSION_STRIDE, peer);
+}
+
+bool syn_registry_probe(uint32_t capacity, int position, int empty_at)
+{
+    const uint32_t seed = 0x9e3779b1u, empty = 0xffffffffu, hash = LOCAL_NETWORK * seed;
+    uintptr_t data = AT_LOOKUPS + PROBE_AT;
+    bool ok;
+    if (!g_built || capacity == 0 || capacity > PROBE_MAX || (capacity & (capacity - 1u)) != 0
+        || position >= (int)capacity || empty_at >= (int)capacity || (position >= 0 && position == empty_at))
+        return false;
+    ok = syn_poke_u64(AT_REGISTRY + REGISTRY_LOOKUP, data)
+        && syn_poke_u32(AT_REGISTRY + REGISTRY_LOOKUP + LOOKUP_CAPACITY, capacity)
+        && syn_poke_u32(AT_REGISTRY + REGISTRY_LOOKUP + LOOKUP_EMPTY, empty)
+        && syn_poke_u32(AT_REGISTRY + REGISTRY_LOOKUP + LOOKUP_SEED, seed);
+    for (uint32_t probe = 0; ok && probe < capacity; probe++) {
+        uintptr_t slot = data + (uintptr_t)((hash + probe) % capacity) * SLOT_SIZE;
+        uint32_t key = (int)probe == position ? LOCAL_NETWORK : (int)probe == empty_at ? empty : PROBE_FILLER + probe;
+        ok = syn_poke_u32(slot, key) && syn_poke_u32(slot + 4u, (int)probe == position ? LOCAL_REGISTRY_INDEX : 0u);
+    }
+    return ok;
 }

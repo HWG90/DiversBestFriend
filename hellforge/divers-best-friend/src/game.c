@@ -1,6 +1,7 @@
 /* game: the read-only readers (see game.h), ported from R46's native.lua (hud, valid, snapshot) and input.lua (lookup,
  * context, code, decorate's payload and kinds). Portable C11: standard headers, memory.h, admission.h and the generated address
- * header only. Every number below is a DBF_RVA_*, DBF_OFF_* or DBF_VAL_* from that header, each with its R46 line. */
+ * header only. Every number below is a DBF_RVA_*, DBF_OFF_* or DBF_VAL_* from that header, each with its R46 line, except
+ * LOOKUP_PROBE_LIMIT, which is DBF's own (Plan 1's final review). */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,6 +13,11 @@
 
 _Static_assert(DBF_VAL_CODE_MAX <= DBF_CODE_CAPACITY, "DbfRow.code holds R46's longest code");
 _Static_assert(DBF_OFF_CODE_STRIDE == sizeof(uint32_t), "a code array is read whole as uint32_t directions");
+_Static_assert(sizeof(float) == sizeof(uint32_t), "a card's layout target is two 4-byte floats (R46 native.lua:65-70)");
+
+/* Not from R46 (which probed up to the whole capacity, 65536 reads for one lookup): Plan 1's final review capped the
+ * probes of one lookup at 256, so a table with no empty slot costs at most 256 reads. */
+#define LOOKUP_PROBE_LIMIT 256u
 
 static uintptr_t g_base; /* game.dll; 0 before game_init */
 static uint32_t g_image_size;
@@ -20,6 +26,7 @@ static uint32_t g_table_rva;
 static bool g_have_identity; /* the local identity of the last read that found one */
 static uint64_t g_identity_peer;
 static uintptr_t g_identity_payload;
+static const char* g_lookup_why; /* why the last game_lookup failed (a static string), for game_read's reason */
 
 typedef struct Local {
     uint64_t peer;
@@ -71,32 +78,49 @@ static bool admitted(GameView* v, Feature f)
 
 /* --- the local player (R46 input.lua:74-139) ------------------------------------------------------------------- */
 
+static bool lookup_fails(const char* why)
+{
+    g_lookup_why = why;
+    return false;
+}
+
 /* input.lua:74-94: an open-addressing table at owner+offset holding the slots' pointer (4-aligned), the capacity (+8, a
  * power of two up to 65536), the empty key (+12) and the seed (+16). Slots are {key, index} pairs of uint32_t; a key's
- * probe starts at key * seed (mod 2^32) and ends at the empty key. The index must be below `limit`. */
-static bool lookup(GameView* v, uintptr_t owner, uint32_t offset, uint32_t key, uint32_t limit, uint32_t* index)
+ * probe starts at key * seed (mod 2^32) and ends at the empty key, or after LOOKUP_PROBE_LIMIT probes. The index must
+ * be below `limit`. */
+bool game_lookup(uintptr_t owner, uint32_t offset, uint32_t key, uint32_t limit, uint32_t* index)
 {
     uintptr_t table = owner + offset, slots;
-    uint32_t capacity, empty, seed, hash;
-    if (!mem_u32(table + DBF_OFF_LOOKUP_CAPACITY_OFFSET, &capacity)) return fail(v, "lookup unreadable");
-    if (capacity == 0 || capacity > DBF_VAL_LOOKUP_MAX_CAPACITY) return fail(v, "invalid lookup capacity");
-    if ((capacity & (capacity - 1u)) != 0) return fail(v, "lookup capacity is not a power of two");
+    uint32_t capacity, empty, seed, hash, probes, at;
+    if (!index) return lookup_fails("lookup unreadable");
+    if (!mem_u32(table + DBF_OFF_LOOKUP_CAPACITY_OFFSET, &capacity)) return lookup_fails("lookup unreadable");
+    if (capacity == 0 || capacity > DBF_VAL_LOOKUP_MAX_CAPACITY) return lookup_fails("invalid lookup capacity");
+    if ((capacity & (capacity - 1u)) != 0) return lookup_fails("lookup capacity is not a power of two");
     if (!mem_u32(table + DBF_OFF_LOOKUP_EMPTY_OFFSET, &empty) || !mem_u32(table + DBF_OFF_LOOKUP_SEED_OFFSET, &seed)
         || !mem_ptr_aligned(table, &slots, DBF_VAL_LOOKUP_ALIGN))
-        return fail(v, "lookup unreadable");
+        return lookup_fails("lookup unreadable");
     hash = key * seed;
-    for (uint32_t probe = 0; probe < capacity; probe++) {
+    probes = capacity < LOOKUP_PROBE_LIMIT ? capacity : LOOKUP_PROBE_LIMIT;
+    for (uint32_t probe = 0; probe < probes; probe++) {
         uintptr_t slot = slots + (uintptr_t)(((uint64_t)hash + probe) % capacity) * DBF_OFF_LOOKUP_SLOT_SIZE;
         uint32_t found;
-        if (!mem_u32(slot, &found)) return fail(v, "lookup unreadable");
+        if (!mem_u32(slot, &found)) return lookup_fails("lookup unreadable");
         if (found == key) {
-            if (!mem_u32(slot + DBF_OFF_LOOKUP_SLOT_INDEX_OFFSET, index)) return fail(v, "lookup unreadable");
-            if (*index >= limit) return fail(v, "lookup index out of bounds");
+            if (!mem_u32(slot + DBF_OFF_LOOKUP_SLOT_INDEX_OFFSET, &at)) return lookup_fails("lookup unreadable");
+            if (at >= limit) return lookup_fails("lookup index out of bounds");
+            *index = at;
             return true;
         }
-        if (found == empty) break;
+        if (found == empty) return lookup_fails("local ownership mapping unavailable");
     }
-    return fail(v, "local ownership mapping unavailable");
+    return lookup_fails(probes < capacity ? "lookup probe limit" : "local ownership mapping unavailable");
+}
+
+/* game_lookup, with its failure in the view's reason. */
+static bool lookup(GameView* v, uintptr_t owner, uint32_t offset, uint32_t key, uint32_t limit, uint32_t* index)
+{
+    if (game_lookup(owner, offset, key, limit, index)) return true;
+    return fail(v, g_lookup_why);
 }
 
 static bool session_peer(uint64_t* peer)
@@ -144,14 +168,16 @@ static bool read_payload(GameView* v, Local* out)
 }
 
 /* R46's code-entry context (input.lua:102-126, what display_codes and entry use): player manager -> network index ->
- * registry key -> avatar (unit and input owner agree) -> player context -> the player's peer, which must be the
- * session's. Its mission step (input.lua:127-136) finds the entry carrying that same peer, the payload read_payload
- * found. Only local_ok and the codes depend on it. */
-static bool read_local_player(GameView* v, uint64_t session)
+ * registry key -> avatar (unit and input owner agree, the menu-active word readable) -> player context -> the player's
+ * peer, which must be the session's. Its mission step (input.lua:127-136) finds the entry carrying that same peer, the
+ * payload read_payload found. local_ok, the codes and `out` depend on it; `out` is written only when it holds. */
+static bool read_local_player(GameView* v, const Local* local, GameLocal* out)
 {
-    uintptr_t pm, registry, manager, unit, avatar;
-    uint32_t players, network, registry_index, key, avatars, avatar_index, unit_key, owner, context, player_index;
+    uintptr_t pm, registry, manager, unit, avatar, ui;
+    uint32_t players, network, registry_index, key, avatars, avatar_index, unit_key, owner, menu, context, player_index;
+    uint32_t word;
     uint64_t peer;
+    GameLocal l;
     if (!mem_ptr(g_base + DBF_RVA_PLAYERS, &pm) || !mem_u32(pm + DBF_OFF_PLAYERS_COUNT_OFFSET, &players))
         return fail(v, "player manager unreadable");
     if (players == 0) return fail(v, "no local player");
@@ -176,12 +202,35 @@ static bool read_local_player(GameView* v, uint64_t session)
     if (!mem_u32(avatar + DBF_OFF_AVATAR_COMPONENT_OFFSET + DBF_OFF_COMPONENT_OWNER_OFFSET, &owner))
         return fail(v, "avatar unreadable");
     if (owner != key) return fail(v, "input owner mismatch");
-    if (!mem_u32(avatar + DBF_OFF_AVATAR_CONTEXT_OFFSET, &context)) return fail(v, "avatar unreadable");
+    /* The menu-active word (input.lua:118-119) is read but its bit is not required: R46's allow_closed. */
+    if (!mem_u32(avatar + DBF_OFF_AVATAR_MENU_OFFSET, &menu) || !mem_u32(avatar + DBF_OFF_AVATAR_CONTEXT_OFFSET, &context))
+        return fail(v, "avatar unreadable");
 
     if (!lookup(v, pm, DBF_OFF_PLAYERS_LOOKUP_OFFSET, context, DBF_VAL_PLAYER_INDEX_LIMIT, &player_index)) return false;
     if (!mem_u64(pm + DBF_OFF_PLAYERS_PEER_OFFSET + (uintptr_t)player_index * DBF_OFF_PLAYERS_PEER_STRIDE, &peer))
         return fail(v, "player manager unreadable");
-    if (peer != session) return fail(v, "local peer mismatch");
+    if (peer == 0 || peer != local->peer) return fail(v, "local peer mismatch"); /* input.lua:126 */
+
+    /* The context R46's context() returns (input.lua:114-137). */
+    memset(&l, 0, sizeof l);
+    l.manager = manager;
+    l.avatar = avatar;
+    l.component = avatar + DBF_OFF_AVATAR_COMPONENT_OFFSET;
+    l.actions = manager + (uintptr_t)avatar_index * DBF_OFF_ACTIONS_STRIDE + DBF_OFF_ACTIONS_OFFSET;
+    l.input_owner = manager + (uintptr_t)avatar_index * DBF_OFF_ACTIONS_STRIDE + DBF_OFF_INPUT_OWNER_OFFSET;
+    l.payload = local->payload;
+    l.key = key;
+    l.index = avatar_index;
+    l.menu_active = (menu & DBF_VAL_MENU_ACTIVE_MASK) != 0;
+    /* R46 reads these two in its release paths (input.lua:294-295, 313), not in context(): when they cannot be read the
+     * chain still holds, controls stays 0 and unobstructed false, and reason says which. */
+    if (!mem_ptr(g_base + DBF_RVA_CONTROLS, &l.controls)) fail(v, "controls unreadable");
+    if (mem_ptr(g_base + DBF_RVA_UI, &ui)
+        && mem_u32(ui + DBF_OFF_UI_OBSTRUCTION_OFFSET + DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET, &word))
+        l.unobstructed = word == DBF_VAL_UI_UNOBSTRUCTED;
+    else
+        fail(v, "UI unreadable");
+    *out = l;
     return true;
 }
 
@@ -264,6 +313,12 @@ static void read_code(GameView* v, DbfRow* row)
 
 /* --- the list cards (R46 native.lua:85-100, 264-278; input.lua:230-237) ---------------------------------------- */
 
+/* R46's pair() (native.lua:71): a layout float is usable when it is a number no further than 100000 from 0. */
+static bool position_ok(float f)
+{
+    return f >= -(float)DBF_VAL_CARD_POSITION_MAX && f <= (float)DBF_VAL_CARD_POSITION_MAX; /* false for NaN */
+}
+
 /* Codes are read only when `with_codes`: the definition table was accepted and the code-entry chain held. */
 static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have_kinds, uint32_t entries,
                        bool with_codes)
@@ -289,6 +344,7 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
     for (unsigned i = 0; i < DBF_VAL_CARD_COUNT; i++) {
         uintptr_t card = list + DBF_OFF_CARD_FIRST + (uintptr_t)i * DBF_OFF_CARD_STRIDE, parent;
         DbfRow* row = &v->rows[v->row_count];
+        float target[2];
         uint8_t active;
         if (!mem_ptr(card + DBF_OFF_NODE_PARENT_OFFSET, &parent) || parent != list) {
             card_fails(v, i, " parent mismatch");
@@ -304,11 +360,21 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
             continue;
         }
         if (!mem_u32(card + DBF_OFF_CARD_ENTRY_OFFSET, &row->entry)
-            || !mem_read(card + DBF_OFF_CARD_TIMER_OFFSET, row->timer, sizeof row->timer)) {
+            || !mem_read(card + DBF_OFF_CARD_TIMER_OFFSET, row->timer, sizeof row->timer)
+            || !mem_read(card + DBF_OFF_CARD_TARGET_OFFSET, target, sizeof target)) {
             memset(row, 0, sizeof *row);
             card_fails(v, i, " unreadable");
             continue;
         }
+        /* The card's layout target (native.lua:274-276): its second float is the row's list position. R46 dropped the
+         * whole list when a pair was unusable ("Native row layout unavailable"); here that card is skipped. */
+        if (!position_ok(target[0]) || !position_ok(target[1])) {
+            memset(row, 0, sizeof *row);
+            card_fails(v, i, " layout unavailable");
+            continue;
+        }
+        row->card = card;
+        row->list_y = target[1];
         row->active = true;
         /* Card +0x3748 is the payload entry; entries past the payload's count have no kind (input.lua:234). */
         if (have_kinds && row->entry < entries
@@ -326,8 +392,10 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
 
 void game_init(uintptr_t game_dll_base, uint32_t image_size)
 {
-    g_base = game_dll_base;
-    g_image_size = image_size;
+    /* Both or neither (Plan 1's final review): with a size of 0 the moved-table rule would accept any 8-aligned RVA
+     * below 0x400000. */
+    g_base = image_size != 0 ? game_dll_base : 0;
+    g_image_size = g_base != 0 ? image_size : 0;
     g_table_ok = false;
     g_table_rva = 0;
     g_have_identity = false;
@@ -380,7 +448,7 @@ void game_read(GameView* out)
     /* The local payload by R46's display path: no payload (or a new one), no rows. Then the code-entry chain, which
      * only codes need. */
     if (!read_payload(out, &local)) return;
-    out->local_ok = read_local_player(out, local.peer);
+    out->local_ok = read_local_player(out, &local, &out->local);
 
     /* The payload's kinds and the definitions. */
     if (admitted(out, FEAT_STRATAGEMS)) {

@@ -9,7 +9,7 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "632c457f2bdf12f1c19e34d22fc5fc469d790f2e23f198df8ac8a2c6834dc513",
+    "addresses_25480438.json": "0e95d6051490b482241f5ed5c9e7c2b91d7aaa82cb948acab6280a30401fef32",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
     "duplicate.lua": "9e4a0b555f8dd37632b5d28e1f0b26edc264d07a77eda2e059b3a22811919452",
@@ -23,7 +23,7 @@
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "3f5ed3486e5ea70b3f68028c13413683f1759f6453df3d8fe4b017a71832ef8c",
+    "addresses_25480438.h": "e79bc191690f3e23825ef6166556ebfe3e6a22c9ddb97c092d091bad9e273afd",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
@@ -53,8 +53,8 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 69,
-    "values": 25,
+    "addresses": 74,
+    "values": 28,
     "kind_names": 149
   },
   "sections": [
@@ -245,6 +245,13 @@
       "source": "R46 native.lua:276"
     },
     {
+      "name": "CARD_TARGET_OFFSET",
+      "kind": "offset",
+      "value": "0x3740",
+      "define": "DBF_OFF_CARD_TARGET_OFFSET",
+      "source": "R46 native.lua:60"
+    },
+    {
       "name": "CARD_TIMER_OFFSET",
       "kind": "offset",
       "value": "0x3718",
@@ -319,6 +326,13 @@
       "kind": "offset",
       "value": "0x4118",
       "define": "DBF_OFF_ACTIONS_OFFSET",
+      "source": "R46 input.lua:137"
+    },
+    {
+      "name": "INPUT_OWNER_OFFSET",
+      "kind": "offset",
+      "value": "0x150",
+      "define": "DBF_OFF_INPUT_OWNER_OFFSET",
       "source": "R46 input.lua:137"
     },
     {
@@ -397,6 +411,20 @@
       "value": "0x347cf18",
       "define": "DBF_RVA_CONTROLS",
       "source": "R46 input.lua:313"
+    },
+    {
+      "name": "UI_OBSTRUCTION_OFFSET",
+      "kind": "offset",
+      "value": "0x429c",
+      "define": "DBF_OFF_UI_OBSTRUCTION_OFFSET",
+      "source": "R46 input.lua:295"
+    },
+    {
+      "name": "UI_OBSTRUCTION_WORD_OFFSET",
+      "kind": "offset",
+      "value": "0x14",
+      "define": "DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET",
+      "source": "R46 input.lua:295"
     },
     {
       "name": "CAMERA_OWNER",
@@ -554,6 +582,13 @@
       "source": "R46 input.lua:116"
     },
     {
+      "name": "AVATAR_MENU_OFFSET",
+      "kind": "offset",
+      "value": "0xfd8",
+      "define": "DBF_OFF_AVATAR_MENU_OFFSET",
+      "source": "R46 input.lua:118"
+    },
+    {
       "name": "AVATAR_CONTEXT_OFFSET",
       "kind": "offset",
       "value": "0x110c",
@@ -694,6 +729,13 @@
       "source": "R46 native.lua:268"
     },
     {
+      "name": "CARD_POSITION_MAX",
+      "kind": "value",
+      "value": "100000",
+      "define": "DBF_VAL_CARD_POSITION_MAX",
+      "source": "R46 native.lua:71"
+    },
+    {
       "name": "LOOKUP_MAX_CAPACITY",
       "kind": "value",
       "value": "65536",
@@ -734,6 +776,20 @@
       "value": "32",
       "define": "DBF_VAL_PLAYER_INDEX_LIMIT",
       "source": "R46 input.lua:123"
+    },
+    {
+      "name": "MENU_ACTIVE_MASK",
+      "kind": "value",
+      "value": "512",
+      "define": "DBF_VAL_MENU_ACTIVE_MASK",
+      "source": "R46 input.lua:118"
+    },
+    {
+      "name": "UI_UNOBSTRUCTED",
+      "kind": "value",
+      "value": "0",
+      "define": "DBF_VAL_UI_UNOBSTRUCTED",
+      "source": "R46 input.lua:295"
     },
     {
       "name": "MISSION_PEER_MAX",

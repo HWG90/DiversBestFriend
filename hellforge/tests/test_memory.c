@@ -11,7 +11,10 @@ static uint8_t g_ram[RAM_SIZE];
 static int g_reads;
 static int g_writes;
 static int g_fail_next_writes; /* how many upcoming writes fail */
-static size_t g_partial_bytes; /* how many bytes a failing write still puts in before it fails */
+static size_t g_partial_bytes; /* how many bytes the first of them still puts in before it fails */
+static size_t g_partial_later; /* and how many each later one puts in */
+static int g_failed_in_run;    /* failing writes since the last fail_writes() */
+static int g_reads_fail_after; /* reads fail once this many writes were made (0: reads never fail this way) */
 
 static int in_ram(uintptr_t address, size_t size)
 {
@@ -22,6 +25,7 @@ static int fake_read(uintptr_t address, void* out, size_t size)
 {
     g_reads++;
     if (!in_ram(address, size)) return -1;
+    if (g_reads_fail_after > 0 && g_writes >= g_reads_fail_after) return -1;
     memcpy(out, &g_ram[address - RAM_BASE], size);
     return 0;
 }
@@ -31,8 +35,9 @@ static int fake_write(uintptr_t address, const void* data, size_t size)
     g_writes++;
     if (!in_ram(address, size)) return -1;
     if (g_fail_next_writes > 0) {
+        size_t partial = g_failed_in_run++ == 0 ? g_partial_bytes : g_partial_later;
         g_fail_next_writes--;
-        memcpy(&g_ram[address - RAM_BASE], data, g_partial_bytes < size ? g_partial_bytes : size);
+        memcpy(&g_ram[address - RAM_BASE], data, partial < size ? partial : size);
         return -1;
     }
     memcpy(&g_ram[address - RAM_BASE], data, size);
@@ -52,7 +57,19 @@ static void reset(void)
     g_writes = 0;
     g_fail_next_writes = 0;
     g_partial_bytes = 0;
+    g_partial_later = 0;
+    g_failed_in_run = 0;
+    g_reads_fail_after = 0;
     mem_init(&FAKE_PORT);
+}
+
+/* The next `n` writes fail; the first still puts in `first` bytes, each later one `later` bytes. */
+static void fail_writes(int n, size_t first, size_t later)
+{
+    g_fail_next_writes = n;
+    g_partial_bytes = first;
+    g_partial_later = later;
+    g_failed_in_run = 0;
 }
 
 static void test_before_init(void)
@@ -280,20 +297,139 @@ static void test_journal_full(void)
     CHECK(mem_restore_all() == 0 && memcmp(ram_at(address), expect, 4) == 0, "and that one restores too");
 }
 
+/* Two owners change one address in turn (LIST, then CAMERA over LIST's value): restore_all walks newest first. */
 static void test_same_address_twice(void)
 {
-    const uint8_t one[4] = { 1, 1, 1, 1 }, two[4] = { 2, 2, 2, 2 }, three[4] = { 3, 3, 3, 3 };
+    const uint8_t one[4] = { 1, 1, 1, 1 }, three[4] = { 3, 3, 3, 3 };
     uint8_t original[4];
     reset();
     memcpy(original, ram_at(RAM_BASE + 0x600), 4);
     CHECK(mem_swap(RAM_BASE + 0x600, original, one, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "first swap of the address");
-    CHECK(mem_swap(RAM_BASE + 0x600, one, two, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "second swap of the same address, same owner");
-    CHECK(mem_swap(RAM_BASE + 0x600, two, three, 4, MEM_OWNER_CAMERA) == MEM_SWAPPED, "third swap of the same address, other owner");
+    CHECK(mem_swap(RAM_BASE + 0x600, one, three, 4, MEM_OWNER_CAMERA) == MEM_SWAPPED, "second swap of the same address, other owner");
     CHECK(mem_restore_all() == 0, "restore_all walks newest first and puts everything back");
     CHECK(memcmp(ram_at(RAM_BASE + 0x600), original, 4) == 0, "the address holds the original bytes");
-    CHECK(mem_swap(RAM_BASE + 0x600, original, one, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "chain again for the one-owner case");
-    CHECK(mem_swap(RAM_BASE + 0x600, one, two, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "chain, second link");
-    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(RAM_BASE + 0x600), original, 4) == 0, "one owner restores a chain newest first");
+}
+
+/* The same owner swapping the same address and size again re-asserts its entry instead of adding one (the latch
+ * refreshes every frame): it writes `value` only while the bytes hold the entry's original. */
+static void test_reassert(void)
+{
+    const uint8_t value[4] = { 0x4A, 0x4B, 0x4C, 0x4D }, other[4] = { 0x5A, 0x5B, 0x5C, 0x5D };
+    const uint8_t theirs[4] = { 0x99, 0x98, 0x97, 0x96 };
+    uint8_t original[4], wrong[4], expect[4];
+    uintptr_t at = RAM_BASE + 0x640;
+    reset();
+    memcpy(original, ram_at(at), 4);
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED, "re-assert: the first swap journals");
+    g_writes = 0;
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_ALREADY && g_writes == 0,
+          "re-assert: the second swap of the same address finds value there and writes nothing");
+    memcpy(ram_at(at), original, 4); /* the game writes its original back */
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED && memcmp(ram_at(at), value, 4) == 0,
+          "re-assert: after the game wrote the original back, the next swap writes value again");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(at), original, 4) == 0,
+          "re-assert: one entry (a second would count as not restored), and the original is back");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(at), original, 4) == 0, "re-assert: nothing left");
+
+    /* The bytes hold neither the entry's original nor value. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    memcpy(ram_at(at), theirs, 4);
+    g_writes = 0;
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_DIFFERENT && g_writes == 0
+              && memcmp(ram_at(at), theirs, 4) == 0,
+          "re-assert: a third party's bytes are MEM_DIFFERENT and left alone");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 1 && memcmp(ram_at(at), theirs, 4) == 0,
+          "re-assert: still one entry, which restore leaves (its bytes changed)");
+
+    /* The entry's original decides, not `expect`. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    memcpy(wrong, original, 4);
+    wrong[0] ^= 0xFF;
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    memcpy(ram_at(at), original, 4);
+    CHECK(mem_swap(at, wrong, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED && memcmp(ram_at(at), value, 4) == 0,
+          "re-assert: compared with the entry's original, not with expect");
+    memcpy(ram_at(at), wrong, 4);
+    CHECK(mem_swap(at, wrong, value, 4, MEM_OWNER_LATCH) == MEM_DIFFERENT && memcmp(ram_at(at), wrong, 4) == 0,
+          "re-assert: bytes equal to expect but not to the entry's original are MEM_DIFFERENT");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 1, "re-assert: one entry");
+
+    /* One owner cannot chain a second value over its own first one: it is not the entry's original. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_LIST);
+    CHECK(mem_swap(at, value, other, 4, MEM_OWNER_LIST) == MEM_DIFFERENT && memcmp(ram_at(at), value, 4) == 0,
+          "re-assert: the same owner swapping its own value for another is MEM_DIFFERENT");
+    /* While the original is there, a new value is written and becomes what the entry holds. */
+    memcpy(ram_at(at), original, 4);
+    CHECK(mem_swap(at, original, other, 4, MEM_OWNER_LIST) == MEM_SWAPPED && memcmp(ram_at(at), other, 4) == 0,
+          "re-assert: on the original, a new value is written");
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(at), original, 4) == 0,
+          "re-assert: restore recognises the new value and puts the original back");
+
+    /* A different size at the same address from the same owner is refused. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    memcpy(ram_at(at), original, 4);
+    g_writes = 0;
+    CHECK(mem_swap(at, original, value, 2, MEM_OWNER_LATCH) == MEM_FAILED && g_writes == 0
+              && memcmp(ram_at(at), original, 4) == 0,
+          "re-assert: the same address with another size is MEM_FAILED and writes nothing");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 1, "re-assert: the refused size added no entry");
+
+    /* A re-assert adds no entry, so it works with a full journal. */
+    reset();
+    for (int i = 0; i < 64; i++) {
+        uintptr_t a = RAM_BASE + (uintptr_t)i * 8;
+        memcpy(expect, ram_at(a), 4);
+        if (i == 5) memcpy(original, expect, 4);
+        mem_swap(a, expect, value, 4, MEM_OWNER_LATCH);
+    }
+    memcpy(expect, ram_at(RAM_BASE + 64 * 8), 4);
+    CHECK(mem_swap(RAM_BASE + 64 * 8, expect, value, 4, MEM_OWNER_LATCH) == MEM_FAILED, "re-assert: the journal is full");
+    memcpy(ram_at(RAM_BASE + 5 * 8), original, 4); /* the game writes entry 5's original back */
+    CHECK(mem_swap(RAM_BASE + 5 * 8, original, value, 4, MEM_OWNER_LATCH) == MEM_SWAPPED
+              && memcmp(ram_at(RAM_BASE + 5 * 8), value, 4) == 0,
+          "re-assert: with a full journal the owner's entry is still re-asserted");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(RAM_BASE + 5 * 8), original, 4) == 0,
+          "re-assert: all 64 restore");
+}
+
+/* Two owners over one address: only newest-first restores give the original back (the order the header asks for). */
+static void test_overlapping_owners(void)
+{
+    const uint8_t list[4] = { 0x1A, 0x1B, 0x1C, 0x1D }, camera[4] = { 0xCA, 0xCB, 0xCC, 0xCD };
+    uint8_t original[4];
+    uintptr_t at = RAM_BASE + 0x680;
+    reset();
+    memcpy(original, ram_at(at), 4);
+    CHECK(mem_swap(at, original, list, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "overlap: LIST swaps first");
+    CHECK(mem_swap(at, list, camera, 4, MEM_OWNER_CAMERA) == MEM_SWAPPED, "overlap: CAMERA swaps over LIST's value");
+    CHECK(mem_restore(MEM_OWNER_CAMERA) == 0 && memcmp(ram_at(at), list, 4) == 0, "overlap: CAMERA first gives LIST's value");
+    CHECK(mem_restore(MEM_OWNER_LIST) == 0 && memcmp(ram_at(at), original, 4) == 0, "overlap: then LIST gives the original");
+
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, list, 4, MEM_OWNER_LIST);
+    mem_swap(at, list, camera, 4, MEM_OWNER_CAMERA);
+    CHECK(mem_restore(MEM_OWNER_LIST) == 1 && memcmp(ram_at(at), camera, 4) == 0,
+          "overlap, older owner first: LIST finds CAMERA's value and leaves it");
+    CHECK(mem_restore(MEM_OWNER_CAMERA) == 0 && memcmp(ram_at(at), list, 4) == 0,
+          "overlap, older owner first: CAMERA then puts back LIST's value, not the original");
+}
+
+/* mem_read refuses a range that wraps the address space before asking the port: the last 8 bytes still reach it. */
+static void test_wrap_boundary(void)
+{
+    uint8_t buf[8];
+    reset();
+    CHECK(!mem_read(UINTPTR_MAX - 7, buf, 8) && g_reads == 1, "(UINTPTR_MAX-7, 8) ends at the top: it reaches the port");
+    CHECK(!mem_read(UINTPTR_MAX - 6, buf, 8) && g_reads == 1, "(UINTPTR_MAX-6, 8) wraps: it never reaches the port");
+    CHECK(!mem_read(UINTPTR_MAX, buf, 1) && g_reads == 2, "(UINTPTR_MAX, 1) reaches the port");
 }
 
 static void test_restore_all(void)
@@ -361,12 +497,10 @@ static void test_failing_writes(void)
     uint8_t original[4];
     reset();
     memcpy(original, ram_at(RAM_BASE + 0x800), 4);
-    g_fail_next_writes = 1;
-    g_partial_bytes = 0;
+    fail_writes(1, 0, 0);
     CHECK(mem_swap(RAM_BASE + 0x800, original, value, 4, MEM_OWNER_LIST) == MEM_FAILED, "a swap whose write fails is MEM_FAILED");
     CHECK(memcmp(ram_at(RAM_BASE + 0x800), original, 4) == 0, "and the bytes are unchanged");
-    g_fail_next_writes = 1;
-    g_partial_bytes = 2;
+    fail_writes(1, 2, 0);
     CHECK(mem_swap(RAM_BASE + 0x800, original, value, 4, MEM_OWNER_LIST) == MEM_FAILED, "a write that fails half way is MEM_FAILED");
     CHECK(memcmp(ram_at(RAM_BASE + 0x800), original, 4) == 0, "and the half-written bytes are put back");
     ram_at(RAM_BASE + 0x800)[3] ^= 0x01;
@@ -374,9 +508,65 @@ static void test_failing_writes(void)
 
     reset();
     CHECK(mem_swap(RAM_BASE + 0x800, original, value, 4, MEM_OWNER_LIST) == MEM_SWAPPED, "swap that will be restored against a failing write");
-    g_fail_next_writes = 1;
+    fail_writes(1, 0, 0);
     CHECK(mem_restore(MEM_OWNER_LIST) == 1, "a restore whose write fails counts the entry");
     CHECK(mem_restore(MEM_OWNER_LIST) == 0, "and the entry is gone");
+}
+
+/* A write that fails and whose rollback fails too is journaled, so a later restore can retry. */
+static void test_failed_rollback(void)
+{
+    const uint8_t value[4] = { 0x61, 0x62, 0x63, 0x64 };
+    uint8_t original[4], now[4];
+    uintptr_t at = RAM_BASE + 0x880;
+    reset();
+    memcpy(original, ram_at(at), 4);
+    fail_writes(2, 2, 1); /* the write puts in 2 bytes and fails; the rollback puts back 1 and fails */
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_ENTRY) == MEM_FAILED, "failed rollback: the swap is MEM_FAILED");
+    memcpy(now, original, 4);
+    now[1] = value[1];
+    CHECK(memcmp(ram_at(at), now, 4) == 0, "failed rollback: one byte of the write is still there");
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && memcmp(ram_at(at), original, 4) == 0,
+          "failed rollback: journaled as the bytes read back; a restore with a working port puts the original back");
+
+    reset();
+    memcpy(original, ram_at(at), 4);
+    fail_writes(2, 2, 1);
+    mem_swap(at, original, value, 4, MEM_OWNER_ENTRY);
+    ram_at(at)[3] ^= 0x01; /* the game changes them afterwards */
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 1 && ram_at(at)[3] == (uint8_t)(original[3] ^ 0x01),
+          "failed rollback: a restore leaves bytes that changed since");
+
+    /* The read-back fails too: journaled as holding value (the best guess). */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    fail_writes(2, 4, 0);  /* the write puts in all of value and still fails; the rollback puts in nothing */
+    g_reads_fail_after = 2; /* reads fail once the rollback was tried */
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_ENTRY) == MEM_FAILED && memcmp(ram_at(at), value, 4) == 0,
+          "failed rollback, failed read-back: MEM_FAILED, value in place");
+    g_reads_fail_after = 0;
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && memcmp(ram_at(at), original, 4) == 0,
+          "failed rollback, failed read-back: journaled as value, so a later restore puts the original back");
+
+    /* The read after the failed write fails, but the rollback works: nothing is journaled. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    fail_writes(1, 4, 0);
+    g_reads_fail_after = 1;
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_ENTRY) == MEM_FAILED, "unreadable after a failed write: MEM_FAILED");
+    g_reads_fail_after = 0;
+    CHECK(memcmp(ram_at(at), original, 4) == 0, "unreadable after a failed write: the original is written back anyway");
+    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && g_writes == 2, "unreadable after a failed write: nothing journaled");
+
+    /* A re-assert whose write and rollback both fail: the owner's entry takes the bytes read back. */
+    reset();
+    memcpy(original, ram_at(at), 4);
+    mem_swap(at, original, value, 4, MEM_OWNER_LATCH);
+    memcpy(ram_at(at), original, 4);
+    fail_writes(2, 2, 1);
+    CHECK(mem_swap(at, original, value, 4, MEM_OWNER_LATCH) == MEM_FAILED, "failed re-assert: MEM_FAILED");
+    CHECK(mem_restore(MEM_OWNER_LATCH) == 0 && memcmp(ram_at(at), original, 4) == 0,
+          "failed re-assert: its entry holds the bytes read back, so restore puts the original back");
 }
 
 static void test_init_clears_the_journal(void)
@@ -405,9 +595,13 @@ int main(void)
     test_third_party_write();
     test_journal_full();
     test_same_address_twice();
+    test_reassert();
+    test_overlapping_owners();
+    test_wrap_boundary();
     test_restore_all();
     test_older_owner_restores_first();
     test_failing_writes();
+    test_failed_rollback();
     test_init_clears_the_journal();
     TEST_MAIN_END
 }
