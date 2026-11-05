@@ -116,13 +116,13 @@ int main(void)
           "legacy fake stays on the original path");
     frame(0);
     CHECK(input_in_options && hint_in_options, "empty Search field shows Ctrl+F inside Options");
-    CHECK(controls == HUD_OPTION_COUNT && heading_count == 6, "sidebar and all five groups show inline controls");
+    CHECK(controls == HUD_OPTION_COUNT && heading_count == 8, "sidebar and all seven groups show inline controls");
     CHECK(fake_ov_find("text_wrapped:Wheel size (%)", 0) >= 0, "numeric control has a visible label");
     CHECK(fake_ov_find("text_wrapped:Choose Native wheel mode.", 0) >= 0, "disabled row shows its exact prerequisite");
-    region_width = 360; category_pick = 4; frame(0);
+    region_width = 360; category_pick = 6; frame(0);
     CHECK(category_combos == 1 && controls == 2 && heading_count == 1 && !strcmp(headings[0], "TERMINALS"),
           "narrow layout replaces the sidebar with a category selector and stacks its controls");
-    query = "wheel size"; frame(0);
+    query = "wheel size (%)"; frame(0);
     CHECK(controls == 1 && !strcmp(result_count, "1 matching option") && !strcmp(headings[0], "APPEARANCE"),
           "global search counts and groups results outside the active category");
     query = "native_opacity"; frame(0);
