@@ -12,6 +12,8 @@
  *   Overlay Host API <n>
  *   In a mission: yes | no (<reason>)          a mission is in_gameplay and hud_ready
  *   Stratagem menu: open | closed
+ *   Reader: <why part of the game's data was not read>         in a mission only, when game.reason is not empty (outside
+ *                                                              a mission the reason is in the line above)
  *   Codes do not follow scrambling yet         in a mission while scramble_known is false
  *   a table of the stratagems, in a mission: name, code as "^ > v <" (1 up, 2 right, 3 down, 4 left, "?" for any other
  *     value) or "no code"

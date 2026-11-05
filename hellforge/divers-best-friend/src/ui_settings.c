@@ -146,6 +146,11 @@ static void draw_status(const OvApi* ov, const DbfSnapshot* s)
         ov->text(l.text);
     }
     ov->text(s->game.menu_open ? "Stratagem menu: open" : "Stratagem menu: closed");
+    if (in_mission && s->game.reason[0] != '\0') { /* outside a mission the reason is in the mission line above */
+        line_begin(&l, "Reader: ");
+        line_add(&l, s->game.reason);
+        ov->text(l.text);
+    }
     if (in_mission && !s->game.scramble_known) ov->text("Codes do not follow scrambling yet");
     if (in_mission) draw_stratagems(ov, &s->game);
 }

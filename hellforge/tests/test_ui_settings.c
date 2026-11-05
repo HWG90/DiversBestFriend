@@ -237,6 +237,55 @@ static void test_not_in_mission_without_reason(void)
     CHECK(has("text:In a mission: no"), "no reason: just no");
 }
 
+static void test_reader_reason(void)
+{
+    int menu, reader, scramble;
+    sample(&g_snap);
+    set_reason(g_snap.game.reason, sizeof g_snap.game.reason, "local ownership mapping unavailable");
+    draw(&g_snap);
+    CHECK(has("text:In a mission: yes"), "in a mission with a reader reason");
+    CHECK(has("text:Reader: local ownership mapping unavailable"), "in a mission: the reader's reason is shown");
+    CHECK(fake_ov_count_prefix("text:Reader: ") == 1, "once");
+    menu = fake_ov_find("text:Stratagem menu: open", 0);
+    reader = fake_ov_find("text:Reader: local ownership mapping unavailable", 0);
+    scramble = fake_ov_find("text:Codes do not follow scrambling yet", 0);
+    CHECK(menu >= 0 && menu < reader && reader < scramble, "after the menu line and before the scramble line");
+    CHECK(fake_ov_find("table:dbf-stratagems", 0) > scramble, "and the rows still follow");
+    CHECK(balanced(), "balanced");
+
+    sample(&g_snap);
+    g_snap.game.scramble_known = true;
+    set_reason(g_snap.game.reason, sizeof g_snap.game.reason, "local ownership mapping unavailable");
+    draw(&g_snap);
+    menu = fake_ov_find("text:Stratagem menu: open", 0);
+    reader = fake_ov_find("text:Reader: local ownership mapping unavailable", 0);
+    CHECK(menu >= 0 && menu < reader && has_not("text:Codes do not follow scrambling yet"),
+        "with scramble known the reason still follows the menu line");
+
+    sample(&g_snap);
+    g_snap.game.reason[0] = '\0';
+    draw(&g_snap);
+    CHECK(fake_ov_count_prefix("text:Reader:") == 0, "in a mission with an empty reason: no Reader line");
+
+    sample(&g_snap);
+    g_snap.game.in_gameplay = false;
+    set_reason(g_snap.game.reason, sizeof g_snap.game.reason, "not in gameplay");
+    draw(&g_snap);
+    CHECK(has("text:In a mission: no (not in gameplay)"), "not in a mission: the reason is in the mission line");
+    CHECK(fake_ov_count_prefix("text:Reader:") == 0, "and not repeated as a Reader line");
+
+    sample(&g_snap);
+    g_snap.game.hud_ready = false;
+    set_reason(g_snap.game.reason, sizeof g_snap.game.reason, "HUD not ready");
+    draw(&g_snap);
+    CHECK(fake_ov_count_prefix("text:Reader:") == 0, "HUD not ready is not a mission either: no Reader line");
+
+    sample(&g_snap);
+    memset(g_snap.game.reason, 's', sizeof g_snap.game.reason - 1);
+    draw(&g_snap);
+    CHECK(fake_ov_count_prefix("text:Reader: ssss") == 1 && balanced(), "the longest reason fits the line");
+}
+
 static void test_hud_not_ready(void)
 {
     sample(&g_snap);
@@ -373,6 +422,7 @@ int main(void)
     test_menu_closed();
     test_not_in_mission();
     test_not_in_mission_without_reason();
+    test_reader_reason();
     test_hud_not_ready();
     test_build_refused();
     test_waiting_and_off_without_reason();
