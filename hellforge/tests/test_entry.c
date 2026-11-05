@@ -684,7 +684,16 @@ static void test_writes_and_handler(void)
     CHECK(state_is(&job, ENTRY_FAILED, "direction could not be released") && sent_is(&job, 1, 1)
               && action_byte(ACTION_FOR[1]) == 1 && mem_journal_count(MEM_OWNER_ENTRY) == 1,
           "the release cannot be written: failed, the byte stays pressed and its entry stays journaled");
-    CHECK(mem_restore(MEM_OWNER_ENTRY) == 0 && clean(), "  a later restore (the tick's) releases it");
+    GameView retry = *view();
+    retry.local_ok = false;
+    entry_retry_release(NULL);
+    entry_retry_release(&retry);
+    CHECK(g_writes == 2 && mem_journal_count(MEM_OWNER_ENTRY) == 1 && action_byte(ACTION_FOR[1]) == 1,
+          "an unresolved owner defers the release without writing");
+    CHECK(!begin(&job, 118, 70, false, 0) && state_is(&job, ENTRY_FAILED, "previous direction release pending"),
+          "begin cannot replace a pending release owner");
+    entry_retry_release(view());
+    CHECK(g_writes == 3 && clean(), "the same owner returns and the pending direction releases");
 
     start();
     syn_input_on_call(hook_release);
@@ -701,6 +710,29 @@ static void test_writes_and_handler(void)
     step(&job, 0, false);
     CHECK(state_is(&job, ENTRY_FAILED, "input handler unavailable") && sent_is(&job, 0, 0) && clean() && g_writes == 2,
           "  the first direction: pressed, not handled, released; failed");
+}
+
+static void test_release_after_respawn(void)
+{
+    for (int changed = 0; changed < 5; changed++) {
+        EntryJob job;
+        start();
+        begin(&job, 118, 70, false, 0);
+        fail_writes(1, 1);
+        step(&job, 0, false);
+        GameView replacement = *view();
+        switch (changed) {
+        case 0: replacement.local.key++; break; /* same addresses, recycled avatar slot */
+        case 1: replacement.local.manager++; break;
+        case 2: replacement.local.component++; break;
+        case 3: replacement.local.actions++; break;
+        case 4: replacement.local.avatar++; break;
+        }
+        entry_retry_release(&replacement);
+        entry_retry_release(view());
+        CHECK(journal_empty() && g_writes == 2 && action_byte(ACTION_FOR[1]) == 1,
+              "confirmed replacement drops the pending release permanently without touching the pressed byte");
+    }
 }
 
 /* --- admission and begin --------------------------------------------------------------------------------------- */
@@ -840,6 +872,7 @@ int main(void)
     test_game_answers();
     test_game_state_between_directions();
     test_writes_and_handler();
+    test_release_after_respawn();
     test_entry_admission();
     test_begin_refusals();
     test_cancel();

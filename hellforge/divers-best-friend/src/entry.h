@@ -30,8 +30,8 @@
  * handler did not run too). The byte must then read 0: the game may release it itself inside the call, which counts as
  * released. Afterwards the count must be sent + 1 and the matched kind 0, or, after the last direction, the job's kind
  * (the one asked for, not the scramble's). The journal holds no ENTRY entry after any step, except when the release
- * could not be written ("direction could not be released"): that entry stays for a later mem_restore(MEM_OWNER_ENTRY) to
- * retry (the tick calls it while ENTRY has entries; entry_cancel does too).
+ * could not be written ("direction could not be released"): that entry stays for entry_retry_release. A new job fails with
+ * "previous direction release pending" until the journal clears.
  *
  * Reasons (EntryJob.reason, "" while running or done): "Code entry: <admission's reason>", "menu closed", "menu
  * inactive", "menu state unreadable", "local player unavailable", "close and reopen the menu" (the component was not
@@ -86,8 +86,11 @@ bool entry_begin(EntryJob* job, const GameView* v, uint32_t kind, uint32_t inter
  * not running or NULL. A NULL `v` fails the job with "menu closed". */
 void entry_step(EntryJob* job, const GameView* v, uint64_t now, bool trigger_down);
 
-/* Stops a running job: ENTRY_FAILED with `reason` (NULL: "cancelled"). Puts back anything still journaled under
- * MEM_OWNER_ENTRY (between steps, only a release that could not be written). A job that is not running is left alone. */
+/* Retry a failed release for its original owner. A missing local view defers the retry;
+ * a resolved replacement avatar or action array discards the journal without writing. */
+void entry_retry_release(const GameView* v);
+
+/* Stops a running job: ENTRY_FAILED with `reason` (NULL: "cancelled"). */
 void entry_cancel(EntryJob* job, const char* reason);
 
 #endif

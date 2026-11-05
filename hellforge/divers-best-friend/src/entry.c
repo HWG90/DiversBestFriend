@@ -35,6 +35,22 @@ static const uint32_t ACTION_OF[DBF_VAL_DIRECTION_MAX + 1] = {
 
 static const uint8_t PRESSED = DBF_VAL_ACTION_PRESSED, RELEASED = DBF_VAL_ACTION_RELEASED;
 
+/* The journal outlives a failed job (including reuse of its EntryJob by a shortcut). */
+static GameLocal release_owner;
+
+void entry_retry_release(const GameView* v)
+{
+    if (!mem_journal_count(MEM_OWNER_ENTRY) || !v || !v->local_ok) return;
+    const GameLocal* l = &v->local;
+    if (l->manager != release_owner.manager || l->key != release_owner.key ||
+        l->component != release_owner.component || l->actions != release_owner.actions ||
+        l->avatar != release_owner.avatar) {
+        mem_forget_all(MEM_OWNER_ENTRY);
+        return;
+    }
+    mem_restore(MEM_OWNER_ENTRY);
+}
+
 /* --- reasons --------------------------------------------------------------------------------------------------- */
 
 /* Ends the job: ENTRY_FAILED with the reason a b, cut to fit. False, for `return fail(...)`. */
@@ -139,14 +155,15 @@ static bool send_direction(EntryJob* job, const GameLocal* l)
 
     /* Press, handle, release (input.lua:263-272): the byte is put back whatever happened in between. ENTRY was admitted
      * above, so a handler call that does not happen means the port has no handler. */
+    if (mem_journal_count(MEM_OWNER_ENTRY)) return fail(job, "previous direction release pending");
+    release_owner = *l;
     address = l->actions + (uintptr_t)DBF_OFF_ACTION_ENTRY_STRIDE * ACTION_OF[direction];
     if (mem_swap(address, &RELEASED, &PRESSED, 1, MEM_OWNER_ENTRY) != MEM_SWAPPED)
         problem = "direction could not be pressed";
     else if (!(called = nat_input_handler(component)))
         problem = "input handler unavailable";
     /* A byte the game released itself inside the call counts as put back. What matters is that the byte reads released
-     * now; when the release could not be written, its entry stays journaled for a later mem_restore(MEM_OWNER_ENTRY)
-     * to retry (the tick's, and entry_cancel's). */
+     * now; when the release could not be written, its entry stays journaled for an owner-checked retry. */
     (void)mem_restore(MEM_OWNER_ENTRY);
     if (!mem_u8(address, &byte) || byte != RELEASED) problem = "direction could not be released";
     if (called) job->sent++;
@@ -177,6 +194,7 @@ bool entry_begin(EntryJob* job, const GameView* v, uint32_t kind, uint32_t inter
     job->kind = kind;
     job->instant = instant;
     job->latched = latched;
+    if (mem_journal_count(MEM_OWNER_ENTRY)) return fail(job, "previous direction release pending");
     if (!entry_admitted(job)) return false;
     /* R46's context(true) (input.lua:96-139): the menu open and active, the code-entry chain whole. */
     if (!v || !v->menu_open) return fail(job, "menu closed");
@@ -243,6 +261,5 @@ void entry_step(EntryJob* job, const GameView* v, uint64_t now, bool trigger_dow
 void entry_cancel(EntryJob* job, const char* reason)
 {
     if (!job || job->state != ENTRY_RUNNING) return;
-    (void)mem_restore(MEM_OWNER_ENTRY); /* between steps only a release that could not be written is; retry it */
     fail(job, reason ? reason : "cancelled");
 }

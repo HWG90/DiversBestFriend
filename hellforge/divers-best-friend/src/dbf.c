@@ -385,7 +385,7 @@ static void cancel_job(const GameView* v, const char* why)
 {
     if (shortcut_active()) entry_cancel_shortcut(&g_job, v, why);
     else entry_cancel(&g_job, why);
-    (void)mem_restore(MEM_OWNER_ENTRY);
+    entry_retry_release(v);
 }
 
 /* Each tick, while their journals hold anything: a release the game did not take (ENTRY), and a latch release that left
@@ -394,7 +394,7 @@ static void cancel_job(const GameView* v, const char* why)
  * whether the latch came from a slot hotkey that ran or from one refused after the latch was taken. */
 static void retry_restores(const GameView* v)
 {
-    if (mem_journal_count(MEM_OWNER_ENTRY) > 0) (void)mem_restore(MEM_OWNER_ENTRY);
+    entry_retry_release(v);
     if (!latch_held() && mem_journal_count(MEM_OWNER_LATCH) > 0)
         (void)latch_release(v->local_ok && latch_owner_is(&v->local));
     if (g_pending_logged && pending_changes() == 0) {
