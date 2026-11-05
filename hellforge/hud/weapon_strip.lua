@@ -46,9 +46,10 @@ local function new_renderer(b,scope)
  local visible=call('void (*)(uintptr_t,uint8_t)',0x144cfb0)
  local uv=call('void (*)(uintptr_t, NSR_vec2, NSR_vec2)',0x143eef0)
  local uv_min,uv_max=ffi.new('NSR_vec2',{.15,.15}),ffi.new('NSR_vec2',{.85,.85})
- -- One DBF-owned subtree: container, stock backing (including its sprite), four glyphs.
+ -- One DBF-owned subtree: container, stock backing (including its sprite), four glyphs and their leading divider.
  local backing_offset,icons_offset=0x110,0x380
- local size=icons_offset+4*0x160
+ local divider_offset=icons_offset+4*0x160
+ local size=divider_offset+0x160
  local storage,address,identity,parent
  local assets,layout={},nil
  local self={status='closed',icons={}}
@@ -84,18 +85,23 @@ local function new_renderer(b,scope)
   backing(plate,0x226,1) -- same stretch wrapper and gui_blur_curved as frame+0x8c0
   assert(b.pointer(plate+0xf8)==resource and b.pointer(plate+0x110+0xf0)==plate,'Weapon backing layout changed')
   attach_child(address,plate)
-  for i=0,3 do
-   local p=address+icons_offset+i*0x160
-   sprite(p);assert(b.pointer(p+0xf8)==resource,'Weapon icon context changed')
-   -- Stock option sprite constructor (1828c26) and diffuse_map update (1829219).
-   -- Preserve all DDS channels; the native shader interprets their masks.
-   asset(p,0x358512d85e35b47dULL,0)
-   assert(tonumber(material(p))~=0,'Weapon icon material unavailable')
+  local function styled_sprite(p,asset_id,anchor_y)
+   sprite(p);assert(b.pointer(p+0xf8)==resource,'Weapon sprite context changed')
+   asset(p,asset_id,0)
+   assert(tonumber(material(p))~=0,'Weapon sprite material unavailable')
    param4(p,0x7701209e,ffi.cast('const float *',b.base+0x21e2d60))
    param2(p,0xe13777ce,ffi.cast('const float *',b.base+0x21e53c0))
-   b.set(p,'anchor',{0,0});b.set(p,'pivot',{0,0});order(p,0x228)
-   visible(p,0);attach_child(address,p)
+   b.set(p,'anchor',{0,anchor_y});b.set(p,'pivot',{0,anchor_y});order(p,0x228)
+   attach_child(address,p)
   end
+  for i=0,3 do
+   local p=address+icons_offset+i*0x160
+   styled_sprite(p,0x358512d85e35b47dULL,0);visible(p,0)
+  end
+  -- Stock weapon-row divider, 25480438 constructor at 1817c38.
+  local divider=address+divider_offset
+  styled_sprite(divider,0x5af260a786a2ae33ULL,.5)
+  b.set(divider,'position',{0,0});b.set(divider,'size',{1,32});visible(divider,1)
   attach_child(row,address);assert(owned(),'Weapon strip attachment failed')
  end
  local dimensions=ffi.new('float[2]')
@@ -122,12 +128,16 @@ local function new_renderer(b,scope)
   local backing_style=b.get_text_style(plate+0x110)
   local glyph_style,holder_style=b.get_text_style(glyph),b.get_text_style(holder)
   for i=1,4 do glyph_style[i]=glyph_style[i]*holder_style[i]end
-  local style_key=table.concat(wrapper_style,',')..':'..table.concat(backing_style,',')..':'..table.concat(glyph_style,',')
+  local stock_divider=frame+0x2e60
+  child(stock_divider,frame+0x2948)
+  local divider_style=b.get_text_style(stock_divider)
+  local style_key=table.concat(divider_style,',')..':'..table.concat(wrapper_style,',')..':'..table.concat(backing_style,',')..':'..table.concat(glyph_style,',')
   local changed=resized or self.status~='visible' or layout.style~=style_key
   for i,item in ipairs(icons)do if assets[i]~=item.asset then changed=true end end
   if not changed then return end
   scope.context_scope(row,function(resource)
    if not address then create(root,row,resource)end
+   b.set_text_style(address+divider_offset,divider_style)
    local owned_plate=address+backing_offset
    b.set_text_style(owned_plate,wrapper_style);b.set_text_style(owned_plate+0x110,backing_style)
    if resized then b.set(address,'size',{8+#icons*edge+(#icons-1)*spacing,height})end

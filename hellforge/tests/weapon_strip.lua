@@ -108,8 +108,9 @@ node(root+0x820);node(frame,root+0x820);node(stockrow,frame)
 node(plate,stockrow).style[1]=.5
 node(plate+0x110,plate).style={1,.75,.74,.72}
 node(holder,stockrow);node(glyph,holder).style={.7,1,.98,.85}
+node(frame+0x2e60,frame+0x2948).style={.4,.9,.85,.8}
 local strip,scopes,releases,bindings=nil,0,0,0
-local function mine(p) assert(strip and p>=strip and p<strip+0x900,'write outside owned subtree');return nodes[p] end
+local function mine(p) assert(strip and p>=strip and p<strip+0xa60,'write outside owned subtree');return nodes[p] end
 local calls={
     [0x1446840]=function(p,k) assert(k==1);strip=p;node(p) end,
     [0x18166c0]=function(p,order,curved)
@@ -117,7 +118,7 @@ local calls={
         node(p);node(p+0x110,p)
     end,
     [0x143eab0]=function(p) mine(p);node(p) end,
-    [0x144f800]=function(p,id,mode) assert(id==0x358512d85e35b47dULL and mode==0);mine(p).asset=id end,
+    [0x144f800]=function(p,id,mode) assert(id==(p==strip+0x900 and 0x5af260a786a2ae33ULL or 0x358512d85e35b47dULL) and mode==0);mine(p).asset=id end,
     [0x144f6e0]=function(p) assert(mine(p).asset);return p end,
     [0x14498c0]=function(p,id,v) assert(mine(p).asset and id==0x7701209e and tonumber(ffi.cast('uintptr_t',v))==base+0x21e2d60) end,
     [0x14497a0]=function(p,id,v) assert(mine(p).asset and id==0xe13777ce and tonumber(ffi.cast('uintptr_t',v))==base+0x21e53c0) end,
@@ -163,6 +164,9 @@ local renderer=chunk().weapon_strip(backend,{context_scope=function(p,fn)
 end},{})
 local function tick()renderer.update({identity=root},.1)end
 tick();assert(renderer.status=='visible',renderer.status)
+local divider=nodes[strip+0x900]
+assert(divider.owner==strip and divider.visible==1 and divider.style[1]==.4)
+assert(divider.size[1]==1 and divider.size[2]==32 and divider.anchor[2]==.5 and divider.position[1]==0)
 local icon=strip+0x380
 assert(nodes[strip].owner==stockrow and nodes[strip].anchor[1]==1)
 assert(nodes[strip].size[1]==230 and nodes[icon].size[1]==48)
