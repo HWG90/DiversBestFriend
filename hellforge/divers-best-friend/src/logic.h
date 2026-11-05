@@ -27,6 +27,8 @@
  *     eligible rows in list order, wrapping around. With nothing chosen, Next chooses the first and Previous the last. If
  *     both rise in the same tick, neither moves (selection.lua:76). A press on a tick in which the caller is `busy`
  *     (a code entry is under way) is lost, not saved for later (selection.lua:48-59 returned before the edges were used).
+ *     The answer is LIST_MOVED only when the chosen card changed (R46 plays its move cue on a changed target only,
+ *     feedback.lua:25): with one eligible row a press moves nothing and the answer is LIST_NONE.
  *   - Confirm acts on a rising edge too, when it is armed, a row is chosen (and eligible) and the caller is not busy: the
  *     answer is LIST_CONFIRM and *row is the chosen row's index in GameView.rows. A Next or Previous that moved the choice
  *     in the same tick counts: Confirm is for the row chosen after the move (R46 does the same).
@@ -38,7 +40,9 @@
  * Edges. The levels are trusted as they come: bind_poll keeps a key held while nothing could fire from counting as
  * pressed (the release rule in bindings.h), so the first level of such a key is already a real press. ListState.prev keeps
  * the levels of the last call, which is made every tick the module runs, open or closed, so a key held while the list
- * was closed (or while the previous tick was busy) is not an edge when it is seen later.
+ * was closed (or while the previous tick was busy) is not an edge when it is seen later. A wheel notch is a level of one
+ * poll, and bind_poll puts a poll without it between two notches (bindings.h), so every notch is an edge of its own: three
+ * notches turned between two ticks are three moves over the next ticks, not one.
  *
  * Pacing (logic_interval, logic_deadline): the milliseconds between two directions of a code entry. A setting of 0 to 250
  * is used as it is (0: one direction per frame, which the caller's loop decides); randomize_input_delay draws from 70 to 240
@@ -92,9 +96,10 @@ typedef enum { LIST_NONE, LIST_MOVED, LIST_CONFIRM } ListEvent;
 int logic_list_rows(const GameView* v, const DbfSettings* s, int order[16], bool eligible[16]);
 
 /* One tick of List Select (see above). `levels` are bind_poll's (NULL: all up); `busy` is whether a code entry is under
- * way; `row` (NULL allowed) is set to -1, and on LIST_CONFIRM to the chosen row's index in v->rows. LIST_MOVED: Next or
- * Previous was pressed with something to move among (also with a single eligible row, which stays chosen: the press was
- * heard). st->chosen then says what is highlighted. A NULL `st` or `v` answers LIST_NONE. */
+ * way; `row` (NULL allowed) is set to -1, and on LIST_CONFIRM to the chosen row's index in v->rows. LIST_MOVED: a Next or
+ * Previous press changed the chosen card (also from nothing chosen to a row), which is when the move cue plays in R46
+ * (feedback.lua:25); with a single eligible row the press changes nothing and the answer is LIST_NONE. st->chosen says
+ * what is highlighted. A NULL `st` answers LIST_NONE; a NULL `v` counts as a closed menu. */
 ListEvent logic_list_step(ListState* st, const GameView* v, const DbfSettings* s, const bool levels[BIND_COUNT], bool busy,
                           int* row);
 

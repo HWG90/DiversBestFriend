@@ -110,16 +110,27 @@ static bool none_down(void)
     return true;
 }
 
-/* How many polls in a row (up to `max`) have `a` true, with nothing else changing. */
-static int pulses(BindAction a, int max)
+/* How many of the next `polls` polls (all of them are made) have `a` true, with nothing else changing. */
+static int pulses(BindAction a, int polls)
 {
     int n = 0;
-    for (int i = 0; i < max; i++) {
+    for (int i = 0; i < polls; i++) {
         poll(true);
-        if (!g_levels[a]) break;
-        n++;
+        if (g_levels[a]) n++;
     }
     return n;
+}
+
+/* The levels of `a` over the next `polls` polls (all of them are made) as text: "1" a poll with it true, "0" without. */
+static const char* seq(BindAction a, int polls)
+{
+    static char text[1100];
+    for (int i = 0; i < polls && i < (int)sizeof text - 1; i++) {
+        poll(true);
+        text[i] = g_levels[a] ? '1' : '0';
+        text[i + 1] = '\0';
+    }
+    return text;
 }
 
 static void turn(int notches) { g_total += (int64_t)notches * 120; }
@@ -242,7 +253,8 @@ static void test_wheel_notches(void)
     default_map(map);
     start(map);
     turn(-3); /* three notches down: next */
-    CHECK(pulses(BIND_NEXT, 10) == 3, "total -360: three polls of next (wheel_down), then false");
+    CHECK(strcmp(seq(BIND_NEXT, 8), "10101000") == 0,
+          "total -360: three pulses of next (wheel_down), one every other poll, then false");
     CHECK(none_down(), "and it stays false afterwards");
     poll(true);
     CHECK(none_down(), "a further poll: still false");
@@ -251,18 +263,22 @@ static void test_wheel_notches(void)
     poll(true);
     CHECK(only(BIND_PREVIOUS), "total +240: previous (wheel_up) on the first poll");
     poll(true);
-    CHECK(only(BIND_PREVIOUS), "and on the second");
+    CHECK(none_down(), "false on the second, though a notch waits (a pulse needs a false poll before the next one)");
+    poll(true);
+    CHECK(only(BIND_PREVIOUS), "previous again on the third");
     poll(true);
     CHECK(none_down(), "and then false");
+    poll(true);
+    CHECK(none_down(), "and no more");
 
     map[BIND_NEXT] = wheel_up();
     map[BIND_PREVIOUS] = wheel_down();
     start(map);
     turn(3);
-    CHECK(pulses(BIND_NEXT, 10) == 3, "with next on wheel_up, total +360 gives three polls of next, then false");
+    CHECK(strcmp(seq(BIND_NEXT, 8), "10101000") == 0, "with next on wheel_up, total +360 gives the same three pulses");
 }
 
-static void test_wheel_one_pulse_per_poll(void)
+static void test_wheel_pulse_spacing(void)
 {
     Binding map[BIND_COUNT];
     default_map(map);
@@ -270,19 +286,67 @@ static void test_wheel_one_pulse_per_poll(void)
     turn(-3);
     poll(true);
     CHECK(only(BIND_NEXT), "three notches: the first poll has one pulse");
+    poll(true);
+    CHECK(none_down(), "and the poll after a pulse has none, though two notches wait (so a consumer sees each as a rising edge)");
     turn(-1);
-    CHECK(pulses(BIND_NEXT, 10) == 3, "one more notch while two wait: three more polls");
+    CHECK(pulses(BIND_NEXT, 10) == 3, "one more notch while two wait: three more pulses");
     turn(2);
     turn(-2);
     poll(true);
     CHECK(none_down(), "up and down notches between two polls cancel (the total only knows the net)");
 
+    /* The directions are spaced on their own: a pulse of one does not hold back the other. */
+    start(map);
     turn(-2);
     poll(true);
+    CHECK(only(BIND_NEXT), "next pulses");
     turn(5);
     poll(true);
-    CHECK(g_levels[BIND_NEXT] && g_levels[BIND_PREVIOUS], "a pulse of each direction pending: one poll gives both, one each");
-    CHECK(pulses(BIND_PREVIOUS, 10) == 4, "and the remaining notches follow one per poll");
+    CHECK(only(BIND_PREVIOUS), "the poll after: next waits its turn, previous (a different direction) pulses");
+    poll(true);
+    CHECK(only(BIND_NEXT), "then next's second notch, while previous waits");
+    poll(true);
+    CHECK(only(BIND_PREVIOUS), "then previous again");
+    CHECK(pulses(BIND_PREVIOUS, 10) == 3, "and the remaining notches follow, one every other poll");
+
+    /* One notch each poll: every second one waits for its turn, none is lost. */
+    start(map);
+    int total = 0;
+    for (int i = 0; i < 6; i++) {
+        turn(-1);
+        poll(true);
+        total += g_levels[BIND_NEXT];
+    }
+    total += pulses(BIND_NEXT, 20);
+    CHECK(total == 6, "six notches, one per poll: six pulses in all");
+    start(map);
+    turn(-1);
+    poll(true);
+    turn(-1);
+    poll(true);
+    CHECK(!g_levels[BIND_NEXT], "a notch in the poll after a pulse waits (the poll after a pulse is false)");
+    poll(true);
+    CHECK(only(BIND_NEXT), "and pulses in the poll after that");
+
+    /* A poll that could not fire is a false poll: the next pulse comes at once. */
+    start(map);
+    turn(-1);
+    poll(true);
+    CHECK(only(BIND_NEXT), "a pulse");
+    poll(false);
+    turn(-1);
+    poll(true);
+    CHECK(only(BIND_NEXT), "after a blocked poll the next notch pulses at once");
+
+    start(map);
+    turn(-1);
+    poll(true);
+    CHECK(only(BIND_NEXT), "a pulse");
+    turn(-1);
+    bind_init(&g_port, map);
+    turn(-1);
+    poll(true);
+    CHECK(only(BIND_NEXT), "bind_init forgets that a pulse was just given");
 }
 
 static void test_wheel_fractions(void)
@@ -311,7 +375,9 @@ static void test_wheel_fractions(void)
     CHECK(only(BIND_NEXT), "-130: one notch down, the ten left over wait (toward zero)");
     g_total -= 110;
     poll(true);
-    CHECK(only(BIND_NEXT), "-110 more: the remainder joins it for the second notch");
+    CHECK(none_down(), "-110 more: the remainder joins it for a second notch, which waits for the poll after a pulse");
+    poll(true);
+    CHECK(only(BIND_NEXT), "and pulses in the next");
     poll(true);
     CHECK(none_down(), "and no third");
 }
@@ -380,6 +446,7 @@ static void test_blocked_drops_notches(void)
     turn(-1);
     poll(true);
     CHECK(only(BIND_NEXT), "a notch after unblocking counts");
+    poll(true);
 
     turn(-4);
     poll(true);
@@ -722,7 +789,7 @@ int main(void)
     test_mouse_buttons();
     test_pad();
     test_wheel_notches();
-    test_wheel_one_pulse_per_poll();
+    test_wheel_pulse_spacing();
     test_wheel_fractions();
     test_wheel_pending_cap();
     test_wheel_shared_by_actions();

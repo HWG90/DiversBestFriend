@@ -88,7 +88,7 @@ typedef struct DbfRow {
                                                  remapped kind's under a scramble effect (see scramble_known) */
     uint8_t code_len;                         /* 0 when there is no code */
     uint32_t entry;                           /* the payload entry the card shows (+0x3748) */
-    uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];   /* the card's timer block (+0x3718), decoded by Plan 3 */
+    uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];   /* the card's timer block (+0x3718), decoded by logic_timer (logic.h) */
     bool active;                              /* true for every row served (rows are the active cards) */
 } DbfRow;
 

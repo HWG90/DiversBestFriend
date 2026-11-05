@@ -572,7 +572,8 @@ static void test_step_edges(void)
     CHECK(step(&st4, &v, &s, false) == LIST_MOVED && st4.chosen == 3, "and a Previous edge wraps to the last row");
     release_all();
 
-    /* One eligible row: the press is heard and the row stays. */
+    /* One eligible row: the press leaves the choice where it was, which is no move (R46's move cue, feedback.lua:25, plays only
+     * when the highlighted card changes). */
     ListState st5;
     memset(&st5, 0, sizeof st5);
     GameView one = four_rows();
@@ -581,8 +582,34 @@ static void test_step_edges(void)
     set_cooldown(&one.rows[3], 9.0f);
     step(&st5, &one, &s, false);
     CHECK(st5.chosen == 2, "one eligible row: chosen at open");
-    CHECK(press(&st5, &one, &s, BIND_NEXT, false) == LIST_MOVED && st5.chosen == 2, "Next with one eligible row: the press is heard, the row stays");
-    CHECK(press(&st5, &one, &s, BIND_PREVIOUS, false) == LIST_MOVED && st5.chosen == 2, "so does Previous");
+    CHECK(press(&st5, &one, &s, BIND_NEXT, false) == LIST_NONE && st5.chosen == 2, "Next with one eligible row: no move, the row stays");
+    CHECK(press(&st5, &one, &s, BIND_PREVIOUS, false) == LIST_NONE && st5.chosen == 2, "so with Previous");
+    CHECK(st5.chosen_card == 0x3000 && st5.chosen_kind == 12, "and it is still pinned");
+
+    /* The same on the tick of opening. */
+    ListState st6;
+    memset(&st6, 0, sizeof st6);
+    release_all();
+    step(&st6, &closed, &s, false);
+    hold(BIND_NEXT);
+    CHECK(step(&st6, &one, &s, false) == LIST_NONE && st6.chosen == 2, "a Next edge on the tick of opening with one eligible row: no move");
+    release_all();
+
+    /* From nothing chosen, a press that chooses a row is a move; one that finds nothing to choose is not. */
+    ListState st7;
+    memset(&st7, 0, sizeof st7);
+    GameView timed = four_rows();
+    for (int i = 0; i < 4; i++) set_cooldown(&timed.rows[i], 9.0f);
+    step(&st7, &timed, &s, false);
+    CHECK(st7.chosen == -1, "(nothing chosen)");
+    CHECK(press(&st7, &timed, &s, BIND_NEXT, false) == LIST_NONE && st7.chosen == -1, "Next with no eligible row at all: no move");
+    set_state(&timed.rows[1], 0);
+    CHECK(press(&st7, &timed, &s, BIND_NEXT, false) == LIST_MOVED && st7.chosen == 1, "nothing chosen and a row to choose: Next is a move");
+
+    /* Two eligible rows: every press moves. */
+    set_state(&timed.rows[3], 0);
+    CHECK(press(&st7, &timed, &s, BIND_NEXT, false) == LIST_MOVED && st7.chosen == 3, "two eligible rows: Next moves");
+    CHECK(press(&st7, &timed, &s, BIND_NEXT, false) == LIST_MOVED && st7.chosen == 1, "and again, around");
 }
 
 static void test_step_busy(void)

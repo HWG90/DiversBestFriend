@@ -11,6 +11,7 @@ static bool g_pad_bound;   /* some action is on a controller button */
 static int64_t g_base;     /* the wheel total the notches are counted from */
 static bool g_base_valid;  /* g_base holds a real total */
 static int g_pending[2];   /* notches waiting to be handed out, [0] up, [1] down */
+static bool g_gap[2];      /* the direction pulsed on the last poll, so it may not on this one (see bind_poll) */
 static bool g_seen_up[BIND_COUNT]; /* the action's key, mouse button or pad button has been up on an allowed poll since
                                       bind_init or the last poll that could not fire; only then may its level be true
                                       (the release rule in bindings.h) */
@@ -65,6 +66,7 @@ void bind_init(const BindPort* port, const Binding map[BIND_COUNT])
         g_pad_bound |= g_map[i].kind == BIND_PAD;
     }
     g_pending[DIR_UP] = g_pending[DIR_DOWN] = 0;
+    g_gap[DIR_UP] = g_gap[DIR_DOWN] = false;
     memset(g_seen_up, 0, sizeof g_seen_up);
     g_base_valid = read_total(&total);
     g_base = g_base_valid ? total : 0;
@@ -112,6 +114,7 @@ void bind_poll(bool levels[BIND_COUNT], bool allowed, char* status, size_t n)
      * pending pulses are dropped and the baseline moves to the total. */
     if (!allowed || g_port.foreground == NULL || !g_port.foreground()) {
         g_pending[DIR_UP] = g_pending[DIR_DOWN] = 0;
+        g_gap[DIR_UP] = g_gap[DIR_DOWN] = false; /* this poll is a false one already */
         memset(g_seen_up, 0, sizeof g_seen_up); /* what is held now was held while nothing could fire */
         if (have_total) {
             g_base = total;
@@ -121,11 +124,12 @@ void bind_poll(bool levels[BIND_COUNT], bool allowed, char* status, size_t n)
     }
 
     if (have_total) take_notches(total);
+    /* A direction pulses on at most every other poll: the poll after a pulse is false whatever waits, so that a consumer
+     * that takes edges (a rising level) sees every notch as an edge. Notches queued behind it wait their turn. */
     for (int d = 0; d < 2; d++) {
-        if (g_pending[d] > 0) {
-            g_pending[d]--;
-            pulse[d] = true;
-        }
+        pulse[d] = g_pending[d] > 0 && !g_gap[d];
+        if (pulse[d]) g_pending[d]--;
+        g_gap[d] = pulse[d];
     }
     if (g_pad_bound && g_port.pad_buttons != NULL) pad_ok = g_port.pad_buttons(&buttons);
 

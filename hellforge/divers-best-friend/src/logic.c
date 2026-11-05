@@ -192,10 +192,13 @@ ListEvent logic_list_step(ListState* st, const GameView* v, const DbfSettings* s
         }
         if (m > 0) {
             int target;
+            uintptr_t before = st->chosen >= 0 ? st->chosen_card : 0;
             if (at < 0) target = rising[BIND_NEXT] ? 0 : m - 1; /* nothing chosen: Next the first, Previous the last */
             else target = rising[BIND_NEXT] ? (at + 1) % m : (at + m - 1) % m;
             choose(st, v, ranked[target]);
-            event = LIST_MOVED;
+            /* Only a changed target is a move (R46's cue, feedback.lua:25): with one row to choose from the press changes
+             * nothing. The card is the identity of a row, as for the pin. */
+            if (st->chosen_card != before) event = LIST_MOVED;
         }
     }
 
