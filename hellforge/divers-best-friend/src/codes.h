@@ -81,6 +81,11 @@ void codes_init(const CodePort* port);
 /* Where game.dll is and its image size; game_init calls it. Forgets the table and the pass. 0 for either: none. */
 void codes_set_image(uintptr_t game_dll, uint32_t image_size);
 
+/* Forgets the table and the pass, as codes_set_image does, without changing the image: codes_read refuses ("no definition
+ * table") until the next codes_table accepts a table. game_read calls it first thing, so a codes_read later in the tick
+ * (code entry's) never works against an earlier tick's table, claims or scramble flag. */
+void codes_forget_pass(void);
+
 /* Reads and checks the definition table (see the top) and starts a new pass: the shared-array table and the scramble
  * flag (codes_scramble_asked) are emptied. True with *max_kind set to 149 (vanilla) or 197 (HellForge's); false with
  * *max_kind 0 and the reason, and then codes_read refuses until the next codes_table that accepts a table. NULL

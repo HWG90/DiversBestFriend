@@ -139,6 +139,11 @@ void codes_init(const CodePort* port)
     forget_pass();
 }
 
+void codes_forget_pass(void)
+{
+    forget_pass();
+}
+
 void codes_set_image(uintptr_t game_dll, uint32_t image_size)
 {
     g_base = image_size != 0 ? game_dll : 0;

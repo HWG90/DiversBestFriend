@@ -373,6 +373,9 @@ void game_read(GameView* out)
     uint8_t ready, open;
     bool open_ok, have_kinds = false, have_table = false;
     Local local;
+    /* First, before any return: a codes_read later in this tick (code entry's) must not use an earlier tick's table,
+     * claims or scramble flag. The codes_table below starts this tick's pass. */
+    codes_forget_pass();
     if (!out) return;
     memset(out, 0, sizeof *out);
     out->build_ok = adm_build_ok(NULL);

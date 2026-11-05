@@ -28,6 +28,7 @@
 #define DEF_CODE 0x40u             /* R46 input.lua:165 */
 #define DEF_COUNT 0x48u            /* R46 input.lua:165 */
 #define AVATAR_SEED 0x11b8u        /* R46 input.lua:157 */
+#define GAME_MODE 0xac21cu         /* R46 native.lua:82: the game state's mode, 4 in gameplay */
 #define AT_EFFECTS ((uintptr_t)0x2d000000000ull)
 #define AT_ELSEWHERE ((uintptr_t)0x30000001000ull) /* neither the settings block nor the loader image */
 #define ABOVE ((int32_t)(SYN_IMAGE_SIZE + 0x10000u))
@@ -654,6 +655,37 @@ static void test_scramble(void)
           "game_read, the query cannot run: own codes, scramble_known false");
 }
 
+/* game_read forgets the codes pass first thing, before any early return: a codes_read later in the tick (code entry's)
+ * never works against an earlier tick's table, claims or scramble flag (Plan 2, Task 6's review). */
+static void test_stale_pass_forgotten(void)
+{
+    SynScene s;
+    const GameView* v;
+    start(&s);
+    v = read_view();
+    CHECK(reason_is(v, "") && v->table_rva == VANILLA_TABLE && codes_scramble_asked()
+              && reads(118, NULL, s.stratagems[0].code, 3, 118, false),
+          "after a full game_read the pass serves codes");
+    syn_poke_u32(syn_game_state() + GAME_MODE, 0);
+    v = read_view();
+    CHECK(reason_is(v, "not in gameplay") && !codes_scramble_asked() && codes_table_at() == 0,
+          "a game_read that stops at the game state: the pass is forgotten");
+    CHECK(refused(118, NULL, "no definition table"), "  and codes_read refuses: the earlier tick's table is not used");
+
+    syn_poke_u32(syn_game_state() + GAME_MODE, 4);
+    v = read_view();
+    CHECK(reason_is(v, "") && reads(118, NULL, s.stratagems[0].code, 3, 118, false), "back in gameplay: codes again");
+    game_read(NULL);
+    CHECK(refused(118, NULL, "no definition table") && codes_table_at() == 0, "game_read(NULL) forgets the pass too");
+
+    v = read_view();
+    CHECK(reads(118, NULL, s.stratagems[0].code, 3, 118, false), "a full read again: codes");
+    refuse_witness("hud_root");
+    v = read_view();
+    CHECK(!v->in_gameplay && refused(118, NULL, "no definition table"),
+          "a game_read refused by admission (Selection state): the pass is forgotten");
+}
+
 /* --- admission and game_read ----------------------------------------------------------------------------------- */
 
 static void test_stratagems_refused(void)
@@ -707,6 +739,7 @@ int main(void)
     test_shared_arrays();
     test_scramble();
     test_stratagems_refused();
+    test_stale_pass_forgotten();
     test_game_view();
     CHECK(syn_write_count() == 0, "codes asked for no write");
     syn_free();

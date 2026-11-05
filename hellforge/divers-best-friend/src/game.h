@@ -62,7 +62,9 @@
  * Kept across reads: the image bounds (game_init, which hands them to codes_set_image) and the local identity (the
  * display path's session peer and payload address) of the last read that found one, so the read on which it changes
  * says "local payload changed", has local_ok false and serves no rows; the next read takes the new identity. The
- * definition table is checked again on every read (codes_table). Rows are never kept.
+ * definition table is checked again on every read (codes_table). Rows are never kept, and neither is codes' pass:
+ * game_read forgets it first thing (codes_forget_pass), before any early return, so a codes_read later in the tick
+ * (code entry's) only works on this read's table.
  *
  * Portable C11: standard headers, memory.h, admission.h and the generated header only (game.c adds codes.h). Not
  * thread-safe: only the game thread calls it. */
