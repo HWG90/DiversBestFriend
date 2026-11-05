@@ -28,6 +28,9 @@ static uint32_t g_rw_lo, g_rw_hi; /* game.dll RVAs [lo, hi) that the fake HellFo
 static int g_reads;               /* read_code calls */
 static int g_witness_reads;       /* read_code calls above the header of game.dll */
 static int g_rw_calls, g_rw_misuse;
+#define MAX_LOGS 16
+static char g_logs[MAX_LOGS][160]; /* what admission logged through the port, in order */
+static int g_log_count;            /* log calls, counted past MAX_LOGS too */
 
 static void put32(uint8_t* p, uint32_t v)
 {
@@ -78,8 +81,19 @@ static int fake_rewrites(uint32_t rva, uint32_t size)
     return rva < g_rw_hi && rva + size > g_rw_lo;
 }
 
+static void fake_log(const char* line)
+{
+    if (g_log_count < MAX_LOGS) {
+        strncpy(g_logs[g_log_count], line, sizeof g_logs[0] - 1);
+        g_logs[g_log_count][sizeof g_logs[0] - 1] = '\0';
+    }
+    g_log_count++;
+}
+
 static const AdmPort PORT = { fake_module_base, fake_read_code, fake_rewrites };
 static const AdmPort PORT_NO_REWRITES = { fake_module_base, fake_read_code, NULL };
+static const AdmPort PORT_LOG = { fake_module_base, fake_read_code, fake_rewrites, fake_log };
+static const AdmPort PORT_LOG_NO_REWRITES = { fake_module_base, fake_read_code, NULL, fake_log };
 
 static const DbfWitness* wit(const char* name)
 {
@@ -112,12 +126,19 @@ static void reset(void)
     g_blind_until = 0;
     g_rw_lo = g_rw_hi = 0;
     g_reads = g_witness_reads = g_rw_calls = g_rw_misuse = 0;
+    g_log_count = 0;
 }
 
 static void start(uint64_t ms)
 {
     g_now = ms;
     adm_init(&PORT, ms);
+}
+
+static void start_logging(uint64_t ms)
+{
+    g_now = ms;
+    adm_init(&PORT_LOG, ms);
 }
 
 static void tick(uint64_t ms)
@@ -519,6 +540,128 @@ static void test_rewrites(void)
     CHECK(is(FEAT_POINTING, ADMIT_OK, ""), "a masked byte in the second read chunk is ignored too");
 }
 
+/* How many times admission logged exactly this line. */
+static int logged(const char* line)
+{
+    int n = 0;
+    for (int i = 0; i < g_log_count && i < MAX_LOGS; i++) n += strcmp(g_logs[i], line) == 0;
+    return n;
+}
+
+/* Masks the `count` game.dll bytes from `first` bytes into witness `name`. */
+static void mask_witness(const char* name, unsigned first, unsigned count)
+{
+    g_rw_lo = wit(name)->rva + first;
+    g_rw_hi = g_rw_lo + count;
+}
+
+static void test_mask_log(void)
+{
+    reset();
+    flip("bravo", 2);
+    mask_witness("bravo", 2, 1);
+    start_logging(0);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, ""), "a witness whose only changed byte is masked is ok");
+    CHECK(logged("witness bravo: 1 of 8 bytes rewritten by HellForge") == 1 && g_log_count == 1,
+          "a witness compared with a masked byte logs how many of its bytes HellForge rewrites, once");
+    CHECK(g_rw_misuse == 0, "and rewrites was still asked about single bytes");
+
+    reset();
+    mask_witness("charlie", 62, 5); /* none of the five differs; they lie on both sides of the 64-byte read chunk */
+    start_logging(0);
+    CHECK(logged("witness charlie: 5 of 100 bytes rewritten by HellForge") == 1 && g_log_count == 1,
+          "masked bytes that matched are counted too, across read chunks");
+
+    reset();
+    mask_witness("bravo", 0, 8);
+    start_logging(0);
+    CHECK(logged("witness bravo: 8 of 8 bytes rewritten by HellForge") == 1 && g_log_count == 1,
+          "a witness masked whole counts all of its bytes");
+
+    reset();
+    g_rw_lo = wit("alpha")->rva + 15; /* alpha's last byte ... */
+    g_rw_hi = wit("bravo")->rva + 2;  /* ... the gap between the witnesses ... and bravo's first two */
+    start_logging(0);
+    CHECK(g_log_count == 2 && logged("witness alpha: 1 of 16 bytes rewritten by HellForge") == 1 &&
+              logged("witness bravo: 2 of 8 bytes rewritten by HellForge") == 1,
+          "two masked witnesses log one line each; the gap between them counts for neither");
+
+    reset();
+    g_rw_lo = 0x10; /* only the module's header, which no witness covers */
+    g_rw_hi = 0x20;
+    start_logging(0);
+    CHECK(g_rw_calls > 0 && g_log_count == 0, "bytes HellForge rewrites outside every witness log nothing");
+
+    reset();
+    start_logging(0);
+    tick(1000);
+    CHECK(g_rw_calls > 0 && g_log_count == 0, "a game with nothing masked logs nothing");
+
+    /* Retries and the end of the grace period do not log again; a restart does. */
+    reset();
+    flip("bravo", 2);
+    flip("bravo", 5);
+    mask_witness("bravo", 2, 1);
+    start_logging(0);
+    tick(1000);
+    tick(2000);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_PENDING, "witness bravo differs (retrying)") && g_log_count == 1,
+          "a witness that is read again while it differs logs its count once");
+    tick(31000);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_REFUSED, "witness bravo differs") && g_log_count == 1 &&
+              logged("witness bravo: 1 of 8 bytes rewritten by HellForge") == 1,
+          "and not again when the grace period ends");
+    start_logging(40000);
+    CHECK(g_log_count == 2 && logged("witness bravo: 1 of 8 bytes rewritten by HellForge") == 2,
+          "adm_init again forgets what was logged: the count is logged again");
+    tick(41000);
+    tick(42000);
+    CHECK(g_log_count == 2, "and once after that restart");
+
+    reset();
+    mask_witness("alpha", 0, 3);
+    start_logging(0);
+    tick(1000);
+    tick(90000);
+    CHECK(g_log_count == 1 && logged("witness alpha: 3 of 16 bytes rewritten by HellForge") == 1,
+          "a witness that matched logs its count once and is not read again");
+
+    /* An unreadable witness has not been compared: nothing is logged until all of it was read. */
+    reset();
+    mask_witness("bravo", 1, 2);
+    blind_witness("bravo", 1500);
+    start_logging(0);
+    CHECK(g_log_count == 0 && is(FEAT_STRATAGEMS, ADMIT_PENDING, "witness bravo not readable yet"),
+          "an unreadable witness logs nothing");
+    tick(1000);
+    CHECK(g_log_count == 0, "and nothing while it stays unreadable");
+    tick(2000);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, "") && g_log_count == 1 &&
+              logged("witness bravo: 2 of 8 bytes rewritten by HellForge") == 1,
+          "once it can be read, its count is logged, once");
+
+    reset();
+    mask_witness("charlie", 10, 2); /* the first chunk's masked bytes are read, the second chunk cannot be yet */
+    blind_range(wit("charlie")->rva + 64, wit("charlie")->rva + 100, 1500);
+    start_logging(0);
+    CHECK(g_log_count == 0, "a witness whose later chunk is unreadable logs nothing yet");
+    tick(2000);
+    CHECK(g_log_count == 1 && logged("witness charlie: 2 of 100 bytes rewritten by HellForge") == 1,
+          "and logs the count of the whole witness once all of it was read");
+
+    /* A port without rewrites masks nothing; a port without log still masks. */
+    reset();
+    adm_init(&PORT_LOG_NO_REWRITES, 0);
+    CHECK(g_log_count == 0 && g_rw_calls == 0, "a port without rewrites masks nothing and logs nothing");
+    reset();
+    flip("bravo", 2);
+    mask_witness("bravo", 2, 1);
+    adm_init(&PORT, 0);
+    tick(1000);
+    CHECK(is(FEAT_STRATAGEMS, ADMIT_OK, "") && g_log_count == 0 && g_rw_calls > 0,
+          "a port without log still masks, and has nothing to log to");
+}
+
 static void test_chunks(void)
 {
     static const unsigned POSITIONS[] = { 0, 1, 62, 63, 64, 65, 98, 99 };
@@ -597,6 +740,7 @@ int main(void)
     test_retry_cadence();
     test_priority_and_order();
     test_rewrites();
+    test_mask_log();
     test_chunks();
     test_restart();
     test_bad_arguments();

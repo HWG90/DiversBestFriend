@@ -14,6 +14,10 @@
  *
  * Reading: witnesses are read through the port's read_code, the bytes before any HellForge hook, and a byte HellForge
  * itself may rewrite is not compared. A witness that matched, and a build that was verified, are never read again.
+ * Masking is logged: the first time a witness was read whole and some of its bytes were masked, the port's log gets one line,
+ * "witness <name>: <n> of <size> bytes rewritten by HellForge", with <n> counting every masked byte of the witness
+ * (whether or not it differed from the table), so the log says how much of the witness was not compared. A witness is
+ * logged at most once per adm_init.
  *
  * Portable C11: standard headers and the generated address header only; no SDK and no platform header. Not thread-safe by
  * design: only the game thread calls it. The reason strings returned live in static storage and stay valid until the
@@ -52,8 +56,12 @@ typedef struct AdmPort {
     uintptr_t (*module_base)(const char* module, size_t* size);
     /* Reads game code as it was before any hook; 0 on success, non-zero when the range cannot be read. */
     int (*read_code)(uintptr_t address, void* out, size_t size);
-    /* 1 when HellForge may rewrite the module bytes at [rva, rva + size) (a byte of a witness it patches). NULL: none. */
+    /* 1 when HellForge may rewrite the module bytes at [rva, rva + size) (a byte of a witness it patches). NULL: none.
+     * Admission asks about single bytes (size 1). */
     int (*rewrites)(uint32_t rva, uint32_t size);
+    /* Optional (NULL: admission logs nothing): takes one line of text, without a line end, from the game thread. Added
+     * last, so an initialiser that stops at `rewrites` stays valid. */
+    void (*log)(const char* line);
 } AdmPort;
 
 /* Starts admission (or restarts it, forgetting all earlier results) and runs the first check at `now_ms`, a monotonic

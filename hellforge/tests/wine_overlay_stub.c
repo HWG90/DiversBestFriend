@@ -17,6 +17,8 @@ _Static_assert(STUB_API >= 3 && STUB_API <= 5, "STUB_API is 3, 4 or 5");
 static OvApi g_table;
 static int g_ready;
 static int g_requests;
+static int g_register_calls;
+static int g_refuse_panels;
 
 static StubPanel g_panels[MAX_PANELS];
 static int g_panel_count;
@@ -40,7 +42,8 @@ static void copy_text(char* dst, const char* src)
 static OvPanel* stub_register_panel(const OvPanelDef* def)
 {
     StubPanel* p;
-    if (def == NULL || g_panel_count >= MAX_PANELS) return NULL;
+    g_register_calls++;
+    if (def == NULL || g_refuse_panels || g_panel_count >= MAX_PANELS) return NULL;
     p = &g_panels[g_panel_count++];
     p->size = def->size;
     copy_text(p->id, def->id);
@@ -88,6 +91,8 @@ EXPORT const OvApi* ov_api(uint32_t version)
 
 EXPORT int stub_requests(void) { return g_requests; }
 EXPORT int stub_panel_count(void) { return g_panel_count; }
+EXPORT int stub_register_calls(void) { return g_register_calls; }
+EXPORT void stub_refuse_panels(int on) { g_refuse_panels = on; }
 EXPORT const StubPanel* stub_panel(int index) { return index >= 0 && index < g_panel_count ? &g_panels[index] : NULL; }
 EXPORT int stub_game_thread_count(void) { return g_tick_count; }
 

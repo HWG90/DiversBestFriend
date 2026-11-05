@@ -45,6 +45,8 @@ _Static_assert(DBF_FEATURE_COUNT <= 32, "a witness' feature mask is a uint32_t")
 #define GRACE_MS 30000u /* a witness that differs may still be patched or unpacked this long after adm_init */
 #define CHUNK 64u       /* a witness is read and compared this many bytes at a time */
 #define REASON_MAX 96
+#define LOG_MAX 160      /* a log line: "witness <name>: <n> of <size> bytes rewritten by HellForge" */
+#define LOG_NAME_MAX 64  /* a longer witness name is cut, so the counts after it always fit */
 #define MAX_WITNESSES 128
 #define WITNESS_COUNT (sizeof dbf_witnesses / sizeof dbf_witnesses[0])
 _Static_assert(WITNESS_COUNT <= MAX_WITNESSES, "raise MAX_WITNESSES");
@@ -92,6 +94,7 @@ static bool g_game_ok, g_exe_ok; /* stamp verified: never read again */
 static uintptr_t g_game_base;
 
 static WitnessState g_witness[MAX_WITNESSES];
+static bool g_mask_logged[MAX_WITNESSES]; /* the witness' masked-byte count was logged since adm_init */
 static FeatureStatus g_feature[FEAT_COUNT];
 
 /* dst = a b c, cut to fit. */
@@ -183,22 +186,66 @@ static void check_build(void)
 
 typedef enum { CMP_MATCH, CMP_DIFFERS, CMP_UNREADABLE } Compare;
 
-/* Reads the witness' span of game.dll and compares it with the table's bytes. A differing byte that HellForge may rewrite
- * (the port's `rewrites`, asked about that byte only when it differs) is left out of the comparison. An unreadable chunk
- * makes the whole witness unreadable, whatever the other chunks hold. */
-static Compare compare_witness(const DbfWitness* w)
+static size_t put_text(char* dst, size_t at, const char* text, size_t limit)
 {
+    for (size_t i = 0; text[i] != '\0' && i < limit && at < LOG_MAX - 1; i++) dst[at++] = text[i];
+    return at;
+}
+
+static size_t put_uint(char* dst, size_t at, uint32_t value)
+{
+    char digits[10];
+    int n = 0;
+    do {
+        digits[n++] = (char)('0' + value % 10u);
+        value /= 10u;
+    } while (value != 0);
+    while (n > 0 && at < LOG_MAX - 1) dst[at++] = digits[--n];
+    return at;
+}
+
+/* "witness <name>: <masked> of <size> bytes rewritten by HellForge". */
+static void log_masked(const DbfWitness* w, uint32_t masked)
+{
+    char line[LOG_MAX];
+    size_t at = put_text(line, 0, "witness ", LOG_MAX);
+    at = put_text(line, at, w->name, LOG_NAME_MAX);
+    at = put_text(line, at, ": ", LOG_MAX);
+    at = put_uint(line, at, masked);
+    at = put_text(line, at, " of ", LOG_MAX);
+    at = put_uint(line, at, w->size);
+    at = put_text(line, at, " bytes rewritten by HellForge", LOG_MAX);
+    line[at] = '\0';
+    g_port.log(line);
+}
+
+/* Reads the witness' span of game.dll and compares it with the table's bytes. A byte that HellForge may rewrite (the
+ * port's `rewrites`) is left out of the comparison. An unreadable chunk makes the whole witness unreadable, whatever the
+ * other chunks hold. When the port can log and this witness was not logged yet, `rewrites` is asked about every byte, so
+ * that the count of masked bytes is the witness' whole count, matching or not; the count is logged once the whole witness
+ * was read. Otherwise it is asked only about the bytes that differ. */
+static Compare compare_witness(size_t index)
+{
+    const DbfWitness* w = &dbf_witnesses[index];
     uint8_t buf[CHUNK];
     bool differs = false;
+    bool counting = g_port.rewrites && g_port.log && !g_mask_logged[index];
+    uint32_t masked = 0;
     if (w->size > 0 && w->bytes == NULL) return CMP_DIFFERS;
     for (uint32_t off = 0; off < w->size; off += CHUNK) {
         uint32_t n = w->size - off < CHUNK ? w->size - off : CHUNK;
         if (g_port.read_code(g_game_base + w->rva + off, buf, n) != 0) return CMP_UNREADABLE;
         for (uint32_t i = 0; i < n; i++) {
-            if (buf[i] == w->bytes[off + i]) continue;
-            if (g_port.rewrites && g_port.rewrites(w->rva + off + i, 1) != 0) continue;
-            differs = true;
+            bool same = buf[i] == w->bytes[off + i];
+            bool rewritten = false;
+            if (counting || (!same && g_port.rewrites)) rewritten = g_port.rewrites(w->rva + off + i, 1) != 0;
+            if (rewritten) masked++;
+            if (!same && !rewritten) differs = true;
         }
+    }
+    if (counting && masked > 0) {
+        g_mask_logged[index] = true;
+        log_masked(w, masked);
     }
     return differs ? CMP_DIFFERS : CMP_MATCH;
 }
@@ -208,7 +255,7 @@ static void check_witnesses(uint64_t now_ms)
     bool grace_over = now_ms >= g_start_ms && now_ms - g_start_ms >= GRACE_MS;
     for (size_t i = 0; i < WITNESS_COUNT; i++) {
         if (g_witness[i] == W_MATCHED || g_witness[i] == W_REFUSED) continue;
-        switch (compare_witness(&dbf_witnesses[i])) {
+        switch (compare_witness(i)) {
         case CMP_MATCH: g_witness[i] = W_MATCHED; break;
         case CMP_UNREADABLE: g_witness[i] = W_UNREADABLE; break;
         case CMP_DIFFERS: g_witness[i] = grace_over ? W_REFUSED : W_DIFFERS; break;
@@ -277,6 +324,7 @@ void adm_init(const AdmPort* port, uint64_t now_ms)
 {
     memset(&g_port, 0, sizeof g_port);
     memset(g_witness, 0, sizeof g_witness); /* W_UNREADABLE */
+    memset(g_mask_logged, 0, sizeof g_mask_logged);
     memset(g_feature, 0, sizeof g_feature);
     g_game_ok = g_exe_ok = false;
     g_game_base = 0;

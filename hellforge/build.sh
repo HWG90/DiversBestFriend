@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Builds, tests and installs Diver's Best Friend for HellForge (the native C port in hellforge/divers-best-friend).
-# Usage: ./build.sh dll                          the mod's DLL, built exactly as HellForge builds a source mod, then its
-#                                                import check (tests/check_imports.sh)
-#        ./build.sh test                         the Linux unit tests: tests/test_*.c with the portable units of src/
+# Usage: ./build.sh dll                          the mod's DLL, built exactly as HellForge builds a source mod, after the check
+#                                                of the vendored SDK (tests/check_sdk.sh), then its import check
+#                                                (tests/check_imports.sh)
+#        ./build.sh test                         the SDK check, the Linux unit tests (tests/test_*.c with the portable units
+#                                                of src/) and the Python tests (tools/test_*.py)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
 #                                                once per case, with the stub Overlay Hosts and loader built here
@@ -10,11 +12,14 @@
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
 # Zig is the native Linux 0.17.0, HellForge's pinned version (Wine cannot run zig.exe: its cache locking calls NtLockFile
-# in a way Wine does not implement). Settings: HF_INSTALL (the HellForge installation the toolchain and SDK come from;
-# default HellForge 0.4's Linux install, ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge),
-# HF_ZIG (default the installation's tools/zig-linux Zig), HF_SDK (the mod SDK headers; default the installation's
-# app/sdk), HF_PGREP (the pgrep install asks whether the game or HellForge runs; default pgrep), PROTON (wine-test: default
-# Steam's Proton - Experimental; its prefix is build/proton).
+# in a way Wine does not implement). The mod is built against the SDK vendored in hellforge/sdk (SDK 15; SOURCE.md names
+# its source and each file's SHA-256), so a HellForge update changes nothing here until the copy is replaced on purpose.
+# Settings: HF_INSTALL (the HellForge installation the Zig toolchain comes from; default HellForge 0.4's Linux install,
+# ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge), HF_ZIG (default the installation's
+# tools/zig-linux Zig), HF_SDK (the mod SDK headers; default hellforge/sdk. The vendored copy is checked whatever HF_SDK
+# says, and an install receipt records the SHA-256 of the headers that were used), HF_PGREP (the pgrep install asks
+# whether the game or HellForge runs; default pgrep), PROTON (wine-test: default Steam's Proton - Experimental; its prefix
+# is build/proton).
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo="$(dirname "$here")"
@@ -23,13 +28,16 @@ dllName=divers_best_friend.dll
 gameBuild=25480438
 hf="${HF_INSTALL:-$HOME/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge}"
 zig="${HF_ZIG:-$hf/tools/zig-linux/zig}"
-sdk="${HF_SDK:-$hf/app/sdk}"
+vendored_sdk="$here/sdk"
+sdk="${HF_SDK:-$vendored_sdk}"
 export ZIG_GLOBAL_CACHE_DIR="$here/build/zig-cache" ZIG_LOCAL_CACHE_DIR="$here/build/zig-cache"
 
 die() { echo "$*" >&2; exit 1; }
 toolchain() {
   [ -x "$zig" ] && [ "$("$zig" version)" = 0.17.0 ] || die "no Zig 0.17.0 at $zig (set HF_ZIG)"
+  "$here/tests/check_sdk.sh" "$vendored_sdk" || die "The vendored SDK in hellforge/sdk is not the pinned one."
   [ -f "$sdk/hellforge_mod.h" ] || die "no mod SDK at $sdk (set HF_SDK)"
+  if [ "$sdk" != "$vendored_sdk" ]; then echo "note: HF_SDK builds against $sdk, not the vendored SDK in hellforge/sdk"; fi
   mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 }
 
@@ -50,11 +58,27 @@ build_dll() {
   "$here/tests/check_imports.sh" "$mod/$dllName"
 }
 
+# The Python tests of tools/ (tools/test_*.py, as the repository's root runs them), with the vendored SDK for the ones that
+# read it. A skipped test is fine; its reason is printed. Prints PASS or FAIL for the whole suite; fails when it does.
+run_python_tests() {
+  command -v python3 >/dev/null 2>&1 || { echo "FAIL python tests (no python3)"; return 1; }
+  local out status=0
+  out=$(cd "$repo" && HF_SDK="$sdk" HF_ZIG="$zig" python3 -I -m unittest discover -v -s hellforge/tools -p 'test_*.py' 2>&1) || status=$?
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$out"
+    echo "FAIL python tests (exit $status)"
+    return 1
+  fi
+  printf '%s\n' "$out" | sed -n 's/.* \.\.\. skipped //p' | sort | uniq -c | while read -r count reason; do
+    echo "  $count python test(s) skipped: $reason"
+  done
+  echo "PASS python tests ($(printf '%s\n' "$out" | grep -E '^(Ran [0-9]+ tests?|OK)' | tr '\n' ' ' | sed 's/ *$//'))"
+}
+
 run_tests() {
   shopt -s nullglob
   local tests=("$here"/tests/test_*.c) sources=() helpers=() file
   shopt -u nullglob
-  if [ ${#tests[@]} -eq 0 ]; then echo "no tests yet (tests/test_*.c)"; return 0; fi
   toolchain
   # The portable units of src/ (not the entry point and not the Windows platform layer) and the test helpers (the POSIX
   # platform layer among them; the Wine host and its stubs, tests/wine_*.c, belong to wine-test).
@@ -66,6 +90,7 @@ run_tests() {
   done
   mkdir -p "$here/build/tests"
   local passed=0 failed=0 test name first flags
+  if [ ${#tests[@]} -eq 0 ]; then echo "no C tests yet (tests/test_*.c)"; fi
   for test in "${tests[@]}"; do
     name=${test##*/}; name=${name%.c}
     flags=()
@@ -79,6 +104,7 @@ run_tests() {
     if timeout 120 "$here/build/tests/$name"; then echo "PASS $name"; passed=$((passed + 1))
     else echo "FAIL $name (exit $?)"; failed=$((failed + 1)); fi
   done
+  if run_python_tests; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
   echo "tests: $passed passed, $failed failed"
   [ "$failed" -eq 0 ]
 }
@@ -98,8 +124,10 @@ run_wine_tests() {
         "$here/tests/fake_ov.c" -o "$out/overlay-api$api/goose_overlay.dll" || die "The API $api stub Overlay Host did not compile."
   done
   mkdir -p "$out/modloader"
-  "$zig" cc "${flags[@]}" -shared "$here/tests/wine_modloader_stub.c" -o "$out/modloader/hellforge_modloader.dll" \
-      || die "The stub loader did not compile."
+  # The stub is compiled against the SDK's own declaration of hellforge_lua_rewrites, with HF_LUA_API as the loader's
+  # dllexport, so the compiler checks the prototype the stub defines.
+  "$zig" cc "${flags[@]}" -shared "-DHF_LUA_API=__declspec(dllexport)" -I "$sdk" "$here/tests/wine_modloader_stub.c" \
+      -o "$out/modloader/hellforge_modloader.dll" || die "The stub loader did not compile."
   find "$out" -name '*.lib' -delete
 
   # As the Overlay Host's build.sh --test runs host_test.exe: Proton sets up a prefix (here build/proton; no Steam app
@@ -113,12 +141,14 @@ run_wine_tests() {
   w() { printf 'Z:%s' "${1//\//\\}"; }
   # Each case in a process of its own (the DLL keeps static state); its full output is kept in build/wine/<case>.log.
   local passed=0 failed=0 name status stubs
-  for name in no-host host-api3 host-api4 host-api5 no-tick; do
+  for name in no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel on-fails \
+              masked-log; do
     case $name in
       no-host) stubs=() ;;
-      no-tick) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")") ;;
       host-api5) stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
-      *) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
+      masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      host-api3|host-api4) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
+      *) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")") ;; # the cases of the API 4 stub alone
     esac
     status=0
     WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
@@ -145,10 +175,15 @@ install_mod() {
   [ -f "$install/hellforge-install.json" ] && [ -d "$install/mods" ] || die "$install is not a HellForge installation."
   if running; then die "helldivers2.exe or HellForge.exe is running. Close the game and HellForge, then install again."; fi
   [ -f "$mod/$dllName" ] || die "$mod/$dllName is not built yet (./build.sh dll)."
-  if [ -n "$(find "$mod/src" "$mod/hellforge-mod.json" -newer "$mod/$dllName" -print -quit)" ]; then
-    die "The sources or the manifest are newer than $dllName (./build.sh dll)."
+  if [ -n "$(find "$mod/src" "$mod/hellforge-mod.json" "$sdk" -newer "$mod/$dllName" -print -quit)" ]; then
+    die "The sources, the manifest or the SDK headers are newer than $dllName (./build.sh dll)."
   fi
   "$here/tests/check_imports.sh" "$mod/$dllName" >/dev/null || die "$dllName fails its import check (./build.sh dll shows why)."
+  # The receipt records the SDK headers by hash: they must be the pinned ones (or, with HF_SDK, at least be there).
+  "$here/tests/check_sdk.sh" "$vendored_sdk" >/dev/null || die "The vendored SDK in hellforge/sdk is not the pinned one (tests/check_sdk.sh shows why)."
+  for header in hellforge_mod.h hellforge_lua.h hellforge_content.h hellforge_components.h; do
+    [ -f "$sdk/$header" ] || die "no $header in $sdk (set HF_SDK)."
+  done
 
   local stamp backup dest="$install/mods/divers-best-friend" commit dirty=false
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -167,9 +202,19 @@ install_mod() {
 
   commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
   if [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then dirty=true; fi
-  python3 -I - "$dest" "$backup/receipt.json" "$stamp" "$commit" "$dirty" "$repo" "$gameBuild" <<'PY'
-import datetime, hashlib, json, os, sys
-dest, receipt, stamp, commit, dirty, repo, game = sys.argv[1:8]
+  # The receipt records the SDK headers the DLL was built against: their version and each header's SHA-256 (the vendored
+  # ones unless HF_SDK points elsewhere, which "vendored" says).
+  python3 -I - "$dest" "$backup/receipt.json" "$stamp" "$commit" "$dirty" "$repo" "$gameBuild" "$sdk" \
+      "$([ "$sdk" = "$vendored_sdk" ] && echo true || echo false)" <<'PY'
+import datetime, hashlib, json, os, re, sys
+dest, receipt, stamp, commit, dirty, repo, game, sdk, vendored = sys.argv[1:10]
+HEADERS = ("hellforge_mod.h", "hellforge_lua.h", "hellforge_content.h", "hellforge_components.h")
+sdk_headers = {}
+for name in HEADERS:
+    with open(os.path.join(sdk, name), "rb") as f:
+        sdk_headers[name] = hashlib.sha256(f.read()).hexdigest()
+with open(os.path.join(sdk, "hellforge_mod.h"), encoding="utf-8") as f:
+    sdk_version = int(re.search(r"^#define HF_MOD_SDK_VERSION\s+(\d+)", f.read(), re.M).group(1))
 files = {}
 for folder, _, names in os.walk(dest):
     for name in names:
@@ -185,6 +230,7 @@ with open(receipt, "w", encoding="utf-8", newline="\n") as f:
         "game_build": game,
         "source": {"repo": repo, "commit": commit, "tree_dirty": dirty == "true"},
         "destination": dest,
+        "sdk": {"hf_mod_sdk_version": sdk_version, "vendored": vendored == "true", "headers_sha256": sdk_headers},
         "files_sha256": dict(sorted(files.items())),
     }, f, indent=2, ensure_ascii=False)
     f.write("\n")

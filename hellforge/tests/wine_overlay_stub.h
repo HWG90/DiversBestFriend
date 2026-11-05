@@ -10,7 +10,8 @@
  *
  * The exports below let the host see what the mod asked for and drive what the real host would drive: the game-thread
  * callbacks (stub_tick, as the host's own HellForge slot runs them) and a panel's draw (stub_draw, as the render thread
- * does). Windows only; for the Wine test only. */
+ * does). stub_refuse_panels(1) makes register_panel return NULL and keep nothing, as the real host does when it takes no
+ * window; stub_register_calls counts the calls either way. Windows only; for the Wine test only. */
 #ifndef DBF_WINE_OVERLAY_STUB_H
 #define DBF_WINE_OVERLAY_STUB_H
 
@@ -30,8 +31,9 @@ typedef struct StubPanel {
     void* user;
 } StubPanel;
 
-typedef int (*StubCountFn)(void);                     /* stub_requests, stub_panel_count, stub_game_thread_count,
-                                                         stub_line_count, stub_open, stub_misuse */
+typedef int (*StubCountFn)(void);                     /* stub_requests, stub_panel_count, stub_register_calls,
+                                                         stub_game_thread_count, stub_line_count, stub_open, stub_misuse */
+typedef void (*StubSwitchFn)(int on);                 /* stub_refuse_panels */
 typedef const StubPanel* (*StubPanelFn)(int index);   /* stub_panel: NULL out of range */
 typedef void (*StubTickFn)(float dt);                 /* stub_tick: runs every stored game-thread callback once */
 typedef int (*StubDrawFn)(int index);                 /* stub_draw: clears the drawing log, draws panel `index`;
