@@ -9,7 +9,7 @@
  *                                             for HF_EVENT_GAME_LOADED (the version line first: a loader may deliver the
  *                                             event from inside hf->on, and what that logs follows it).
  *   OnGameLoaded (the loader's watch thread)  connects to the Overlay Host (API 4 or later, else no window), registers the
- *                                             tick (through the host's shared slot when it has one, ov_on_game_thread),
+ *                                             tick (through the host's shared slot when it has one, register_tick),
  *                                             then the Status window. A second event is ignored, with one line in the log.
  *   Tick (the game thread)                    until hf->module_base finds game.dll it only publishes a snapshot saying
  *                                             "game.dll not loaded yet". On the first tick that finds it, memory
@@ -26,7 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "hellforge_mod.h" /* before goose_overlay.h, for its ov_on_game_thread */
+#include "hellforge_mod.h" /* before goose_overlay.h, as its ov_on_game_thread (not used here: see register_tick) wants */
 #include "hellforge_lua.h" /* the prototype of hellforge_lua_rewrites; HF_LUA_API stays empty here: nothing links to it */
 #include "goose_overlay.h"
 #include "admission.h"
@@ -132,6 +132,19 @@ static void Tick(HfMod* mod, float dt, void* user)
     (void)ui_drain(events, UI_QUEUE_SLOTS); /* the whole queue; nothing posts events yet */
 }
 
+/* The tick, through the host's shared game-thread slot when the table connect_overlay got has one (Overlay Host 0.3.0 and
+ * later), else through HellForge's own. Not the header's ov_on_game_thread: that asks the host for OV_API_VERSION (7 since
+ * the wheel total) and so uses HellForge's slot on every host older than 0.5.0, which DBF runs on as well. 1 registered,
+ * 0 refused by both. */
+static int register_tick(void)
+{
+    if (g_ov != NULL && g_ov->size >= offsetof(OvApi, on_game_thread) + sizeof g_ov->on_game_thread &&
+        g_ov->on_game_thread != NULL && g_ov->on_game_thread(g_mod, Tick, NULL))
+        return 1;
+    return g_hf->size >= offsetof(HfApi, on_game_thread) + sizeof g_hf->on_game_thread && g_hf->on_game_thread != NULL &&
+           g_hf->on_game_thread(g_mod, Tick, NULL);
+}
+
 static void Draw(const OvFrame* frame, void* user)
 {
     const DbfSnapshot* s = snap_acquire();
@@ -154,7 +167,7 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     ov = connect_overlay();
     if (ov == NULL) g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a window");
     g_ov = ov;
-    if (!ov_on_game_thread(g_hf, g_mod, Tick, NULL)) {
+    if (!register_tick()) {
         g_hf->log(g_mod, DBF_TITLE " could not get a game-thread tick");
         return;
     }

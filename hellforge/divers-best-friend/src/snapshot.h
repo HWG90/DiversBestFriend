@@ -20,6 +20,10 @@
  * thread is inside any other call here is not allowed. Before it, every call is harmless and does nothing (acquire
  * returns NULL, ui_post refuses, ui_drain returns 0).
  *
+ * Besides the snapshot and the queue there is one flag the other way round, the capturing flag: the render thread says
+ * whether a host window is open or look capture is on (the HUD panel's OvFrame.capturing), and the game thread reads it to
+ * keep DBF's own keys quiet then (bindings.h's `allowed`). It lives under the snapshot's lock.
+ *
  * Portable C11: standard headers, platform.h, admission.h and game.h only. */
 #ifndef DBF_SNAPSHOT_H
 #define DBF_SNAPSHOT_H
@@ -73,6 +77,16 @@ void snap_fill_admission(DbfSnapshot* s);
 /* Copies `src` (NULL: empty) into dst[size] and always terminates it, cutting src at size - 1 bytes when it is longer; size
  * 0 or a NULL dst does nothing. Bytes, not characters: the texts are ASCII. */
 void snap_copy_text(char* dst, size_t size, const char* src);
+
+/* --- the capturing flag ---------------------------------------------------------------------------------------- */
+
+/* Render thread: stores whether the Overlay Host is capturing the keyboard and mouse (a host window is open, or look
+ * capture is on). Ignored before snap_init. The last value stays until the next call: a render thread that stops drawing
+ * leaves the flag as it was. */
+void snap_set_capturing(bool capturing);
+
+/* Game thread: the last value snap_set_capturing stored; false before snap_init and right after it. */
+bool snap_capturing(void);
 
 /* --- the UI queue ---------------------------------------------------------------------------------------------- */
 

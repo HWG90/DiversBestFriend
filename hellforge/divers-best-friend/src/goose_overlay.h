@@ -1,4 +1,4 @@
-/* Goose Overlay Host, API version 5: a shared in-game UI for HellForge code mods.
+/* Goose Overlay Host, API version 7: a shared in-game UI for HellForge code mods.
  *
  * The host (mods/overlay-host, goose_overlay.dll) draws over the game with Dear ImGui, on the game's own Direct3D 12
  * queue (or Direct3D 11 with --use-d3d11), and owns the game window's input while one of its windows is open. Other
@@ -46,7 +46,7 @@
 extern "C" {
 #endif
 
-#define OV_API_VERSION 5
+#define OV_API_VERSION 7
 #define OV_HOST_DLL "goose_overlay.dll"
 
 #define OV_RGBA(r, g, b, a) ((uint32_t)(r) | ((uint32_t)(g) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(a) << 24))
@@ -176,9 +176,9 @@ typedef struct OvApi
     void (*text_size)(int font, float size, const char* text, float* width, float* height);
 
     /* ---- fonts ---- */
-    /* A TrueType font at a size in 1080p pixels (scaled with the screen): its id (1 and up), usable from the next
-     * frame, or 0 when the file cannot be read. Any thread. Font 1 is the host's default (the game's font when the
-     * HellForge editor's copy of it is installed). */
+    /* A TrueType font at a size in 1080p pixels (scaled with the screen): its id, usable from the next frame, or 0 when
+     * the file cannot be read. Any thread. Font 1 is the host's default (the game's font when the HellForge editor's
+     * copy of it is installed); from host 0.4.0 font 2 is its bold copy, and loaded fonts are 3 and up. */
     int (*load_font)(const char* ttf_path, float size);
     void (*push_font)(int font);
     void (*pop_font)(void);
@@ -275,7 +275,8 @@ typedef struct OvApi
     /* ======== API version 4: check ov->version >= 4 (or size) before using these ======== */
 
     /* Mouse wheel notches (+ up) the game window received since the last call while no host window was open and look
-     * capture was off. The game still gets them. Any thread; reading resets the count. */
+     * capture was off. The game still gets them. Any thread; reading resets the count, so two clients reading it take
+     * notches from each other: with more than one reader, use passive_wheel_total (version 7). */
     float (*passive_wheel)(void);
 
     /* ======== API version 5: check ov->version >= 5 (or size) before using these ======== */
@@ -288,6 +289,23 @@ typedef struct OvApi
      * or the host's 32 are taken (the host's log says which): then use hf->on_game_thread. ov_on_game_thread, at the
      * end of this header, does both. */
     int (*on_game_thread)(struct HfMod* mod, OvTickFn callback, void* user);
+
+    /* ======== API version 6 (host 0.4.0): check ov->version >= 6 (or size) before using these ======== */
+
+    /* ---- the house look (HD2-UI-Style/DESIGN.md; draw callbacks only) ----
+     * The host already draws titles, headings, tabs, buttons, checkboxes, sliders and selected rows this way; these
+     * are the parts a mod asks for by name. */
+    int (*button_primary)(const char* label); /* the window's one main button: solid yellow, bold capitals */
+    void (*key_cap)(const char* key);         /* a key hint in a small plate, like the game's "Z DISPATCHES" */
+    void (*heading)(const char* text);        /* a section heading: bold yellow capitals with a rule under them */
+    int (*bold_font)(void);                   /* the bold font's id, for push_font */
+
+    /* ======== API version 7 (host 0.5.0): check ov->version >= 7 (or size) before using these ======== */
+
+    /* The mouse wheel the game window received while no host window was open and look capture was off, summed since
+     * the host started, in WHEEL_DELTA units (120 per notch, + up). Never reset: each client keeps its own last value
+     * and takes the difference, so clients never take notches from each other. Any thread. */
+    int64_t (*passive_wheel_total)(void);
 } OvApi;
 
 enum OvLayer { OV_LAYER_BACKGROUND = 0, OV_LAYER_WINDOW = 1, OV_LAYER_FOREGROUND = 2 };
@@ -316,10 +334,20 @@ enum OvThemeColor
     OV_THEME_GOLD,        /* Goose gold #F4CA35 */
     OV_THEME_DANGER,
     OV_THEME_SUCCESS,
+    /* host 0.4.0 (older hosts return 0xFFFFFFFF for these) */
+    OV_THEME_ON_ACCENT,     /* text and icons on solid yellow */
+    OV_THEME_SELECT_HOVER,  /* a selected row under the pointer */
+    OV_THEME_FIELD_ACTIVE,  /* a field or secondary button held */
+    OV_THEME_LINE_STRONG,   /* hovered borders */
+    OV_THEME_TEXT_OFF,      /* disabled text */
+    OV_THEME_ACCENT_HOVER,  /* the main button under the pointer */
+    OV_THEME_ACCENT_PRESS,  /* the main button held */
 };
 
 enum OvInputFlags { OV_INPUT_ENTER_RETURNS = 1, OV_INPUT_AUTO_SELECT = 2, OV_INPUT_HEX = 4, OV_INPUT_NO_SPACES = 8 };
-enum OvCaptureFlags { OV_CAPTURE_NO_OVERLAY = 1 };
+/* capture_frame's flags. The host's windows never show in a capture (it is a screenshot of the game), unless
+ * OV_CAPTURE_WITH_WINDOWS (host 0.4.0; older hosts ignore it and hide them). */
+enum OvCaptureFlags { OV_CAPTURE_NO_OVERLAY = 1, OV_CAPTURE_WITH_WINDOWS = 2 };
 
 /* The host's export: its API for this version, or NULL when it is older than `version`. */
 typedef const OvApi* (*OvApiFn)(uint32_t version);
@@ -334,8 +362,10 @@ __declspec(dllexport) const OvApi* ov_api(uint32_t version);
 
 #if !defined(Goose_OVERLAY_HOST) && defined(_WIN32)
 #include <windows.h>
-/* The host's API, or NULL when it is not loaded (switched off, or missing). Call it from an HfApi event
- * (HF_EVENT_GAME_LOADED or later), when every mod's DLL is loaded, not from hellforge_mod_init. */
+/* The host's API, or NULL when it is not loaded (switched off, or missing) or older than this header: a mod built with
+ * this header (API 7) gets NULL from hosts before 0.5.0. A mod that uses no API 7 call can keep an older header and run
+ * on older hosts too. Call it from an HfApi event (HF_EVENT_GAME_LOADED or later), when every mod's DLL is loaded, not
+ * from hellforge_mod_init. */
 static inline const OvApi* ov_connect(void)
 {
     HMODULE host = GetModuleHandleA(OV_HOST_DLL);

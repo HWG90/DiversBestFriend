@@ -7,7 +7,8 @@
 #                                                of src/) and the Python tests (tools/test_*.py)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
-#                                                once per case, with the stub Overlay Hosts and loader built here
+#                                                once per case, with the stub Overlay Hosts and loader built here; then the
+#                                                real BindPort of src/platform_win.c (tests/wine_bind.c) in a program of its own
 #        ./build.sh install <HellForge installation>
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
@@ -159,6 +160,17 @@ run_wine_tests() {
     if [ "$status" = 0 ] && grep -qx "== $name: 0 failure(s)" "$out/$name.log"; then echo "PASS $name"; passed=$((passed + 1))
     else echo "FAIL $name (exit $status; log $out/$name.log)"; failed=$((failed + 1)); fi
   done
+  # The real BindPort (src/platform_win.c, which the DLL does not call until dbf.c wires it) in a program of its own: it
+  # needs no game and no stub host, so it runs once, after the cases.
+  "$zig" cc "${flags[@]}" -I "$mod/src" -I "$here/tests" -I "$sdk" "$here/tests/wine_bind.c" "$mod/src/platform_win.c" \
+      -o "$out/wine_bind.exe" || die "The BindPort probe did not compile."
+  status=0
+  WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
+      "$(w "$out/wine_bind.exe")" > "$out/bind-port.log" 2>&1 || status=$?
+  sed -i 's/\r$//' "$out/bind-port.log"
+  grep -E '^(==|PASS|FAIL|SKIP)' "$out/bind-port.log" || true
+  if [ "$status" = 0 ] && grep -qx "== bind-port: 0 failure(s)" "$out/bind-port.log"; then echo "PASS bind-port"; passed=$((passed + 1))
+  else echo "FAIL bind-port (exit $status; log $out/bind-port.log)"; failed=$((failed + 1)); fi
   echo "wine-test: $passed passed, $failed failed"
   [ "$failed" -eq 0 ]
 }

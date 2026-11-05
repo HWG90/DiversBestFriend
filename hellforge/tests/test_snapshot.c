@@ -4,7 +4,8 @@
  * copy. The two-thread cases run real threads. snapshot.c keeps its state in statics, so each test starts with
  * snap_init(); test_before_init must run first, while nothing has been started. Admission runs for real over the
  * synthetic game image with the small witness table of tests/test_witnesses.h (alpha gates STATE and HUD_READ, bravo
- * STRATAGEMS, charlie HUD_READ and POINTING, delta SOUND; nothing maps the other features). */
+ * STRATAGEMS, charlie HUD_READ and POINTING, delta SOUND; nothing maps the other features). The capturing flag (the render
+ * thread says a host window is open, the game thread reads it) is tested here as well: it shares the snapshot's lock. */
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -70,6 +71,8 @@ static void test_before_init(void)
     CHECK(snap_acquire() == NULL, "before snap_init, publish is ignored");
     CHECK(!ui_post(&e), "before snap_init, ui_post refuses");
     CHECK(ui_drain(out, 2) == 0, "before snap_init, ui_drain returns nothing");
+    snap_set_capturing(true);
+    CHECK(!snap_capturing(), "before snap_init, the capturing flag is false and set ignores true");
 }
 
 static void test_publish_acquire(void)
@@ -464,6 +467,46 @@ static void test_copy_text(void)
     CHECK(true, "a NULL field is ignored");
 }
 
+/* --- the capturing flag ---------------------------------------------------------------------------------------- */
+
+static void test_capturing_flag(void)
+{
+    snap_init();
+    CHECK(!snap_capturing(), "after snap_init, nothing is capturing");
+    snap_set_capturing(true);
+    CHECK(snap_capturing(), "set true: capturing");
+    snap_set_capturing(true);
+    CHECK(snap_capturing(), "set true again: still capturing");
+    publish(1);
+    (void)snap_acquire();
+    snap_release();
+    CHECK(snap_capturing(), "publishing, acquiring and releasing leave it alone");
+    snap_set_capturing(false);
+    CHECK(!snap_capturing(), "set false: not capturing");
+    snap_set_capturing(true);
+    snap_init();
+    CHECK(!snap_capturing(), "snap_init puts it back to false");
+}
+
+static void* capturing_writer(void* arg)
+{
+    for (int i = 0; i < 20000; i++) snap_set_capturing((i & 1) == 0);
+    snap_set_capturing(true);
+    return arg;
+}
+
+static void test_capturing_two_threads(void)
+{
+    pthread_t thread;
+    int reads = 0;
+    snap_init();
+    pthread_create(&thread, NULL, capturing_writer, NULL);
+    for (int i = 0; i < 20000; i++) reads += snap_capturing() ? 1 : 0; /* either value, never a crash or a torn read */
+    pthread_join(thread, NULL);
+    CHECK(snap_capturing(), "after a render thread toggled it thousands of times, the last value it stored is read");
+    CHECK(reads >= 0, "reading it while the render thread writes does not fail");
+}
+
 static void test_snapshot_field_sizes(void)
 {
     DbfSnapshot s;
@@ -487,6 +530,8 @@ int main(void)
     test_fill_admission();
     test_fill_admission_reasons();
     test_copy_text();
+    test_capturing_flag();
+    test_capturing_two_threads();
     test_snapshot_field_sizes();
     printf("%s\n", test_failures() == 0 ? "PASS test_snapshot" : "FAIL test_snapshot");
     TEST_MAIN_END

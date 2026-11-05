@@ -5,7 +5,12 @@
  *
  * Shape: two features share alpha (STATE, HUD_READ), HUD_READ has two witnesses (alpha, charlie), charlie spans two
  * 64-byte read chunks, and nothing maps LIST_OPACITY, ENTRY, SCRAMBLE, CAMERA, LATCH, DOCK, WEAPON or TERMINAL. A test
- * that also defines DBF_TEST_LONG_WITNESS gets a fifth witness, echo_…, whose name is 200 bytes long. */
+ * that also defines DBF_TEST_LONG_WITNESS gets a fifth witness, echo_…, whose name is 200 bytes long.
+ *
+ * It also defines the blacklist table (dbf_blacklist_kinds, dbf_blacklist_kind_count) that src/settings.c reads: the
+ * generated header declares it extern and admission.c is the one unit that defines it, so every test binary that builds
+ * admission.c with this table needs a table here too. Four kinds: 5 hidden by default, 42, 148 and 199 (the largest kind
+ * the settings keep) shown by default. */
 #ifndef DBF_TEST_WITNESSES_H
 #define DBF_TEST_WITNESSES_H
 
@@ -45,5 +50,13 @@ const DbfWitness dbf_witnesses[] = {
 #endif
 };
 const int dbf_witness_count = (int)(sizeof dbf_witnesses / sizeof dbf_witnesses[0]);
+
+const DbfBlacklistKind dbf_blacklist_kinds[] = {
+    { 5u, "tw five", true },
+    { 42u, "tw forty-two", false },
+    { 148u, "tw one-forty-eight", false },
+    { 199u, "tw one-ninety-nine", false },
+};
+const int dbf_blacklist_kind_count = (int)(sizeof dbf_blacklist_kinds / sizeof dbf_blacklist_kinds[0]);
 
 #endif
