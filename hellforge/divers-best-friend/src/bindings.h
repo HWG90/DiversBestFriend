@@ -6,7 +6,7 @@
  * see Release after a block below). A wheel notch is not a held input, so a wheel binding is true for one poll per notch.
  *
  * Nothing fires unless the caller says it may: bind_poll's `allowed` is the caller's gate (DBF enabled, the game's UI not
- * obstructed, no Overlay Host window open: the HUD panel's OvFrame.capturing, stored through snap_set_capturing), and the
+ * obstructed, no Overlay Host window open: the host's input_captured query), and the
  * game's window must be in front (BindPort.foreground). While either is false every level is false.
  *
  * The wheel. The Overlay Host (API 7, host 0.5.0) keeps a total of the wheel since it started, in WHEEL_DELTA units (120 per

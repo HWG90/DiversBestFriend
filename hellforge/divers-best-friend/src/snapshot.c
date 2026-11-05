@@ -7,7 +7,7 @@
 static bool g_locks_ready; /* the locks were initialised (once, ever: a lock is not initialised twice) */
 static bool g_ready;       /* snap_init has run */
 
-/* The snapshot. g_lock guards g_front, g_has, g_reading, g_skipped and g_capturing. The contents of a buffer are written
+/* The snapshot. g_lock guards g_front, g_has, g_reading, g_skipped. The contents of a buffer are written
  * only by snap_publish, and only while the buffer is neither the newest (g_front) nor being read (g_reading): the reader
  * can only ever take g_front, so it cannot start reading the buffer being written, and the lock around the swap publishes
  * the written bytes to it. */
@@ -17,7 +17,6 @@ static int g_front;   /* the newest buffer; meaningful when g_has */
 static bool g_has;    /* something was published */
 static int g_reading; /* the buffer snap_acquire handed out, -1 when none */
 static uint32_t g_skipped;
-static bool g_capturing; /* the capturing flag; also under g_lock */
 
 /* The queue: a ring of UI_QUEUE_SLOTS under g_ui_lock. */
 static DbfLock g_ui_lock;
@@ -38,7 +37,6 @@ void snap_init(void)
     g_has = false;
     g_reading = -1;
     g_skipped = 0;
-    g_capturing = false;
     dbf_lock_leave(&g_lock);
     dbf_lock_enter(&g_ui_lock);
     memset(g_queue, 0, sizeof g_queue);
@@ -98,24 +96,6 @@ uint32_t snap_skipped(void)
     n = g_skipped;
     dbf_lock_leave(&g_lock);
     return n;
-}
-
-void snap_set_capturing(bool capturing)
-{
-    if (!g_ready) return;
-    dbf_lock_enter(&g_lock);
-    g_capturing = capturing;
-    dbf_lock_leave(&g_lock);
-}
-
-bool snap_capturing(void)
-{
-    bool capturing;
-    if (!g_ready) return false;
-    dbf_lock_enter(&g_lock);
-    capturing = g_capturing;
-    dbf_lock_leave(&g_lock);
-    return capturing;
 }
 
 void snap_copy_text(char* dst, size_t size, const char* src)
