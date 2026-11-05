@@ -8,17 +8,28 @@
  *   hellforge_mod_init (the loader's thread)  checks the SDK, prepares the snapshot, logs the version line, then listens
  *                                             for HF_EVENT_GAME_LOADED (the version line first: a loader may deliver the
  *                                             event from inside hf->on, and what that logs follows it).
- *   OnGameLoaded (the loader's watch thread)  connects to the Overlay Host (API 4 or later, else no window), registers the
- *                                             tick (through the host's shared slot when it has one, register_tick),
- *                                             then the Status window. A second event is ignored, with one line in the log.
+ *   OnGameLoaded (the loader's watch thread)  reads %LOCALAPPDATA%\DBF\HellForge\settings.ini once (settings.h; the
+ *                                             defaults when there is none), connects to the Overlay Host (API 4 or later,
+ *                                             else no window and no list), registers the tick (through the host's shared
+ *                                             slot when it has one, register_tick), then the Status window and the HUD
+ *                                             list. A second event is ignored, with one line in the log.
  *   Tick (the game thread)                    until hf->module_base finds game.dll it only publishes a snapshot saying
- *                                             "game.dll not loaded yet". On the first tick that finds it, memory
- *                                             (hf->read, hf->write), admission (hf->module_base, hf->read_code,
- *                                             hellforge_lua_rewrites, the log) and the readers (game.dll) start together, so
- *                                             admission's grace period counts from the real module. Every tick after that
- *                                             runs admission, reads the game, publishes a snapshot and drains the UI queue.
- *   Draw (the render thread)                  draws the newest snapshot; it reads only the snapshot and constant names
- *                                             (adm_feature_name), never game memory or admission state.
+ *                                             "game.dll not loaded yet". On the first tick that finds it, memory,
+ *                                             admission, native (the game functions at game.dll + DBF_FN_*), codes, the
+ *                                             readers, the latch and the sounds start together, so admission's grace
+ *                                             period counts from the real module. Every tick after that runs `run` (the
+ *                                             order is written there), publishes a snapshot and drains the UI queue.
+ *   Draw, DrawList (the render thread)        draw the newest snapshot; they read only the snapshot and constant names,
+ *                                             never game memory, admission or entry state. DrawList also stores the
+ *                                             frame's capturing flag, which the tick reads to keep DBF's keys quiet.
+ * Every game read, write and call happens on the game thread. Nothing is restored from DllMain (there is none): no game
+ * write runs under the loader lock. HellForge has no unload event, so a change the tick has not put back when the game
+ * exits stays in the exiting game.
+ *
+ * With no Overlay Host (or one older than 0.2.0) DBF still enters codes from its key and controller bindings (List Select
+ * with the game's own list on screen, and the slot hotkeys); its wheel bindings do nothing (the wheel comes from the
+ * host), the capturing flag stays false, and one log line says so (Plan 2's ruling).
+ *
  * The ports go straight to HellForge's functions: their signatures are the SDK's. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -29,20 +40,45 @@
 #include "hellforge_mod.h" /* before goose_overlay.h, as its ov_on_game_thread (not used here: see register_tick) wants */
 #include "hellforge_lua.h" /* the prototype of hellforge_lua_rewrites; HF_LUA_API stays empty here: nothing links to it */
 #include "goose_overlay.h"
+#include "addresses_25480438.h"
 #include "admission.h"
+#include "bindings.h"
+#include "codes.h"
+#include "entry.h"
 #include "game.h"
+#include "latch.h"
+#include "logic.h"
 #include "memory.h"
+#include "native.h"
+#include "platform_win.h"
+#include "settings.h"
 #include "snapshot.h"
+#include "sound.h"
+#include "text.h"
+#include "ui_list.h"
 #include "ui_settings.h"
 
-#define DBF_VERSION "R50-hellforge.1"
+#define DBF_VERSION "R50-hellforge.2"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
+#define DBF_LIST_ID DBF_PANEL_ID "/list"
 #define DBF_TITLE "Diver's Best Friend"
 /* The Overlay Host API the window needs (Overlay Host 0.2.0). DBF asks the host for this version, not for
  * OV_API_VERSION as ov_connect does: a 0.2.x host serves 4 and refuses 5. A newer host serves 4 as well. */
 #define DBF_OV_API_MIN 4u
 #define DBF_NO_GAME_DLL "game.dll not loaded yet" /* the reason the first snapshots carry */
+#define DBF_LOADER_DLL "hellforge_modloader.dll"
+/* The settings file (Plan 2's Global Constraints: %LOCALAPPDATA%\DBF\HellForge\settings.ini, HellForge's prefix). */
+#define DBF_SETTINGS_FOLDER L"\\DBF\\HellForge\\"
+#define DBF_SETTINGS_NAME "settings.ini"
+#define DBF_SETTINGS_NAME_W L"settings.ini"
+/* DBF's own limits (no R46 line holds them): a hand-edited settings file is a few hundred bytes, so its first 64 KiB are
+ * all of any real one; the problem text holds the first lines settings_parse lists; a LOCALAPPDATA path and the file's
+ * part fit in PATH_CHARS. */
+#define SETTINGS_MAX_BYTES 65536u
+#define SETTINGS_PROBLEMS_SIZE 2048u
+#define PATH_CHARS 600
+#define SLOT_COUNT 4 /* the slot hotkeys: BIND_SLOT1 .. BIND_SLOT4 */
 
 /* hellforge_lua_rewrites' type, taken from the SDK's own declaration, so the function pointer GetProcAddress gives can
  * never be typed differently from the prototype the loader is built against. */
@@ -50,13 +86,59 @@ typedef __typeof__(hellforge_lua_rewrites)* RewritesFn;
 
 static const HfApi* g_hf;
 static HfMod* g_mod;
-/* Set in OnGameLoaded before the tick and the window are registered, and never again: the game thread (Tick) and the
- * render thread (Draw) only read it. NULL: no window. */
+/* Set in OnGameLoaded before the tick and the panels are registered, and never again: the game thread (Tick) and the
+ * render thread (Draw, DrawList) only read it. NULL: no window and no list. */
 static const OvApi* g_ov;
 static bool g_loaded;        /* OnGameLoaded ran */
 static bool g_loaded_again;  /* a repeated event was seen and logged */
-static bool g_started;       /* Tick: game.dll was found; memory, admission and the readers are set up */
 static uint64_t g_ticks;
+
+/* The settings: written by OnGameLoaded before the tick is registered, then read only by the game thread. */
+static DbfSettings g_settings;
+static int g_settings_problems;
+static bool g_settings_read; /* a file was read (else the defaults are in use) */
+static char g_settings_text[SETTINGS_MAX_BYTES];
+static char g_settings_problem_text[SETTINGS_PROBLEMS_SIZE];
+
+/* The game thread's state. */
+static bool g_started;            /* game.dll was found; every unit is set up */
+static const BindPort* g_bind_port;
+static ListState g_list;
+static EntryJob g_job;            /* the one code entry: a List job, or a slot hotkey's while shortcut_active() */
+static BindAction g_trigger;      /* the binding that started it (Instant waits for it to be up) */
+static uintptr_t g_job_hud;       /* the HUD it began with (R46's HUD identity) */
+static bool g_watching;           /* a job started and its end is not logged yet */
+static uintptr_t g_latch_manager; /* the player a slot hotkey's latch was taken for, while LATCH entries remain */
+static uint32_t g_latch_key;
+static bool g_pending_logged;     /* "not put back yet" was logged: "every change is put back" is due */
+static bool g_slot_prev[SLOT_COUNT]; /* the slot hotkeys' levels at the last tick: a rising edge starts a shortcut */
+static SoundState g_sound;
+static uint32_t g_random;         /* xorshift32 state for randomize_input_delay */
+static char g_bind_status[DBF_LIST_STATUS_SIZE];
+
+/* --- small helpers ------------------------------------------------------------------------------------------------ */
+
+/* One line in the mod's log: the units' log ports (admission, codes, native, latch, sound) and dbf.c's own lines. */
+static void log_line(const char* line)
+{
+    g_hf->log(g_mod, "%s", line);
+}
+
+static uint64_t now_ms(void)
+{
+    return GetTickCount64();
+}
+
+/* randomize_input_delay's draw (R46 input.lua:12-14 used math.random; any spread does). */
+static uint32_t next_random(void)
+{
+    uint32_t x = g_random != 0 ? g_random : 0x9E3779B9u;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    g_random = x;
+    return x;
+}
 
 /* The Overlay Host's API, when it is loaded and serves version DBF_OV_API_MIN or later; else NULL. */
 static const OvApi* connect_overlay(void)
@@ -70,34 +152,144 @@ static const OvApi* connect_overlay(void)
 /* HellForge's list of the game code it rewrites, from its loader, or NULL. */
 static RewritesFn find_rewrites(void)
 {
-    HMODULE loader = GetModuleHandleA("hellforge_modloader.dll");
+    HMODULE loader = GetModuleHandleA(DBF_LOADER_DLL);
     return loader != NULL ? (RewritesFn)(void*)GetProcAddress(loader, "hellforge_lua_rewrites") : NULL;
 }
 
-/* Admission's log lines (the count of witness bytes HellForge rewrites) go to the mod's log. */
-static void adm_log(const char* line)
+/* hellforge_modloader.dll's image in this process (its base and SizeOfImage, from its own PE header), where HellForge
+ * keeps mod stratagems' code arrays (codes.h); 0 when it is not loaded or its header is not a 64-bit PE header. */
+static uintptr_t loader_image(size_t* size)
 {
-    g_hf->log(g_mod, "%s", line);
+    HMODULE loader = GetModuleHandleA(DBF_LOADER_DLL);
+    const IMAGE_DOS_HEADER* dos = (const IMAGE_DOS_HEADER*)(void*)loader;
+    const IMAGE_NT_HEADERS64* nt;
+    *size = 0;
+    if (loader == NULL || dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) return 0;
+    nt = (const IMAGE_NT_HEADERS64*)(const void*)((const uint8_t*)loader + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return 0;
+    *size = nt->OptionalHeader.SizeOfImage;
+    return (uintptr_t)loader;
 }
 
-/* Starts memory, admission and the readers once hf->module_base finds game.dll (the game's code is unpacked and the module
- * is there by the time its update runs, but not necessarily on the first tick); until then it does nothing. Admission's
- * 30 s grace period for a differing witness counts from this call. */
-static void start(uint64_t now_ms)
+/* --- the settings file -------------------------------------------------------------------------------------------- */
+
+/* Appends `wide` to a log line as UTF-8. */
+static void line_add_wide(DbfLine* l, const WCHAR* wide)
 {
-    size_t size = 0;
-    uintptr_t game_dll = g_hf->module_base("game.dll", &size);
+    char utf8[PATH_CHARS * 3];
+    int n = WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, (int)sizeof utf8, NULL, NULL);
+    dbf_line_add(l, n > 0 ? utf8 : "(a path that cannot be shown)");
+}
+
+static void log_settings_failure(const char* what, const WCHAR* path)
+{
+    DbfLine l;
+    dbf_line_begin(&l, what);
+    line_add_wide(&l, path);
+    dbf_line_add(&l, ": using the default settings");
+    log_line(l.text);
+}
+
+/* Reads %LOCALAPPDATA%\DBF\HellForge\settings.ini into g_settings (settings.h), logging what it read and every problem;
+ * the defaults when there is no file. The loader's watch thread, before the tick exists. */
+static void load_settings(void)
+{
+    WCHAR path[PATH_CHARS];
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", path, PATH_CHARS);
+    size_t folder = sizeof DBF_SETTINGS_FOLDER / sizeof(WCHAR) - 1, name = sizeof DBF_SETTINGS_NAME_W / sizeof(WCHAR);
+    HANDLE file;
+    LARGE_INTEGER size;
+    DWORD got = 0;
+    DbfLine l;
+
+    settings_defaults(&g_settings);
+    g_settings_read = false;
+    g_settings_problems = 0;
+    if (n == 0 || (size_t)n + folder + name > PATH_CHARS) {
+        log_line("LOCALAPPDATA is not set: using the default settings");
+        return;
+    }
+    memcpy(path + n, DBF_SETTINGS_FOLDER, folder * sizeof(WCHAR));
+    memcpy(path + n + folder, DBF_SETTINGS_NAME_W, name * sizeof(WCHAR));
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                       FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        log_settings_failure(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? "No settings file at "
+                                                                                            : "Could not open ",
+                             path);
+        return;
+    }
+    if (GetFileSizeEx(file, &size) && size.QuadPart > (LONGLONG)SETTINGS_MAX_BYTES)
+        log_line(DBF_SETTINGS_NAME " is larger than 64 KiB: only its first 64 KiB are read");
+    if (!ReadFile(file, g_settings_text, SETTINGS_MAX_BYTES, &got, NULL)) {
+        CloseHandle(file);
+        log_settings_failure("Could not read ", path);
+        return;
+    }
+    CloseHandle(file);
+    g_settings_problems = settings_parse(&g_settings, g_settings_text, got, g_settings_problem_text,
+                                         sizeof g_settings_problem_text);
+    g_settings_read = true;
+    dbf_line_begin(&l, "Settings read from ");
+    line_add_wide(&l, path);
+    dbf_line_add(&l, " (");
+    dbf_line_add_uint(&l, (uint32_t)g_settings_problems);
+    dbf_line_add(&l, g_settings_problems == 1 ? " problem)" : " problems)");
+    log_line(l.text);
+    for (const char* p = g_settings_problem_text; *p != '\0';) { /* one log line per problem, "line N: ..." */
+        const char* end = strchr(p, '\n');
+        size_t len = end != NULL ? (size_t)(end - p) : strlen(p);
+        dbf_line_begin(&l, DBF_SETTINGS_NAME " ");
+        for (size_t i = 0; i < len && l.length < DBF_LINE_SIZE - 1; i++) l.text[l.length++] = p[i];
+        l.text[l.length] = '\0';
+        log_line(l.text);
+        p += len + (end != NULL ? 1 : 0);
+    }
+}
+
+/* --- start -------------------------------------------------------------------------------------------------------- */
+
+/* Starts memory, admission, native, codes, the readers, the latch and the sounds once hf->module_base finds game.dll (the
+ * game's code is unpacked and the module is there by the time its update runs, but not necessarily on the first tick);
+ * until then it does nothing. Admission's 30 s grace period for a differing witness counts from this call. The real
+ * NativePort is game.dll + each DBF_FN_* (Plan 2's ruling R3), called only through native.h's wrappers. */
+static void start(uint64_t now)
+{
+    size_t size = 0, loader_size = 0;
+    uintptr_t game_dll = g_hf->module_base("game.dll", &size), loader;
     if (game_dll == 0) return;
-    MemPort mem = { g_hf->read, g_hf->write };
-    AdmPort adm = { g_hf->module_base, g_hf->read_code, find_rewrites(), adm_log };
-    g_hf->log(g_mod, "game.dll found; admission starts");
-    if (adm.rewrites != NULL)
-        g_hf->log(g_mod, "Admission skips the code HellForge rewrites (hellforge_lua_rewrites found)");
-    else
-        g_hf->log(g_mod, "No hellforge_lua_rewrites in hellforge_modloader.dll: admission compares every witness byte");
-    mem_init(&mem);
-    adm_init(&adm, now_ms);
-    game_init(game_dll, (uint32_t)size);
+    loader = loader_image(&loader_size);
+    {
+        MemPort mem = { g_hf->read, g_hf->write };
+        AdmPort adm = { g_hf->module_base, g_hf->read_code, find_rewrites(), log_line };
+        NativePort nat = {
+            (void (*)(uintptr_t))(game_dll + DBF_FN_INPUT_HANDLER),
+            (uint8_t(*)(uintptr_t))(game_dll + DBF_FN_OPEN_INPUT),
+            (void (*)(uintptr_t))(game_dll + DBF_FN_CLOSE_INPUT),
+            (void (*)(uintptr_t, uint32_t))(game_dll + DBF_FN_REQUEST_SLOT),
+            (void (*)(uintptr_t, uint32_t))(game_dll + DBF_FN_UI_SOUND),
+            (uintptr_t(*)(uintptr_t, uint32_t*, uint32_t, uint32_t, uintptr_t, uintptr_t))(game_dll + DBF_FN_SCRAMBLE_QUERY),
+            log_line,
+            now_ms,
+        };
+        CodePort codes = { g_hf->stratagem_row, loader, loader_size, log_line };
+        log_line("game.dll found; admission starts");
+        if (adm.rewrites != NULL) log_line("Admission skips the code HellForge rewrites (hellforge_lua_rewrites found)");
+        else log_line("No hellforge_lua_rewrites in hellforge_modloader.dll: admission compares every witness byte");
+        if (loader == 0) log_line("No " DBF_LOADER_DLL " image: HellForge mod stratagems get no code");
+        mem_init(&mem);
+        adm_init(&adm, now);
+        native_init(&nat);
+        native_set_base(game_dll);
+        codes_init(&codes);
+        game_init(game_dll, (uint32_t)size);
+        latch_init(game_dll, log_line);
+    }
+    sound_init(&g_sound, nat_ui_sound, log_line);
+    memset(&g_job, 0, sizeof g_job);
+    g_watching = false;
+    g_random = (uint32_t)now ^ (uint32_t)(now >> 32) ^ 0x2545F491u;
     g_started = true;
 }
 
@@ -112,21 +304,254 @@ static void fill_waiting(DbfSnapshot* s)
     }
 }
 
+/* --- the job ------------------------------------------------------------------------------------------------------ */
+
+static bool job_active(void)
+{
+    return g_job.state == ENTRY_RUNNING || shortcut_active();
+}
+
+static int pending_changes(void)
+{
+    return mem_journal_count(MEM_OWNER_ENTRY) + mem_journal_count(MEM_OWNER_LATCH);
+}
+
+/* Why DBF's keys may not fire this tick, or NULL: bind_poll's `allowed` (DBF on, no host window capturing, the local
+ * player there with the UI unobstructed); bind_poll checks that the game's window is in front itself. */
+static const char* input_blocked(const GameView* v)
+{
+    if (!g_settings.enabled) return "DBF is off in its settings";
+    if (snap_capturing()) return "an Overlay Host window is open";
+    if (!v->local_ok) return "local player unavailable";
+    if (!v->local.unobstructed) return "UI obstructed";
+    return NULL;
+}
+
+/* Why the running job (List or slot hotkey) must stop this tick before anything is sent, or NULL: the mission ended, the
+ * HUD went away or is another one (R46's HUD identity: selection.lua:13, input.lua:367 and 382), the local player
+ * changed, or DBF's input is not available (`blocked`; R46 gave no buttons then, entry.lua:258, and stopped both jobs,
+ * selection.lua:12-16 and release.lua:25). entry and latch check everything else themselves. */
+static const char* cancel_reason(const GameView* v, const char* blocked)
+{
+    if (!v->in_gameplay) return "the mission ended";
+    if (!v->hud_ready) return "the HUD went away";
+    if (v->hud != g_job_hud) return "the HUD changed";
+    if (v->local_ok && (v->local.manager != g_job.identity_manager || v->local.key != g_job.identity_key))
+        return "player changed";
+    return blocked;
+}
+
+/* Plan 2's restore ruling: the job ends through entry_cancel or entry_cancel_shortcut (which gives the latch back with
+ * R46's owner checks), then whatever ENTRY still holds is put back. Never mem_restore_all: it skips the latch's checks. */
+static void cancel_job(const GameView* v, const char* why)
+{
+    if (shortcut_active()) entry_cancel_shortcut(&g_job, v, why);
+    else entry_cancel(&g_job, why);
+    (void)mem_restore(MEM_OWNER_ENTRY);
+}
+
+/* Each tick, while their journals hold anything: a release the game did not take (ENTRY), and a latch release that left
+ * entries (a failed write, or a controls pointer that could not be read), with avatar_valid when the view shows the player
+ * the latch was taken for (false with no player). */
+static void retry_restores(const GameView* v)
+{
+    if (mem_journal_count(MEM_OWNER_ENTRY) > 0) (void)mem_restore(MEM_OWNER_ENTRY);
+    if (!latch_held() && mem_journal_count(MEM_OWNER_LATCH) > 0)
+        (void)latch_release(v->local_ok && v->local.manager == g_latch_manager && v->local.key == g_latch_key);
+    if (g_pending_logged && pending_changes() == 0) {
+        g_pending_logged = false;
+        log_line("Every change DBF made to the game is put back");
+    }
+}
+
+/* " (every change put back)" or " (<n> changes not put back yet: DBF tries again each tick)". */
+static void add_restore_state(DbfLine* l)
+{
+    int pending = pending_changes();
+    if (pending == 0) {
+        dbf_line_add(l, " (every change put back)");
+        return;
+    }
+    dbf_line_add(l, " (");
+    dbf_line_add_uint(l, (uint32_t)pending);
+    dbf_line_add(l, pending == 1 ? " change not put back yet" : " changes not put back yet");
+    dbf_line_add(l, ": DBF tries again each tick)");
+    g_pending_logged = true;
+}
+
+static void log_refused(const char* who, const char* why)
+{
+    DbfLine l;
+    dbf_line_begin(&l, who);
+    dbf_line_add(&l, " not entered: ");
+    dbf_line_add(&l, why);
+    log_line(l.text);
+}
+
+static void log_started(const char* who, uint32_t interval)
+{
+    char name[DBF_LIST_NAME_SIZE];
+    DbfLine l;
+    dbf_kind_name_copy(g_job.kind, name, sizeof name);
+    dbf_line_begin(&l, who);
+    dbf_line_add(&l, ": entering ");
+    dbf_line_add(&l, name);
+    dbf_line_add(&l, " (");
+    dbf_line_add_uint(&l, g_job.code.len);
+    if (g_job.instant) {
+        dbf_line_add(&l, " directions, Instant)");
+    } else {
+        dbf_line_add(&l, " directions, ");
+        dbf_line_add_uint(&l, interval);
+        dbf_line_add(&l, " ms apart)");
+    }
+    log_line(l.text);
+}
+
+/* After the steps: once a job that started is neither running nor an active shortcut, one line says how it ended. */
+static void watch_job(void)
+{
+    char name[DBF_LIST_NAME_SIZE];
+    DbfLine l;
+    if (!g_watching || job_active()) return;
+    g_watching = false;
+    if (g_job.state == ENTRY_DONE) {
+        dbf_kind_name_copy(g_job.kind, name, sizeof name);
+        dbf_line_begin(&l, "Code entry done: ");
+        dbf_line_add(&l, name);
+    } else {
+        dbf_line_begin(&l, "Code entry failed: ");
+        dbf_line_add(&l, g_job.reason[0] != '\0' ? g_job.reason : "cancelled");
+    }
+    add_restore_state(&l);
+    log_line(l.text);
+}
+
+/* A slot hotkey's rising edge (R46 entry.lua:399-406): slot `slot`, from the closed or the open menu. */
+static bool begin_shortcut(const GameView* v, int slot, uint64_t now)
+{
+    char why[DBF_REASON_SIZE], who[8] = "Slot 0";
+    uint32_t interval = logic_interval(&g_settings, next_random);
+    who[5] = (char)('0' + slot);
+    if (!entry_begin_shortcut(&g_job, v, slot, interval, g_settings.instant_stratagems, now, why, sizeof why)) {
+        log_refused(who, why);
+        return false;
+    }
+    g_trigger = (BindAction)(BIND_SLOT1 + slot - 1);
+    g_job_hud = v->hud;
+    g_latch_manager = g_job.identity_manager;
+    g_latch_key = g_job.identity_key;
+    g_watching = true;
+    log_started(who, interval);
+    return true;
+}
+
+/* List Select's Confirm on row `row` of the view (R46 selection.lua:87-94). */
+static bool begin_list(const GameView* v, int row, uint64_t now)
+{
+    uint32_t interval = logic_interval(&g_settings, next_random), kind = v->rows[row].kind;
+    if (!entry_begin(&g_job, v, kind, interval, g_settings.instant_stratagems, false, now)) {
+        char name[DBF_LIST_NAME_SIZE];
+        dbf_kind_name_copy(kind, name, sizeof name);
+        log_refused(name, g_job.reason);
+        return false;
+    }
+    g_trigger = BIND_CONFIRM;
+    g_job_hud = v->hud;
+    g_watching = true;
+    log_started("List Select", interval);
+    return true;
+}
+
+/* --- the tick ----------------------------------------------------------------------------------------------------- */
+
+/* One tick with this tick's view (game_read, which runs codes_table, came first), in R46's frame order (entry.lua:254-
+ * 420), adapted:
+ *   1. the bindings, polled after the read so that `allowed` uses this tick's view (DBF on, no host window capturing,
+ *      the local player there with the UI unobstructed); bind_poll checks the game's window is in front;
+ *   2. the restores still owed: ENTRY, and LATCH while the latch is not held;
+ *   3. a running job stops when the mission ended, the HUD went or was replaced, the player changed or the input went;
+ *   4. the slot hotkeys: a rising edge with no job running and no shortcut active starts one (Confirm cancels it, and the
+ *      shortcut's step ends it once the game closes the menu, giving the latch back);
+ *   5. List Select, which sees a closed list while a shortcut is active (no choice, no Confirm; its edges are still
+ *      seen); LIST_CONFIRM starts a List job;
+ *   6. the job's step, not on the tick it started (R46 sends the first direction on the next tick; a shortcut's view is
+ *      stale on its first tick, latch.h);
+ *   7. the sounds, while selection_sounds is on and SOUND is admitted (sound.h);
+ *   8. one log line when a job ended, saying whether every change is back. */
+static void run(const GameView* v, uint64_t now)
+{
+    bool levels[BIND_COUNT];
+    const char* blocked = input_blocked(v);
+    bool started = false;
+    int row = -1;
+    ListEvent event;
+
+    bind_poll(levels, blocked == NULL, g_bind_status, sizeof g_bind_status);
+    if (blocked == NULL && !(g_bind_port->foreground != NULL && g_bind_port->foreground()))
+        blocked = "the game is not in front";
+
+    retry_restores(v);
+    if (job_active()) {
+        const char* why = cancel_reason(v, blocked);
+        if (why != NULL) cancel_job(v, why);
+    }
+
+    for (int i = 0; i < SLOT_COUNT; i++) {
+        bool down = levels[BIND_SLOT1 + i], edge = down && !g_slot_prev[i];
+        g_slot_prev[i] = down;
+        if (edge && !started && !job_active() && v->in_gameplay && v->hud_ready) /* every level is false while blocked */
+            started = begin_shortcut(v, i + 1, now);
+    }
+
+    event = logic_list_step(&g_list, shortcut_active() ? NULL : v, &g_settings, levels, job_active(), &row);
+    if (event == LIST_CONFIRM && !started && !job_active() && row >= 0 && row < v->row_count)
+        started = begin_list(v, row, now);
+
+    if (!started) {
+        if (shortcut_active()) entry_step_shortcut(&g_job, v, now, levels[g_trigger], levels[BIND_CONFIRM]);
+        else if (g_job.state == ENTRY_RUNNING) entry_step(&g_job, v, now, levels[g_trigger]);
+    }
+    if (g_settings.selection_sounds && adm_feature(FEAT_SOUND, NULL) == ADMIT_OK)
+        sound_step(&g_sound, event, started, now);
+    watch_job();
+}
+
+/* Before game.dll is found: the inputs are read with nothing allowed (a key held now must be let go first) and List
+ * Select sees a closed list. */
+static void run_waiting(void)
+{
+    bool levels[BIND_COUNT];
+    bind_poll(levels, false, g_bind_status, sizeof g_bind_status);
+    for (int i = 0; i < SLOT_COUNT; i++) g_slot_prev[i] = false;
+    (void)logic_list_step(&g_list, NULL, &g_settings, levels, false, NULL);
+}
+
 static void Tick(HfMod* mod, float dt, void* user)
 {
     static DbfSnapshot s; /* the game thread's only: snap_publish copies it */
     static UiEvent events[UI_QUEUE_SLOTS];
-    uint64_t now_ms = GetTickCount64();
-    if (!g_started) start(now_ms);
+    uint64_t now = GetTickCount64();
+    if (g_bind_port == NULL) { /* the bindings need nothing of game.dll: from the first tick (platform_win.h: game thread) */
+        g_bind_port = dbf_bind_port(g_ov);
+        bind_init(g_bind_port, g_settings.bind);
+        memset(&g_list, 0, sizeof g_list);
+        g_list.chosen = -1;
+    }
+    if (!g_started) start(now);
     memset(&s, 0, sizeof s);
     s.tick = ++g_ticks;
     if (g_started) {
-        adm_tick(now_ms);
+        adm_tick(now);
         game_read(&s.game);
         snap_fill_admission(&s);
+        run(&s.game, now);
     } else {
         fill_waiting(&s);
+        run_waiting();
     }
+    snap_fill_list(&s, &s.game, &g_settings, &g_list, &g_job, g_bind_status, g_settings_read ? DBF_SETTINGS_NAME : NULL,
+                   g_settings_problems);
     s.host_version = g_ov != NULL ? g_ov->version : 0;
     snap_publish(&s); /* every tick: a publish skipped while the window holds a buffer is made good by the next */
     (void)ui_drain(events, UI_QUEUE_SLOTS); /* the whole queue; nothing posts events yet */
@@ -155,6 +580,19 @@ static void Draw(const OvFrame* frame, void* user)
     snap_release();
 }
 
+/* The HUD list (ui_list.h). The host draws HUD panels every frame, so this is where the capturing flag comes from: a host
+ * window open (OvFrame.capturing) or look capture on (API 3) keeps DBF's keys quiet. */
+static void DrawList(const OvFrame* frame, void* user)
+{
+    const DbfSnapshot* s;
+    bool capturing = frame != NULL && frame->capturing != 0;
+    if (g_ov->look_capture != NULL && g_ov->look_capture()) capturing = true;
+    snap_set_capturing(capturing);
+    s = snap_acquire();
+    ui_list_draw(g_ov, frame, s);
+    snap_release();
+}
+
 static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
 {
     const OvApi* ov;
@@ -164,8 +602,11 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
         return;
     }
     g_loaded = true;
+    load_settings();
     ov = connect_overlay();
-    if (ov == NULL) g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a window");
+    if (ov == NULL)
+        g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a window or list on screen; key and controller "
+                         "bindings still work, wheel bindings do nothing");
     g_ov = ov;
     if (!register_tick()) {
         g_hf->log(g_mod, DBF_TITLE " could not get a game-thread tick");
@@ -173,11 +614,15 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     }
     if (ov != NULL) {
         OvPanelDef panel = { sizeof panel, DBF_PANEL_ID, DBF_TITLE, OV_PANEL_WINDOW, 0 };
+        OvPanelDef list = { sizeof list, DBF_LIST_ID, DBF_TITLE " list", OV_PANEL_HUD, 0 };
         panel.width = 640.0f;
         panel.height = 520.0f;
         panel.draw = Draw;
         if (ov->register_panel(&panel) == NULL)
             g_hf->log(g_mod, "The Overlay Host did not take the " DBF_TITLE " window (its log says why)");
+        list.draw = DrawList;
+        if (ov->register_panel(&list) == NULL)
+            g_hf->log(g_mod, "The Overlay Host did not take the " DBF_TITLE " list (its log says why)");
     }
 }
 
@@ -190,6 +635,7 @@ HF_MOD_EXPORT int hellforge_mod_init(const HfApi* hf, HfMod* mod)
     g_hf = hf;
     g_mod = mod;
     snap_init();
+    settings_defaults(&g_settings);
     hf->log(mod, DBF_TITLE " " DBF_VERSION " (game " DBF_GAME_BUILD ")"); /* before on: it may run OnGameLoaded at once */
     if (hf->on(mod, HF_EVENT_GAME_LOADED, OnGameLoaded, NULL) != 0) {
         hf->log(mod, DBF_TITLE " could not listen for the game loading");

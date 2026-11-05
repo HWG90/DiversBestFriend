@@ -19,6 +19,7 @@ static int g_ready;
 static int g_requests;
 static int g_register_calls;
 static int g_refuse_panels;
+static int g_capturing = -1; /* stub_set_capturing: -1 by the panel's kind */
 
 static StubPanel g_panels[MAX_PANELS];
 static int g_panel_count;
@@ -104,12 +105,17 @@ EXPORT void stub_tick(float dt)
 EXPORT int stub_draw(int index)
 {
     const StubPanel* p = stub_panel(index);
+    /* An open window has the game's input (OvFrame.capturing); a HUD panel is drawn while no window is open. */
     OvFrame frame = { 3840.0f, 2160.0f, 1.0f / 60.0f, 1.0, 2.0f, 1 };
     if (p == NULL || p->draw == NULL) return 0;
+    frame.capturing = g_capturing >= 0 ? g_capturing : p->kind == OV_PANEL_WINDOW;
     fake_ov_reset();
     p->draw(&frame, p->user);
     return 1;
 }
+
+/* The frames stub_draw passes say capturing (1) or not (0) whatever the panel; -1 goes back to the panel's kind. */
+EXPORT void stub_set_capturing(int capturing) { g_capturing = capturing; }
 
 EXPORT int stub_line_count(void) { return fake_ov_lines(); }
 EXPORT const char* stub_line(int index) { return fake_ov_line(index); }

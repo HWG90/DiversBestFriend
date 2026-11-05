@@ -2,7 +2,7 @@
   "format": 1,
   "id": "goose.divers-best-friend",
   "name": "Diver's Best Friend",
-  "version": "R50-hellforge.1",
+  "version": "R50-hellforge.2",
   "description": "Picks and enters your stratagems from a wheel or list in game. Needs Goose Overlay Host.",
   "url": "https://github.com/HWG90/DiversBestFriend/tree/hellforge",
   "gameplay": false,

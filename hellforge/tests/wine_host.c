@@ -27,6 +27,30 @@
  *   on-fails       the API 4 stub, and HellForge refuses the listener (hf->on fails): DBF logs it and registers nothing
  *   masked-log     the API 4 stub and a stub loader that rewrites several witness bytes, two witnesses' worth: the count
  *                  of masked bytes of each is logged once, however often the witness is read again
+ * The code-entry cases (Plan 2, Task 12), each with the API 5 stub host and the stub loader (no-host-entry: the loader
+ * alone), a settings.ini in a LOCALAPPDATA of their own, a writable image (hf->write writes into pages that exist), a
+ * window of this process in front and DBF's keys pressed with keybd_event (F20 slot 1, F21 Next, F22 Previous, F23
+ * Confirm), as a player would:
+ *   list-confirm   menu open, Next once, Confirm: the fake handler gets the second row's code, paced 60 ms, the job is done,
+ *                  the action bytes are 0, the move and confirm sounds played; the HUD list shows the choice
+ *   instant        instant_stratagems: every direction but the last at once, the last once Confirm was up 100 ms
+ *   menu-close     the game closes the menu after the first direction: failed, "menu closed", bytes 0, nothing left
+ *   mission-end    the mission ends after the first direction: "the mission ended", bytes 0, nothing left
+ *   shortcut       slot 1 from a closed menu: the latch, open and request_slot, the code, and the latch back once the
+ *                  game closes the menu
+ *   shortcut-hud   the HUD is replaced during a slot hotkey: cancelled ("the HUD changed"), the latch back, the menu DBF
+ *                  opened closed
+ *   mod-stratagem  a HellForge kind 151 (moved table, its code array inside the stub loader's own image) is entered
+ *   scramble       the fake scramble query answers with an effect: the remapped kind's code is entered
+ *   no-entry-admission  an ENTRY witness byte differs: Confirm sends nothing, and the Status tab says why
+ *   no-host-entry  no Overlay Host: the keys still work and the code is entered; one log line says what is missing
+ *   release-retry  the write that releases the first direction fails: the job fails, and the next tick puts it back
+ * Every case maps the synthetic game.dll's code pages into executable memory with a 12-byte stub (mov rax, imm64;
+ * jmp rax) at each DBF_FN_* RVA, jumping to a C fake here (the input handler, open, close and request_slot over
+ * tests/synthetic.c's fakes; the UI sound and the scramble query recorded). The stub's bytes are in the synthetic image
+ * too, so hf->read sees them as it would see a hook; read_code serves the original bytes from a shadow copy, as
+ * HellForge's does, and in the code-entry cases the stub loader reports the stub ranges through
+ * hellforge_lua_rewrites, as HellForge reports its hooks. The cases from no-host to masked-log must call none of them.
  * Checks of the first five: init returns 0, logs the version line, registers for HF_EVENT_GAME_LOADED and nothing else.
  * After the event: without a usable host (no-host, host-api3) the "running without a window" line, exactly once even after 3
  * ticks, and the tick on HellForge's on_game_thread; with one, one register_panel call for the Status window (id, title,
@@ -38,7 +62,8 @@
  * no export for the test (and the host could not link the snapshot accessors: the DLL's snapshot lives in the DLL's own
  * statics).
  *
- * Usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll> [<hellforge_modloader.dll>]] */
+ * Usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll>] [<hellforge_modloader.dll>] (each when the
+ * case needs it) */
 #define WIN32_LEAN_AND_MEAN
 #define HF_MOD_LOADER /* this is the loader: hellforge_mod.h does not declare the mod's init here */
 #include <windows.h>
@@ -55,10 +80,12 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.1 (game 25480438)"
-#define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a window"
+#define VERSION_LINE "Diver's Best Friend R50-hellforge.2 (game 25480438)"
+#define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a window or list on screen; key and controller " \
+                     "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"
 #define NO_PANEL_LINE "The Overlay Host did not take the Diver's Best Friend window (its log says why)"
+#define NO_LIST_LINE "The Overlay Host did not take the Diver's Best Friend list (its log says why)"
 #define LISTEN_FAILED_LINE "Diver's Best Friend could not listen for the game loading"
 #define REPEATED_LINE "Diver's Best Friend ignored a repeated game-loaded event"
 #define ADMISSION_LINE "game.dll found; admission starts"
@@ -68,10 +95,11 @@
 #define STARTING_TEXT "text:Diver's Best Friend is starting..."
 #define PANEL_ID "goose.divers-best-friend"
 #define PANEL_TITLE "Diver's Best Friend"
+#define LIST_ID "goose.divers-best-friend/list"
 #define TICKS 3
 #define MENU_OPEN_AT 0x38769u /* the menu-open byte in the stratagem panel (R46 native.lua:214), as tests/synthetic.c */
 #define RETRY_WAIT_MS 1100u   /* admission retries what is pending once a second */
-#define MAX_LINES 256
+#define MAX_LINES 2048
 #define LINE_SIZE 512
 #define MAX_LISTENERS 16
 #define MAX_TICKERS 8
@@ -205,6 +233,156 @@ static int api_read(uintptr_t address, void* out, size_t size)
     return syn_read(address, out, size);
 }
 
+/* hf->write in the code-entry cases: into the image's pages, except the one write g_fail_write names (release-retry). */
+static int g_write_no, g_fail_write;
+static int api_write(uintptr_t address, const void* data, size_t size)
+{
+    if (++g_write_no == g_fail_write) return -1;
+    return syn_write_mapped(address, data, size);
+}
+
+/* --- the game functions: 12-byte stubs in executable memory ----------------------------------------------------- */
+
+#define STUB_BYTES 12 /* mov rax, imm64 (48 B8 + 8 bytes); jmp rax (FF E0) */
+enum { FN_INPUT, FN_OPEN, FN_CLOSE, FN_REQUEST, FN_SOUND, FN_SCRAMBLE, FN_COUNT };
+#define MAX_CALLS 64
+
+static int g_calls[FN_COUNT];
+static int g_handler_tick[MAX_CALLS];    /* the host's tick number at each input handler call */
+static ULONGLONG g_handler_ms[MAX_CALLS]; /* and its GetTickCount64 */
+static uint32_t g_sounds[MAX_CALLS];
+static int g_sound_count;
+static bool g_scramble_remap; /* the fake scramble query says an effect is on */
+
+static int fn_calls(void)
+{
+    int n = 0;
+    for (int i = 0; i < FN_COUNT; i++) n += g_calls[i];
+    return n;
+}
+
+static void host_input_handler(uintptr_t component)
+{
+    int n = g_calls[FN_INPUT]++;
+    if (n < MAX_CALLS) {
+        g_handler_tick[n] = g_tick_no;
+        g_handler_ms[n] = GetTickCount64();
+    }
+    syn_input_handler(component);
+}
+
+static uint8_t host_open_input(uintptr_t component)
+{
+    g_calls[FN_OPEN]++;
+    return syn_open_input(component);
+}
+
+static void host_close_input(uintptr_t component)
+{
+    g_calls[FN_CLOSE]++;
+    syn_close_input(component);
+}
+
+static void host_request_slot(uintptr_t weapon, uint32_t slot)
+{
+    g_calls[FN_REQUEST]++;
+    syn_request_slot(weapon, slot);
+}
+
+static void host_ui_sound(uintptr_t unused, uint32_t id)
+{
+    g_calls[FN_SOUND]++;
+    if (g_sound_count < MAX_CALLS) g_sounds[g_sound_count++] = id;
+}
+
+/* The game writes its answer to *out; R46 reads anything but 0xffffffff as an effect being on (input.lua:156). */
+static uintptr_t host_scramble_query(uintptr_t effects, uint32_t* out, uint32_t key, uint32_t kind, uintptr_t a5,
+                                     uintptr_t a6)
+{
+    g_calls[FN_SCRAMBLE]++;
+    if (g_scramble_remap && out != NULL) *out = 0;
+    return 0;
+}
+
+typedef struct GameFn {
+    const char* name;
+    uint32_t rva;
+    void* fake;
+    uint8_t original[STUB_BYTES]; /* the image's bytes under the stub: read_code serves them (the shadow copy) */
+} GameFn;
+
+static GameFn g_fns[FN_COUNT] = {
+    [FN_INPUT] = { "input_handler", DBF_FN_INPUT_HANDLER, (void*)host_input_handler, { 0 } },
+    [FN_OPEN] = { "open_input", DBF_FN_OPEN_INPUT, (void*)host_open_input, { 0 } },
+    [FN_CLOSE] = { "close_input", DBF_FN_CLOSE_INPUT, (void*)host_close_input, { 0 } },
+    [FN_REQUEST] = { "request_slot", DBF_FN_REQUEST_SLOT, (void*)host_request_slot, { 0 } },
+    [FN_SOUND] = { "ui_sound", DBF_FN_UI_SOUND, (void*)host_ui_sound, { 0 } },
+    [FN_SCRAMBLE] = { "scramble_query", DBF_FN_SCRAMBLE_QUERY, (void*)host_scramble_query, { 0 } },
+};
+
+static void stub_bytes(const GameFn* f, uint8_t out[STUB_BYTES])
+{
+    uint64_t target = (uint64_t)(uintptr_t)f->fake;
+    out[0] = 0x48;
+    out[1] = 0xB8;
+    memcpy(out + 2, &target, sizeof target);
+    out[10] = 0xFF;
+    out[11] = 0xE0;
+}
+
+/* game.dll's range reserved at SYN_GAME_BASE (first thing, so no DLL or heap lands there), its stub pages committed,
+ * the stubs written and the pages made executable. */
+static bool map_game_code(void)
+{
+    if (VirtualAlloc((void*)SYN_GAME_BASE, SYN_IMAGE_SIZE, MEM_RESERVE, PAGE_NOACCESS) != (void*)SYN_GAME_BASE) {
+        printf("  game.dll's range at 0x%llx could not be reserved (error %lu)\n", (unsigned long long)SYN_GAME_BASE,
+               (unsigned long)GetLastError());
+        return false;
+    }
+    for (int i = 0; i < FN_COUNT; i++) {
+        uintptr_t at = SYN_GAME_BASE + g_fns[i].rva, page = at & ~(uintptr_t)0xFFF;
+        size_t span = ((at + STUB_BYTES + 0xFFF) & ~(uintptr_t)0xFFF) - page;
+        uint8_t code[STUB_BYTES];
+        if (VirtualAlloc((void*)page, span, MEM_COMMIT, PAGE_READWRITE) == NULL) return false;
+        stub_bytes(&g_fns[i], code);
+        memcpy((void*)at, code, sizeof code);
+    }
+    for (int i = 0; i < FN_COUNT; i++) {
+        uintptr_t at = SYN_GAME_BASE + g_fns[i].rva, page = at & ~(uintptr_t)0xFFF;
+        DWORD old;
+        if (!VirtualProtect((void*)page, ((at + STUB_BYTES + 0xFFF) & ~(uintptr_t)0xFFF) - page, PAGE_EXECUTE_READ, &old))
+            return false;
+    }
+    return FlushInstructionCache(GetCurrentProcess(), NULL, 0) != 0;
+}
+
+/* After a syn_build: the original bytes at each stub are kept as the shadow copy, and the image gets the stub's bytes. */
+static bool place_stubs(void)
+{
+    bool ok = true;
+    for (int i = 0; i < FN_COUNT; i++) {
+        uint8_t code[STUB_BYTES];
+        stub_bytes(&g_fns[i], code);
+        ok = ok && syn_read(SYN_GAME_BASE + g_fns[i].rva, g_fns[i].original, STUB_BYTES) == 0
+            && syn_poke(SYN_GAME_BASE + g_fns[i].rva, code, STUB_BYTES);
+    }
+    return ok;
+}
+
+/* hf->read_code: the image as it was before any hook, the shadow copy under the stubs. */
+static int api_read_code(uintptr_t address, void* out, size_t size)
+{
+    uint8_t* bytes = out;
+    g_read_calls++;
+    if (syn_read(address, out, size) != 0) return -1;
+    for (int i = 0; i < FN_COUNT; i++)
+        for (unsigned b = 0; b < STUB_BYTES; b++) {
+            uintptr_t at = SYN_GAME_BASE + g_fns[i].rva + b;
+            if (at >= address && at - address < size) bytes[at - address] = g_fns[i].original[b];
+        }
+    return 0;
+}
+
 /* --- helpers --------------------------------------------------------------------------------------------------- */
 
 static void* need(HMODULE module, const char* name)
@@ -324,29 +502,42 @@ static bool rows_are(const SynScene* scene, int count)
 
 typedef enum {
     C_NO_HOST, C_API3, C_API4, C_API5, C_NO_TICK, C_RETRY, C_ON_AT_ONCE, C_LATE_MODULE, C_SECOND_LOADED, C_NULL_PANEL,
-    C_ON_FAILS, C_MASKED_LOG
+    C_ON_FAILS, C_MASKED_LOG, C_LIST_CONFIRM, C_INSTANT, C_MENU_CLOSE, C_MISSION_END, C_SHORTCUT, C_SHORTCUT_HUD,
+    C_MOD_STRATAGEM, C_SCRAMBLE, C_NO_ENTRY_ADMISSION, C_NO_HOST_ENTRY, C_RELEASE_RETRY
 } CaseId;
 
 typedef struct CaseInfo {
     const char* name;
     const char* title;
     bool stub;   /* needs the stub Overlay Host (argument 3) */
-    bool loader; /* needs the stub loader (argument 4) */
+    bool loader; /* needs the stub loader (argument 4, or 3 without a host) */
+    bool entry;  /* a code-entry case: settings.ini, a writable image, a window in front, keys */
 } CaseInfo;
 
 static const CaseInfo CASES[] = {
-    [C_NO_HOST] = { "no-host", "no Overlay Host", false, false },
-    [C_API3] = { "host-api3", "an Overlay Host older than 0.2.0 (API 3)", true, false },
-    [C_API4] = { "host-api4", "Overlay Host 0.2.x (API 4, no shared game-thread slot)", true, false },
-    [C_API5] = { "host-api5", "Overlay Host 0.3.x (API 5) and HellForge's rewrite list", true, true },
-    [C_NO_TICK] = { "no-tick", "Overlay Host 0.2.x, and HellForge gives no game-thread slot", true, false },
-    [C_RETRY] = { "retry", "a changed witness byte is put back: admission retries after a second", true, false },
-    [C_ON_AT_ONCE] = { "on-at-once", "HellForge delivers the game-loaded event before on returns", true, false },
-    [C_LATE_MODULE] = { "late-module", "game.dll is not loaded on the first tick", true, false },
-    [C_SECOND_LOADED] = { "second-loaded", "the game-loaded event comes three times", true, false },
-    [C_NULL_PANEL] = { "null-panel", "the Overlay Host takes no window", true, false },
-    [C_ON_FAILS] = { "on-fails", "HellForge refuses the game-loaded listener", true, false },
-    [C_MASKED_LOG] = { "masked-log", "HellForge rewrites bytes of two witnesses", true, true },
+    [C_NO_HOST] = { "no-host", "no Overlay Host", false, false, false },
+    [C_API3] = { "host-api3", "an Overlay Host older than 0.2.0 (API 3)", true, false, false },
+    [C_API4] = { "host-api4", "Overlay Host 0.2.x (API 4, no shared game-thread slot)", true, false, false },
+    [C_API5] = { "host-api5", "Overlay Host 0.3.x (API 5) and HellForge's rewrite list", true, true, false },
+    [C_NO_TICK] = { "no-tick", "Overlay Host 0.2.x, and HellForge gives no game-thread slot", true, false, false },
+    [C_RETRY] = { "retry", "a changed witness byte is put back: admission retries after a second", true, false, false },
+    [C_ON_AT_ONCE] = { "on-at-once", "HellForge delivers the game-loaded event before on returns", true, false, false },
+    [C_LATE_MODULE] = { "late-module", "game.dll is not loaded on the first tick", true, false, false },
+    [C_SECOND_LOADED] = { "second-loaded", "the game-loaded event comes three times", true, false, false },
+    [C_NULL_PANEL] = { "null-panel", "the Overlay Host takes no window", true, false, false },
+    [C_ON_FAILS] = { "on-fails", "HellForge refuses the game-loaded listener", true, false, false },
+    [C_MASKED_LOG] = { "masked-log", "HellForge rewrites bytes of two witnesses", true, true, false },
+    [C_LIST_CONFIRM] = { "list-confirm", "List Select: Next once, Confirm, the code paced", true, true, true },
+    [C_INSTANT] = { "instant", "List Select with Instant: the last direction once Confirm is up", true, true, true },
+    [C_MENU_CLOSE] = { "menu-close", "the game closes the menu during a code", true, true, true },
+    [C_MISSION_END] = { "mission-end", "the mission ends during a code", true, true, true },
+    [C_SHORTCUT] = { "shortcut", "slot 1's hotkey from a closed menu, with the menu latch", true, true, true },
+    [C_SHORTCUT_HUD] = { "shortcut-hud", "the HUD is replaced during a slot hotkey", true, true, true },
+    [C_MOD_STRATAGEM] = { "mod-stratagem", "a HellForge stratagem (kind 151) with its code in the loader", true, true, true },
+    [C_SCRAMBLE] = { "scramble", "a scramble effect: the remapped code is entered", true, true, true },
+    [C_NO_ENTRY_ADMISSION] = { "no-entry-admission", "an ENTRY witness differs: Confirm does nothing", true, true, true },
+    [C_NO_HOST_ENTRY] = { "no-host-entry", "no Overlay Host: DBF's keys still enter codes", false, true, true },
+    [C_RELEASE_RETRY] = { "release-retry", "a direction's release cannot be written: the tick retries it", true, true, true },
 };
 
 static CaseId g_case;
@@ -422,10 +613,14 @@ static void run_standard(void)
     if (window) {
         const StubPanel* p = s_panel(0);
         CHECK(logged(NO_HOST_LINE) == 0, "with an Overlay Host 0.2.0 or later, no \"running without a window\" line");
-        CHECK(s_panel_count() == 1 && p != NULL && strcmp(p->id, PANEL_ID) == 0, "one register_panel call, id " PANEL_ID);
+        const StubPanel* l = s_panel(1);
+        CHECK(s_panel_count() == 2 && p != NULL && strcmp(p->id, PANEL_ID) == 0, "two panels, the first id " PANEL_ID);
         CHECK(p && p->size == sizeof(OvPanelDef) && strcmp(p->title, PANEL_TITLE) == 0 && p->kind == OV_PANEL_WINDOW
                   && p->hotkey == 0 && p->width == 640.0f && p->height == 520.0f && p->draw != NULL,
               "the panel is the window \"" PANEL_TITLE "\", no hotkey, 640x520, with a draw callback");
+        CHECK(l && l->size == sizeof(OvPanelDef) && strcmp(l->id, LIST_ID) == 0 && l->kind == OV_PANEL_HUD && l->hotkey == 0
+                  && l->draw != NULL,
+              "the second is the HUD list " LIST_ID ", no hotkey, with a draw callback");
         if (api5)
             CHECK(s_game_thread_count() == 1 && g_ticker_count == 0,
                   "the tick goes through the Overlay Host's on_game_thread (API 5), not HellForge's");
@@ -472,7 +667,13 @@ static void run_standard(void)
               "the tick found no hellforge_lua_rewrites and logged it once");
         CHECK(logged_ending(MASKED_TAIL) == 0, "and logged no masked witness");
     }
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+    if (api5) {
+        int (*byte_calls)(void) = (int (*)(void))need(g_loader, "stub_byte_calls");
+        const DbfWitness* w = witness("hud_root");
+        CHECK(byte_calls && w && byte_calls() == (int)w->size,
+              "the loader was asked about single bytes of hud_root alone (whole witnesses first), once each");
+    }
 
     if (window) {
         char host_line[64];
@@ -509,7 +710,7 @@ static void run_retry(void)
           "a byte of the hud_root witness is wrong before the first tick");
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_panel_count() == 1 && g_ticker_count == 1, "the window and the tick are registered");
+    CHECK(s_panel_count() == 2 && g_ticker_count == 1, "the window, the list and the tick are registered");
 
     do_tick();
     CHECK(draw_window(), "the window draws after the first tick");
@@ -526,7 +727,7 @@ static void run_retry(void)
     do_tick();
     check_full_window("a second after the byte was put right");
     CHECK(logged(ADMISSION_LINE) == 1 && logged(VERSION_LINE) == 1, "admission was not started again, only retried");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
 }
 
 /* --- on-at-once ------------------------------------------------------------------------------------------------ */
@@ -542,8 +743,8 @@ static void run_on_at_once(void)
     CHECK(g_line_count > 0 && strcmp(g_lines[0], VERSION_LINE) == 0 && logged(VERSION_LINE) == 1,
           "the version line is the first line logged, and logged once");
     p = s_panel(0);
-    CHECK(s_register_calls() == 1 && s_panel_count() == 1 && p != NULL && strcmp(p->id, PANEL_ID) == 0,
-          "the event delivered inside on registered the window, once");
+    CHECK(s_register_calls() == 2 && s_panel_count() == 2 && p != NULL && strcmp(p->id, PANEL_ID) == 0,
+          "the event delivered inside on registered the window and the list, once");
     CHECK(g_ticker_count == 1 && g_tickers[0].mod == &g_mod && s_game_thread_count() == 0,
           "and the tick, through HellForge's on_game_thread (the API 4 host has no slot)");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0 && logged(NO_PANEL_LINE) == 0, "with nothing refused");
@@ -551,11 +752,11 @@ static void run_on_at_once(void)
           "before the first tick the window says \"Diver's Best Friend is starting...\"");
 
     for (int i = 0; i < TICKS; i++) do_tick();
-    CHECK(logged(VERSION_LINE) == 1 && s_panel_count() == 1 && s_register_calls() == 1 && g_ticker_count == 1,
-          "after 3 ticks still one version line, one window and one tick");
+    CHECK(logged(VERSION_LINE) == 1 && s_panel_count() == 2 && s_register_calls() == 2 && g_ticker_count == 1,
+          "after 3 ticks still one version line, one window, one list and one tick");
     CHECK(logged(ADMISSION_LINE) == 1, "admission started once");
     check_full_window("after 3 ticks");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
 }
 
 /* --- late-module ----------------------------------------------------------------------------------------------- */
@@ -589,7 +790,7 @@ static void run_late_module(void)
     do_tick();
     CHECK(logged(ADMISSION_LINE) == 1 && logged(REWRITES_MISSING_LINE) == 1, "a third tick starts nothing again");
     check_full_window("after the third tick");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
 }
 
 /* --- second-loaded --------------------------------------------------------------------------------------------- */
@@ -599,15 +800,15 @@ static void run_second_loaded(void)
     int requests;
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_panel_count() == 1 && g_ticker_count == 1 && logged(REPEATED_LINE) == 0,
-          "the first event registers the window and the tick, and logs no repeat");
+    CHECK(s_panel_count() == 2 && g_ticker_count == 1 && logged(REPEATED_LINE) == 0,
+          "the first event registers the window, the list and the tick, and logs no repeat");
     requests = s_requests();
     fire(HF_EVENT_GAME_LOADED);
     CHECK(logged(REPEATED_LINE) == 1, "the second event is logged: \"" REPEATED_LINE "\"");
     fire(HF_EVENT_GAME_LOADED);
     CHECK(logged(REPEATED_LINE) == 1, "a third one is not logged again");
-    CHECK(s_register_calls() == 1 && s_panel_count() == 1 && g_ticker_count == 1 && s_game_thread_count() == 0,
-          "and neither registered another window or tick");
+    CHECK(s_register_calls() == 2 && s_panel_count() == 2 && g_ticker_count == 1 && s_game_thread_count() == 0,
+          "and neither registered another window, list or tick");
     CHECK(s_requests() == requests, "nor asked the Overlay Host for its API again");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0 && logged(NO_PANEL_LINE) == 0, "nothing was refused");
 
@@ -615,7 +816,7 @@ static void run_second_loaded(void)
     CHECK(logged(REPEATED_LINE) == 1 && logged(VERSION_LINE) == 1 && logged(ADMISSION_LINE) == 1,
           "after 3 ticks: one repeat line, one version line, admission started once");
     check_full_window("after 3 ticks");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
 }
 
 /* --- null-panel ------------------------------------------------------------------------------------------------ */
@@ -625,16 +826,17 @@ static void run_null_panel(void)
     s_refuse_panels(1);
     run_init();
     fire(HF_EVENT_GAME_LOADED);
-    CHECK(s_register_calls() == 1 && s_panel_count() == 0, "DBF asked the Overlay Host for its window once, and got none");
-    CHECK(logged(NO_PANEL_LINE) == 1, "and logged \"" NO_PANEL_LINE "\" once");
+    CHECK(s_register_calls() == 2 && s_panel_count() == 0,
+          "DBF asked the Overlay Host for its window and its list once each, and got neither");
+    CHECK(logged(NO_PANEL_LINE) == 1 && logged(NO_LIST_LINE) == 1, "and logged both refusals once");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0, "the host was found and the tick registered");
     CHECK(g_ticker_count == 1 && g_tickers[0].mod == &g_mod, "the tick goes through HellForge's on_game_thread");
     CHECK(s_draw(0) == 0, "there is no window to draw");
 
     for (int i = 0; i < TICKS; i++) do_tick();
-    CHECK(logged(NO_PANEL_LINE) == 1 && s_register_calls() == 1, "the ticks ask nothing more of the host");
+    CHECK(logged(NO_PANEL_LINE) == 1 && s_register_calls() == 2, "the ticks ask nothing more of the host");
     CHECK(logged(ADMISSION_LINE) == 1 && g_read_calls > 0, "the ticks still run: admission started and the game was read");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
 }
 
 /* --- on-fails -------------------------------------------------------------------------------------------------- */
@@ -706,7 +908,827 @@ static void run_masked_log(void)
     check_full_window("a second after the unrewritten byte was put right");
     CHECK(logged(a_line) == 1 && logged(b_line) == 1 && logged_ending(MASKED_TAIL) == 2,
           "admitted, the counts were logged once each");
-    CHECK(syn_write_count() == 0, "the mod wrote nothing to the game");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "the mod wrote nothing to the game and called no game function");
+}
+
+/* --- the code-entry cases (Plan 2, Task 12) --------------------------------------------------------------------- */
+
+#define KEY_SLOT1 0x83   /* F20 */
+#define KEY_NEXT 0x84    /* F21 */
+#define KEY_PREVIOUS 0x85 /* F22 */
+#define KEY_CONFIRM 0x86 /* F23 */
+#define INTERVAL_MS 60u /* the settings' input_interval_ms in the paced cases */
+#define SOUND_GAP_MS 80u /* more than sound.h's 60 ms between a sound and a move sound */
+#define WAIT_MS 3000u   /* the longest a case waits for a code */
+#define ACCENT_TOKEN 7  /* OV_THEME_ACCENT: fake_ov's theme answers 0xFFC0DE00 + token */
+#define ENGINE_AT ((uintptr_t)0x2c100000000ull) /* the audio engine (native.lua:328-330), anywhere plausible */
+#define EFFECTS_AT ((uintptr_t)0x2d000000000ull)
+
+/* R46's settings for these cases (the [dbf] keys of each case follow; a later line wins). */
+static const char BASE_SETTINGS[] =
+    "; Diver's Best Friend for HellForge, written by wine_host.exe\n"
+    "[dbf]\n"
+    "input_interval_ms = 60 ; between directions\n"
+    "[bindings]\n"
+    "next = key:f21\n"
+    "previous = key:f22\n"
+    "confirm = key:f23 # Confirm\n"
+    "slot1 = key:f20\n";
+
+/* R46 input.lua:264: code direction d (1 up, 2 right, 3 down, 4 left) is entered as action ({3,2,4,1})[d]. */
+static const int ACTION_OF[5] = { 0, 3, 2, 4, 1 };
+
+typedef SHORT(WINAPI* KeyStateFn)(int);
+typedef void(WINAPI* KeybdEventFn)(BYTE, BYTE, DWORD, ULONG_PTR);
+typedef HWND(WINAPI* CreateWindowFn)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+typedef BOOL(WINAPI* SetForegroundFn)(HWND);
+typedef HWND(WINAPI* ForegroundFn)(void);
+typedef BOOL(WINAPI* DestroyWindowFn)(HWND);
+typedef BOOL(WINAPI* PeekMessageFn)(LPMSG, HWND, UINT, UINT, UINT);
+typedef LRESULT(WINAPI* DispatchMessageFn)(const MSG*);
+
+static KeyStateFn g_key_state;
+static KeybdEventFn g_keybd_event;
+static PeekMessageFn g_peek;
+static DispatchMessageFn g_dispatch;
+static DestroyWindowFn g_destroy;
+static ForegroundFn g_foreground;
+static HWND g_window;
+
+static void pump(void)
+{
+    MSG msg;
+    if (g_peek == NULL || g_dispatch == NULL) return;
+    while (g_peek(&msg, NULL, 0, 0, PM_REMOVE)) g_dispatch(&msg);
+}
+
+static int g_keys_lost; /* key events GetAsyncKeyState did not show within KEY_WAIT_MS */
+#define KEY_WAIT_MS 500u
+#define PROBE_TRIES 50
+
+static bool key_is(BYTE vk, bool down)
+{
+    return g_key_state != NULL && ((g_key_state(vk) & 0x8000) != 0) == down;
+}
+
+/* A key event, and a wait (pumping messages) until GetAsyncKeyState shows it: Wine may deliver the event a moment later,
+ * and DBF reads the key state when its tick runs. */
+static void key(BYTE vk, bool down)
+{
+    ULONGLONG until;
+    if (g_keybd_event == NULL) return;
+    g_keybd_event(vk, 0, down ? 0 : KEYEVENTF_KEYUP, 0);
+    until = GetTickCount64() + KEY_WAIT_MS;
+    pump();
+    while (!key_is(vk, down) && GetTickCount64() < until) {
+        Sleep(2);
+        pump();
+    }
+    if (!key_is(vk, down)) g_keys_lost++;
+}
+
+static void release_keys(void)
+{
+    static const BYTE KEYS[] = { KEY_SLOT1, KEY_NEXT, KEY_PREVIOUS, KEY_CONFIRM };
+    for (size_t i = 0; i < sizeof KEYS; i++) key(KEYS[i], false);
+}
+
+/* A window of this process in front and keybd_event reaching GetAsyncKeyState, as DBF's BindPort reads the keys (the
+ * bind-port probe shows whether this Wine session can). User32 is found by name, as the DLL finds it. */
+static bool keys_and_window(void)
+{
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    CreateWindowFn create;
+    SetForegroundFn set_foreground;
+    ForegroundFn foreground;
+    bool pressed;
+    if (user32 == NULL) user32 = LoadLibraryA("user32.dll");
+    if (user32 == NULL) return false;
+    g_key_state = (KeyStateFn)(void*)GetProcAddress(user32, "GetAsyncKeyState");
+    g_keybd_event = (KeybdEventFn)(void*)GetProcAddress(user32, "keybd_event");
+    g_peek = (PeekMessageFn)(void*)GetProcAddress(user32, "PeekMessageA");
+    g_dispatch = (DispatchMessageFn)(void*)GetProcAddress(user32, "DispatchMessageA");
+    g_destroy = (DestroyWindowFn)(void*)GetProcAddress(user32, "DestroyWindow");
+    create = (CreateWindowFn)(void*)GetProcAddress(user32, "CreateWindowExA");
+    set_foreground = (SetForegroundFn)(void*)GetProcAddress(user32, "SetForegroundWindow");
+    foreground = (ForegroundFn)(void*)GetProcAddress(user32, "GetForegroundWindow");
+    g_foreground = foreground;
+    if (!g_key_state || !g_keybd_event || !create || !set_foreground || !foreground) return false;
+    release_keys();
+    g_window = create(0, "STATIC", "DBF entry test", WS_POPUP | WS_VISIBLE, 0, 0, 64, 64, NULL, NULL,
+                      GetModuleHandleA(NULL), NULL);
+    if (g_window == NULL) return false;
+    /* Wine may take a moment to hand a new window the foreground and the keyboard (the window manager decides; a window
+     * of the case before may just have gone), so the probe is tried again for up to PROBE_TRIES * 100 ms. */
+    pressed = false;
+    for (int attempt = 0; attempt < PROBE_TRIES && !pressed; attempt++) {
+        if (attempt > 0) Sleep(100);
+        set_foreground(g_window);
+        pump();
+        if (foreground() != g_window) continue;
+        key(KEY_NEXT, true);
+        pressed = key_is(KEY_NEXT, true);
+        key(KEY_NEXT, false);
+        pressed = pressed && key_is(KEY_NEXT, false);
+    }
+    if (foreground() != g_window) printf("  the window did not get the foreground\n");
+    if (!pressed) printf("  keybd_event did not reach GetAsyncKeyState\n");
+    g_keys_lost = 0;
+    return foreground() == g_window && pressed;
+}
+
+static void end_keys(void)
+{
+    CHECK(g_keys_lost == 0, "every key press and release reached GetAsyncKeyState");
+    release_keys();
+    if (g_window != NULL && g_destroy != NULL) g_destroy(g_window);
+    g_window = NULL;
+}
+
+static void entry_tick(void)
+{
+    pump();
+    do_tick();
+}
+
+/* A key pressed for one tick and let go for the next. */
+static void tap(BYTE vk)
+{
+    key(vk, true);
+    entry_tick();
+    key(vk, false);
+    entry_tick();
+}
+
+/* LOCALAPPDATA of this case, beside the host (build/wine/appdata-<case>), with settings.ini holding `settings` (NULL: no
+ * file); DBF reads %LOCALAPPDATA%\DBF\HellForge\settings.ini at the game-loaded event. */
+static bool prepare_appdata(const char* name, const char* settings)
+{
+    char dir[MAX_PATH], path[MAX_PATH + 64];
+    char* slash;
+    FILE* f;
+    if (GetModuleFileNameA(NULL, dir, sizeof dir) == 0) return false;
+    slash = strrchr(dir, '\\');
+    if (slash == NULL) return false;
+    *slash = '\0';
+    snprintf(path, sizeof path, "%s\\appdata-%s", dir, name);
+    CreateDirectoryA(path, NULL);
+    if (!SetEnvironmentVariableA("LOCALAPPDATA", path)) return false;
+    snprintf(path, sizeof path, "%s\\appdata-%s\\DBF", dir, name);
+    CreateDirectoryA(path, NULL);
+    snprintf(path, sizeof path, "%s\\appdata-%s\\DBF\\HellForge", dir, name);
+    CreateDirectoryA(path, NULL);
+    snprintf(path, sizeof path, "%s\\appdata-%s\\DBF\\HellForge\\settings.ini", dir, name);
+    DeleteFileA(path);
+    if (settings == NULL) return true;
+    f = fopen(path, "wb");
+    if (f == NULL) return false;
+    fputs(settings, f);
+    return fclose(f) == 0;
+}
+
+/* The audio and effects globals R46 reads before the UI sound and the scramble query (native.lua:325-332, input.lua:153). */
+static bool poke_globals(void)
+{
+    uintptr_t state = 0;
+    return syn_poke_u64(SYN_GAME_BASE + DBF_RVA_AUDIO, ENGINE_AT)
+        && syn_poke_u64(ENGINE_AT + DBF_OFF_AUDIO_CALL_OFFSET, ENGINE_AT + 0x1000u)
+        && syn_poke_u64(ENGINE_AT + DBF_OFF_AUDIO_TAIL_CALL_OFFSET, ENGINE_AT + 0x2000u)
+        && syn_read(SYN_GAME_BASE + DBF_RVA_GAME_STATE, &state, sizeof state) == 0
+        && syn_poke_u64(state + DBF_OFF_GAME_AUDIO_OFFSET, ENGINE_AT + 0x3000u)
+        && syn_poke_u64(SYN_GAME_BASE + DBF_RVA_EFFECTS, EFFECTS_AT);
+}
+
+/* The menu as the game opens or closes it: the panel's menu-open byte and the avatar's menu-active bit. */
+static bool set_menu_in_game(bool open)
+{
+    uint32_t word = 0;
+    uintptr_t at = syn_local_avatar() + DBF_OFF_AVATAR_MENU_OFFSET;
+    return syn_poke_u8(syn_panel() + MENU_OPEN_AT, open ? 1 : 0) && syn_read(at, &word, sizeof word) == 0
+        && syn_poke_u32(at, open ? word | DBF_VAL_MENU_ACTIVE_MASK : word & ~(uint32_t)DBF_VAL_MENU_ACTIVE_MASK);
+}
+
+static bool build_scene(const SynScene* scene)
+{
+    g_scene = *scene;
+    return syn_build(scene) && place_stubs();
+}
+
+/* The witnesses a stub overlaps, and how many of their bytes it covers. */
+static int overlap(const DbfWitness* w)
+{
+    int n = 0;
+    for (int i = 0; i < FN_COUNT; i++)
+        for (unsigned b = 0; b < STUB_BYTES; b++) {
+            uint32_t at = g_fns[i].rva + b;
+            if (at >= w->rva && at - w->rva < w->size) n++;
+        }
+    return n;
+}
+
+static int (*s_byte_calls)(void);
+
+/* Everything a code-entry case starts with: the scene, the globals, settings.ini, the stub ranges reported, the fakes'
+ * expectation, the window and keys; then init, the game-loaded event and two ticks (game.dll found, every key seen up).
+ * False (with a FAIL) when the case cannot go on. */
+static bool entry_prepare(const SynScene* scene, const char* settings, uint32_t kind, const uint8_t* code, int n)
+{
+    void (*add_range)(uint32_t, uint32_t) = (void (*)(uint32_t, uint32_t))need(g_loader, "stub_add_range");
+    bool ready;
+    s_byte_calls = (int (*)(void))need(g_loader, "stub_byte_calls");
+    CHECK(build_scene(scene) && poke_globals(), "the scene is laid out, with the audio and effects globals");
+    CHECK(add_range && s_byte_calls && prepare_appdata(CASES[g_case].name, settings),
+          "settings.ini is written, and the stub loader takes the stubs' ranges");
+    if (!add_range || !s_byte_calls) return false;
+    for (int i = 0; i < FN_COUNT; i++) add_range(g_fns[i].rva, STUB_BYTES);
+    syn_input_reset();
+    syn_input_expect(kind, code, n);
+    syn_menu_reset();
+    ready = keys_and_window();
+    CHECK(ready, "a window of this process is in front and keybd_event reaches GetAsyncKeyState (the entry cases need it)");
+    return ready;
+}
+
+static bool entry_go(void)
+{
+    run_init();
+    fire(HF_EVENT_GAME_LOADED);
+    entry_tick();
+    entry_tick();
+    CHECK(logged(ADMISSION_LINE) == 1, "game.dll found: admission started");
+    return true;
+}
+
+static bool entry_start(const SynScene* scene, const char* settings, uint32_t kind, const uint8_t* code, int n)
+{
+    return entry_prepare(scene, settings, kind, code, n) && entry_go();
+}
+
+static bool settings_logged(void)
+{
+    char line[LINE_SIZE], appdata[MAX_PATH];
+    if (GetEnvironmentVariableA("LOCALAPPDATA", appdata, sizeof appdata) == 0) return false; /* the CRT's getenv is a copy */
+    snprintf(line, sizeof line, "Settings read from %s\\DBF\\HellForge\\settings.ini (0 problems)", appdata);
+    return logged(line) == 1;
+}
+
+/* The local player's four direction action bytes are released (R46 input.lua:187-188). */
+static bool actions_idle(void)
+{
+    for (uint32_t a = 1; a <= 4; a++) {
+        uint8_t byte = 0xee;
+        if (syn_read(syn_local_actions() + 32u * a, &byte, 1) != 0 || byte != 0) return false;
+    }
+    return true;
+}
+
+/* The handler took the directions of `code`, in order, each as R46's action. */
+static bool handler_took(const uint8_t* code, int n)
+{
+    if (syn_input_calls() != n || g_calls[FN_INPUT] != n) {
+        printf("  handler calls %d (fake %d), expected %d; the window %s in front\n", g_calls[FN_INPUT], syn_input_calls(), n,
+               g_foreground != NULL && g_foreground() == g_window ? "is" : "is not");
+        return false;
+    }
+    for (int i = 0; i < n; i++)
+        if (syn_input_action(i) != ACTION_OF[code[i]]) {
+            printf("  direction %d pressed action %d, expected %d\n", i + 1, syn_input_action(i), ACTION_OF[code[i]]);
+            return false;
+        }
+    return true;
+}
+
+/* One direction per tick, at least the interval apart (by the same clock DBF paces with; 5 ms for the read order). */
+static bool paced(int n, unsigned interval)
+{
+    for (int i = 1; i < n && i < MAX_CALLS; i++) {
+        if (g_handler_tick[i] == g_handler_tick[i - 1] || g_handler_ms[i] - g_handler_ms[i - 1] + 5u < interval) {
+            printf("  directions %d and %d: ticks %d and %d, %llu ms apart\n", i, i + 1, g_handler_tick[i - 1],
+                   g_handler_tick[i], (unsigned long long)(g_handler_ms[i] - g_handler_ms[i - 1]));
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Ticks (5 ms apart) until the handler had `n` calls, or WAIT_MS, then two more. */
+static void tick_until_calls(int n)
+{
+    ULONGLONG until = GetTickCount64() + WAIT_MS;
+    while (g_calls[FN_INPUT] < n && GetTickCount64() < until) {
+        Sleep(5);
+        entry_tick();
+    }
+    entry_tick();
+    entry_tick();
+}
+
+static int count_lines_starting(const char* prefix)
+{
+    int n = 0;
+    for (int i = 0; i < g_line_count; i++) n += strncmp(g_lines[i], prefix, strlen(prefix)) == 0;
+    return n;
+}
+
+/* Every call of the input handler had its checkpoint line first (native.h). */
+static bool checkpoints(void)
+{
+    return count_lines_starting("call input_handler(") == g_calls[FN_INPUT];
+}
+
+/* The HUD list as the host draws it, with `name` drawn in the accent: the chosen row. */
+static bool hud_chosen(const char* name)
+{
+    char line[LINE_SIZE];
+    snprintf(line, sizeof line, "dtext:%08X:%s", 0xFFC0DE00u + ACCENT_TOKEN, name);
+    if (!s_draw(1)) return false;
+    if (find_line(line) >= 0) return true;
+    print_drawing();
+    return false;
+}
+
+static bool status_has(const char* line)
+{
+    if (!s_draw(0)) return false;
+    if (find_line(line) >= 0) return true;
+    print_drawing();
+    return false;
+}
+
+static bool sounds_are(const uint32_t* ids, int n)
+{
+    if (g_sound_count != n) {
+        printf("  %d sounds, expected %d\n", g_sound_count, n);
+        return false;
+    }
+    for (int i = 0; i < n; i++)
+        if (g_sounds[i] != ids[i]) return false;
+    return true;
+}
+
+static bool ended(const char* line)
+{
+    if (logged(line) == 1) return true;
+    printf("  no log line \"%s\"\n", line);
+    return false;
+}
+
+/* list-confirm: the default scene (menu open, kinds 118, 4, 50, 63 from the top), Next once, Confirm. */
+static void run_list_confirm(void)
+{
+    static const uint32_t SOUNDS[2] = { DBF_VAL_SOUND_MOVE, DBF_VAL_SOUND_CONFIRM };
+    SynScene scene;
+    const SynStratagem* st;
+    int expected_bytes = 0;
+    syn_default(&scene);
+    st = &scene.stratagems[1]; /* kind 4: the second row from the top */
+    if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    CHECK(settings_logged(), "DBF read settings.ini, with no problem (its comments included)");
+    for (int i = 0; i < dbf_witness_count; i++) {
+        int o = overlap(&dbf_witnesses[i]);
+        char line[LINE_SIZE];
+        if (o == 0) continue;
+        expected_bytes += dbf_witnesses[i].size;
+        snprintf(line, sizeof line, "witness %s: %d of %u" MASKED_TAIL, dbf_witnesses[i].name, o,
+                 (unsigned)dbf_witnesses[i].size);
+        CHECK(logged(line) == 1, "a witness under a stub logs the stub's bytes as rewritten, once");
+    }
+    CHECK(s_byte_calls() == expected_bytes,
+          "the loader was asked about single bytes only of the witnesses under a stub (whole witnesses first)");
+    CHECK(status_has("text:Code entry: OK") && status_has("text:Select on Release: OK") && status_has("text:Sounds: OK"),
+          "code entry, the latch and the sounds are admitted (the stubs are masked)");
+    CHECK(status_has("text:Bindings: key:f21 / key:f22 / key:f23") && status_has("text:Settings: settings.ini (0 problems)")
+              && status_has("text:Entry: idle"),
+          "the Status tab shows the bindings, the settings file and an idle entry");
+    CHECK(hud_chosen(dbf_kind_names[118]), "the HUD list shows the stratagems, the top row chosen");
+
+    {
+        void (*set_capturing)(int) = (void (*)(int))need(g_stub, "stub_set_capturing");
+        if (set_capturing) {
+            set_capturing(1); /* a host window opens: the list's frame says capturing */
+            s_draw(1);
+            tap(KEY_NEXT);
+            CHECK(hud_chosen(dbf_kind_names[118]) && g_sound_count == 0, "while a host window has the input, Next does nothing");
+            set_capturing(-1);
+            s_draw(1);
+            entry_tick();
+        }
+        CHECK(set_capturing != NULL, "the stub host can say a window has the input");
+    }
+    CHECK(syn_poke_u32(syn_ui() + 0x429cu + 20u, 1), "a game menu covers the HUD (R46 input.lua:294-295)");
+    tap(KEY_NEXT);
+    CHECK(hud_chosen(dbf_kind_names[118]) && g_sound_count == 0, "while the UI is obstructed, Next does nothing");
+    CHECK(syn_poke_u32(syn_ui() + 0x429cu + 20u, 0), "the game menu goes");
+    entry_tick();
+    tap(KEY_NEXT);
+    CHECK(hud_chosen(dbf_kind_names[4]), "Next chooses the second row");
+    CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE, "and plays the move sound");
+
+    key(KEY_CONFIRM, true);
+    entry_tick();
+    CHECK(g_sound_count == 2 && g_sounds[1] == DBF_VAL_SOUND_CONFIRM && g_calls[FN_INPUT] == 0,
+          "Confirm starts the entry with the confirm sound; the first direction goes on the next tick");
+    key(KEY_CONFIRM, false);
+    tick_until_calls(st->code_len);
+    CHECK(handler_took(st->code, st->code_len), "the handler took the second row's code, direction by direction");
+    CHECK(paced(st->code_len, INTERVAL_MS), "one direction per tick, at least 60 ms apart (input_interval_ms)");
+    CHECK(actions_idle(), "the action bytes are 0 again");
+    CHECK(status_has("text:Entry: done"), "the Status tab says the entry is done");
+    CHECK(ended("Code entry done: Orbital Gatling Barrage (every change put back)"), "and the log says so");
+    CHECK(sounds_are(SOUNDS, 2), "two sounds in all: the move and the confirm");
+    CHECK(checkpoints(), "every handler call had its checkpoint line first");
+    CHECK(syn_mapped_write_count() >= 2 * st->code_len && syn_write_count() == 0, "a press and a release per direction");
+    CHECK(g_calls[FN_OPEN] == 0 && g_calls[FN_CLOSE] == 0 && g_calls[FN_REQUEST] == 0,
+          "a List job opens, closes and requests nothing");
+    end_keys();
+}
+
+/* instant: the top row (kind 118, three directions) with instant_stratagems. */
+static void run_instant(void)
+{
+    static const char SETTINGS[] = "[dbf]\ninstant_stratagems = true\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    int calls;
+    syn_default(&scene);
+    st = &scene.stratagems[0];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    key(KEY_CONFIRM, true);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 0 && g_sound_count == 1, "Confirm starts the job (the confirm sound)");
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == st->code_len - 1 && g_handler_tick[0] == g_handler_tick[st->code_len - 2],
+          "the next tick sends every direction but the last, at once");
+    Sleep(150);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == st->code_len - 1, "the last waits while Confirm is held, 150 ms later too");
+    key(KEY_CONFIRM, false);
+    entry_tick();
+    calls = g_calls[FN_INPUT];
+    CHECK(calls == st->code_len - 1, "and for 100 ms after it is let go");
+    Sleep(150);
+    entry_tick();
+    CHECK(handler_took(st->code, st->code_len), "then the last direction goes");
+    CHECK(actions_idle() && status_has("text:Entry: done"), "done, the action bytes 0");
+    CHECK(ended("Code entry done: Orbital Precision Strike (every change put back)"), "and the log says so");
+    end_keys();
+}
+
+/* menu-close and mission-end: the top row paced, then the game closes the menu, or the mission ends, after one direction. */
+static void run_interrupted(bool mission)
+{
+    static const char SETTINGS[] = "[dbf]\nselection_sounds = false\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    const char* line = mission ? "Code entry failed: the mission ended (every change put back)"
+                               : "Code entry failed: menu closed (every change put back)";
+    syn_default(&scene);
+    st = &scene.stratagems[0];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    tap(KEY_CONFIRM);
+    tick_until_calls(1);
+    CHECK(g_calls[FN_INPUT] >= 1, "the first direction went");
+    CHECK(g_sound_count == 0, "selection_sounds = false: no confirm sound");
+    if (mission) {
+        uintptr_t state = 0;
+        CHECK(syn_read(SYN_GAME_BASE + DBF_RVA_GAME_STATE, &state, sizeof state) == 0
+                  && syn_poke_u32(state + DBF_OFF_GAME_MODE_OFFSET, 3u),
+              "the mission ends");
+    } else {
+        CHECK(set_menu_in_game(false), "the player lets go of the menu");
+    }
+    Sleep(INTERVAL_MS + 20u);
+    entry_tick();
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] < st->code_len, "the code stops there");
+    CHECK(actions_idle(), "the action bytes are 0");
+    CHECK(ended(line), mission ? "failed: the mission ended; nothing is left to put back"
+                               : "failed: menu closed; nothing is left to put back");
+    CHECK(status_has(mission ? "text:Entry: failed: the mission ended" : "text:Entry: failed: menu closed"),
+          "the Status tab says why");
+    if (!mission) {
+        int before = g_calls[FN_INPUT];
+        CHECK(set_menu_in_game(true), "the player holds the menu again");
+        entry_tick();
+        CHECK(hud_chosen(dbf_kind_names[118]), "the list opens as before, the top row chosen");
+        syn_input_reset();
+        syn_input_expect(st->kind, st->code, st->code_len);
+        CHECK(syn_poke_u32(syn_local_component(), 0) && syn_poke_u32(syn_local_component() + 0x14u, 0),
+              "(the game clears its input when the menu closes)");
+        g_calls[FN_INPUT] = 0;
+        tap(KEY_CONFIRM);
+        tick_until_calls(st->code_len);
+        CHECK(before >= 1 && handler_took(st->code, st->code_len) && status_has("text:Entry: done"),
+              "and a new Confirm enters the code whole");
+    }
+    end_keys();
+}
+
+/* The shortcut scene (as test_latch's): eight payload entries, the equipped slots 1..4 entries 4..7 (kinds 118, 4, 50,
+ * 63), every card showing one; the menu closed. */
+static void shortcut_scene(SynScene* scene)
+{
+    static const uint32_t KINDS[8] = { 10, 11, 12, 13, 118, 4, 50, 63 };
+    static const uint8_t CODE[4] = { 1, 2, 3, 4 };
+    syn_default(scene);
+    scene->stratagem_count = 8;
+    scene->menu_open = 0;
+    for (int i = 0; i < 8; i++) {
+        scene->stratagems[i].kind = KINDS[i];
+        scene->stratagems[i].code_len = 3;
+        memcpy(scene->stratagems[i].code, (const uint8_t[3]){ 1, 3, 2 }, 3);
+        scene->card_entry[i] = i;
+    }
+    scene->stratagems[4].code_len = 4;
+    memcpy(scene->stratagems[4].code, CODE, sizeof CODE);
+}
+
+/* SYN_MENU_RECORDS[0] and [2] as R46's latch patches them (menu_latch.lua:71): flags - trigger * 65536, the trigger 0. */
+static const uint8_t HOLD_PATCHED[20] = { 0x43, 0x00, 0x10, 0x00, 0x4b, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                          0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00 };
+static const uint8_t LONG_HOLD_PATCHED[20] = { 0x47, 0x00, 0x30, 0x00, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00,
+                                               0x00, 0x00, 0x55, 0x00, 0x00, 0x00, 0x66, 0x00, 0x00, 0x00 };
+
+static bool record_is(int record, const uint8_t want[20])
+{
+    uint8_t now[20] = { 0 };
+    return syn_read(syn_binding_record(syn_menu_bucket(), record), now, sizeof now) == 0 && memcmp(now, want, 20) == 0;
+}
+
+static uint32_t u32_at(uintptr_t at)
+{
+    uint32_t v = 0xeeeeeeeeu;
+    syn_read(at, &v, sizeof v);
+    return v;
+}
+
+static bool latched(void)
+{
+    return record_is(0, HOLD_PATCHED) && record_is(1, SYN_MENU_RECORDS[1]) && record_is(2, LONG_HOLD_PATCHED)
+        && u32_at(syn_controls_menu_trigger()) == 0 && u32_at(syn_local_menu_trigger()) == 0;
+}
+
+static bool originals(void)
+{
+    return record_is(0, SYN_MENU_RECORDS[0]) && record_is(1, SYN_MENU_RECORDS[1]) && record_is(2, SYN_MENU_RECORDS[2])
+        && u32_at(syn_controls_menu_trigger()) == 2 && u32_at(syn_local_menu_trigger()) == 2;
+}
+
+/* The game builds another HUD (another root, ready, its menu-open byte 1), or puts the first one back. */
+static bool replace_hud(bool other_one)
+{
+    const uintptr_t other = (uintptr_t)0x3f000000000ull;
+    static uintptr_t first;
+    if (first == 0) syn_read(SYN_GAME_BASE + DBF_RVA_HUD_ROOT, &first, sizeof first);
+    return syn_poke_u8(other + DBF_OFF_HUD_READY_OFFSET, 1)
+        && syn_poke_u8(other + DBF_OFF_HUD_PANEL_OFFSET + DBF_OFF_OPEN_BYTE_OFFSET, 1)
+        && syn_poke_u64(SYN_GAME_BASE + DBF_RVA_HUD_ROOT, other_one ? other : first);
+}
+
+/* Slot 1's key pressed from a closed menu: the latch, open and request_slot, the confirm sound. */
+static void press_slot1(int opens_before)
+{
+    key(KEY_SLOT1, true);
+    entry_tick();
+    CHECK(latched(), "slot 1's key: the Hold and LongHold records are Press, both dwords 0");
+    CHECK(g_calls[FN_OPEN] == opens_before + 1 && syn_menu_stray_calls() == 0, "DBF opened the menu");
+}
+
+/* shortcut: slot 1 (kind 118, four directions) from a closed menu, one direction per tick, the key held to the end. */
+static void run_shortcut(void)
+{
+    static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    shortcut_scene(&scene);
+    st = &scene.stratagems[4];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    CHECK(set_menu_in_game(false), "(the menu is closed in the game)");
+    entry_tick();
+    CHECK(originals(), "before: the menu binding is Hold, both trigger dwords 2");
+
+    press_slot1(0);
+    CHECK(g_calls[FN_REQUEST] == 1 && syn_requested_slot() == 5, "and asked for the stratagem slot (5)");
+    CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_CONFIRM, "with the confirm sound");
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1 && latched(), "the first direction goes on the next tick, the latch held");
+    Sleep(SOUND_GAP_MS); /* past the move sound's throttle, so a move would be heard */
+    tap(KEY_NEXT);
+    CHECK(g_sound_count == 1, "Next during a slot hotkey moves nothing (List Select sees a closed list)");
+    {
+        char line[LINE_SIZE];
+        snprintf(line, sizeof line, "dtext:%08X:%s", 0xFFC0DE00u + ACCENT_TOKEN, dbf_kind_names[10]);
+        CHECK(s_draw(1) && find_line(line) < 0 && s_count_prefix("dtext:") > 0,
+              "and the HUD list shows the rows with none chosen (the top one would be kind 10)");
+    }
+    tick_until_calls(st->code_len);
+    CHECK(handler_took(st->code, st->code_len), "the handler took slot 1's code");
+    CHECK(latched(), "the code is in; the latch stays until the game closes the menu");
+    CHECK(set_menu_in_game(false), "the game closes the menu (the stratagem is in hand)");
+    entry_tick();
+    CHECK(originals(), "the menu binding is Hold again, both dwords 2");
+    CHECK(g_calls[FN_CLOSE] == 0, "DBF closed nothing: the game did");
+    CHECK(ended("Code entry done: Orbital Precision Strike (every change put back)"), "the log says done");
+    entry_tick();
+    entry_tick();
+    CHECK(g_calls[FN_OPEN] == 1 && count_lines_starting("Slot 1: entering") == 1,
+          "slot 1's key, still held, starts nothing more (a press is a rising edge)");
+    key(KEY_SLOT1, false);
+    entry_tick();
+    CHECK(status_has("text:Entry: done") && actions_idle(), "the Status tab says done; the action bytes are 0");
+    CHECK(checkpoints() && count_lines_starting("call open_input(") == 1 && count_lines_starting("call request_slot(") == 1,
+          "every game call had its checkpoint line");
+    end_keys();
+}
+
+/* shortcut-hud: the HUD is replaced during a slot hotkey's code, then (the first HUD back) after a second one's code was
+ * in, while it waits for the game to close the menu (R46's c.hud == job.hud, input.lua:367 and 382). Each time: cancelled,
+ * the latch back, and the menu DBF opened closed. */
+static void run_shortcut_hud(void)
+{
+    static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
+    char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
+    SynScene scene;
+    const SynStratagem* st;
+    shortcut_scene(&scene);
+    st = &scene.stratagems[4];
+    snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
+    if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
+    CHECK(set_menu_in_game(false), "(the menu is closed in the game)");
+    entry_tick();
+
+    press_slot1(0);
+    key(KEY_SLOT1, false);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1, "the first direction went");
+    CHECK(replace_hud(true), "the game replaces the HUD during the code");
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1, "no direction goes after that");
+    CHECK(ended("Code entry failed: the HUD changed (every change put back)"), "cancelled: the HUD changed");
+    CHECK(originals() && g_calls[FN_CLOSE] == 1 && actions_idle(),
+          "the menu binding is Hold again, the menu DBF opened closed, the action bytes 0");
+    CHECK(status_has("text:Entry: failed: the HUD changed"), "the Status tab says why");
+
+    CHECK(replace_hud(false) && syn_poke_u32(syn_local_component(), 0), "the first HUD is back; the game cleared its input");
+    syn_input_reset();
+    syn_input_expect(st->kind, st->code, st->code_len);
+    g_calls[FN_INPUT] = 0;
+    entry_tick();
+    press_slot1(1);
+    key(KEY_SLOT1, false);
+    tick_until_calls(st->code_len);
+    CHECK(handler_took(st->code, st->code_len) && latched(), "a second slot hotkey's code is in; the latch held");
+    CHECK(replace_hud(true), "the game replaces the HUD while the menu is still open");
+    entry_tick();
+    CHECK(count_lines_starting("Code entry failed: the HUD changed (every change put back)") == 2,
+          "cancelled again: the HUD changed");
+    CHECK(originals() && g_calls[FN_CLOSE] == 2, "the latch is back and the menu DBF opened is closed");
+    end_keys();
+}
+
+/* mod-stratagem: HellForge moved the definition table and added kind 151; its code array lies in the stub loader's own
+ * image (where HellForge keeps a mod stratagem's code); the second row shows it. */
+static void run_mod_stratagem(void)
+{
+    static const uint8_t MOD_CODE[4] = { 4, 3, 2, 1 };
+    void* (*area)(uint32_t*) = (void* (*)(uint32_t*))need(g_loader, "stub_code_area");
+    SynScene scene;
+    uintptr_t row, payload;
+    uint32_t size = 0;
+    syn_default(&scene);
+    if (!area) return;
+    if (!entry_start(&scene, BASE_SETTINGS, 151, MOD_CODE, 4)) return;
+    payload = syn_payload(scene.local_entry);
+    row = syn_move_table((int32_t)(SYN_IMAGE_SIZE + 0x10000u)) ? syn_add_mod_stratagem(151, 4, MOD_CODE) : 0;
+    CHECK(row != 0 && syn_set_code(row, (uintptr_t)area(&size), 4, MOD_CODE) && size >= 16
+              && syn_poke_u32(payload + DBF_OFF_PAYLOAD_KINDS_OFFSET + DBF_OFF_PAYLOAD_ENTRY_STRIDE * 1u, 151),
+          "kind 151 is in the payload (the second card), its code array inside hellforge_modloader.dll's image");
+    entry_tick();
+    CHECK(status_has("text:Stratagem 151") && status_has("text:< v > ^"), "the Status tab lists it with its code");
+    tap(KEY_NEXT);
+    CHECK(hud_chosen("Stratagem 151"), "Next chooses it");
+    tap(KEY_CONFIRM);
+    tick_until_calls(4);
+    CHECK(handler_took(MOD_CODE, 4) && actions_idle(), "its code is entered");
+    CHECK(ended("Code entry done: Stratagem 151 (every change put back)"), "done");
+    end_keys();
+}
+
+/* scramble: an effect is on (the fake query says so) and the local avatar's seed is 113, so kind 4 is entered with kind
+ * ((4 + 113) mod 149) + 1 = 118's code (R46 input.lua:150-157); the game reports the kind asked for. */
+static void run_scramble(void)
+{
+    SynScene scene;
+    const SynStratagem* shown;
+    syn_default(&scene);
+    scene.scramble_seed = 113;
+    g_scramble_remap = true;
+    shown = &scene.stratagems[0]; /* kind 118: whose code kind 4 takes */
+    if (!entry_start(&scene, BASE_SETTINGS, 4, shown->code, shown->code_len)) return;
+    CHECK(g_calls[FN_SCRAMBLE] > 0 && status_has("text:Scrambled codes: OK") && !status_has("text:Codes do not follow scrambling yet"),
+          "the scramble query runs, and the codes follow it");
+    tap(KEY_NEXT);
+    CHECK(hud_chosen(dbf_kind_names[4]), "Next chooses kind 4");
+    tap(KEY_CONFIRM);
+    tick_until_calls(shown->code_len);
+    CHECK(handler_took(shown->code, shown->code_len), "the remapped code (kind 118's) is entered");
+    CHECK(actions_idle() && ended("Code entry done: Orbital Gatling Barrage (every change put back)"),
+          "and the game matched kind 4: done");
+    end_keys();
+}
+
+/* no-entry-admission: a byte of append_and_match (an ENTRY witness under no stub) differs: ENTRY waits. */
+static void run_no_entry_admission(void)
+{
+    const DbfWitness* w = witness("append_and_match");
+    SynScene scene;
+    uint8_t byte = 0;
+    const char* why = "witness append_and_match differs (retrying)";
+    char line[LINE_SIZE];
+    syn_default(&scene);
+    CHECK(w != NULL && overlap(w) == 0, "append_and_match is an ENTRY witness no stub covers");
+    if (!w || !entry_prepare(&scene, BASE_SETTINGS, 4, scene.stratagems[1].code, scene.stratagems[1].code_len)) return;
+    CHECK(syn_read(SYN_GAME_BASE + w->rva + 5u, &byte, 1) == 0 && syn_poke_u8(SYN_GAME_BASE + w->rva + 5u, (uint8_t)(byte ^ 0xffu)),
+          "a byte of append_and_match differs from the table");
+    if (!entry_go()) return;
+    snprintf(line, sizeof line, "text:Code entry: Waiting (%s)", why);
+    CHECK(status_has(line), "the Status tab says code entry waits, and why");
+    tap(KEY_NEXT);
+    CHECK(hud_chosen(dbf_kind_names[4]) && g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE,
+          "Next still moves the choice, with its sound");
+    tap(KEY_CONFIRM);
+    entry_tick();
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 0 && syn_mapped_write_count() == 0 && g_sound_count == 1,
+          "Confirm sends nothing, writes nothing and plays no confirm sound");
+    snprintf(line, sizeof line, "text:Entry: failed: Code entry: %s", why);
+    CHECK(status_has(line), "the Status tab says why the code was not entered");
+    snprintf(line, sizeof line, "Orbital Gatling Barrage not entered: Code entry: %s", why);
+    CHECK(ended(line), "and so does the log");
+    end_keys();
+}
+
+/* no-host-entry: no goose_overlay.dll; Confirm on a key enters the top row's code all the same. */
+static void run_no_host_entry(void)
+{
+    SynScene scene;
+    const SynStratagem* st;
+    syn_default(&scene);
+    st = &scene.stratagems[0];
+    if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    CHECK(logged(NO_HOST_LINE) == 1 && g_ticker_count == 1, "one line says what runs without the host; HellForge's tick");
+    tap(KEY_CONFIRM);
+    tick_until_calls(st->code_len);
+    CHECK(handler_took(st->code, st->code_len) && actions_idle(), "Confirm on its key enters the top row's code");
+    CHECK(paced(st->code_len, INTERVAL_MS), "paced as the settings say");
+    CHECK(ended("Code entry done: Orbital Precision Strike (every change put back)"), "done");
+    CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_CONFIRM, "with the confirm sound");
+    CHECK(logged(NO_HOST_LINE) == 1, "the no-host line is still logged once");
+    end_keys();
+}
+
+/* release-retry: the write that releases the first direction fails once (Task 10's ruling: the entry stays journaled and
+ * the tick retries it), so the job fails with the direction still pressed, and the next tick puts the byte back. */
+static void run_release_retry(void)
+{
+    SynScene scene;
+    const SynStratagem* st;
+    uint8_t byte = 0xee;
+    syn_default(&scene);
+    st = &scene.stratagems[0];
+    if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
+    g_fail_write = g_write_no + 2; /* the first direction's press works, its release does not */
+    tap(KEY_CONFIRM);
+    CHECK(g_calls[FN_INPUT] == 1 && syn_read(syn_local_actions() + 32u * (uint32_t)ACTION_OF[st->code[0]], &byte, 1) == 0
+              && byte == 1,
+          "the first direction went and its action byte could not be released");
+    CHECK(ended("Code entry failed: direction could not be released (1 change not put back yet: DBF tries again each tick)"),
+          "the job failed, and the log says one change is still to be put back");
+    entry_tick();
+    CHECK(actions_idle(), "the next tick wrote the release again: the action bytes are 0");
+    CHECK(ended("Every change DBF made to the game is put back"), "and the log says so");
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1 && logged("Every change DBF made to the game is put back") == 1, "nothing more happens");
+
+    /* Then a code the HUD goes away under (its ready byte 0: R46's snapshot gone). */
+    CHECK(syn_poke_u32(syn_local_component(), 0), "(the game cleared its input)");
+    syn_input_reset();
+    syn_input_expect(st->kind, st->code, st->code_len);
+    g_calls[FN_INPUT] = 0;
+    tap(KEY_CONFIRM);
+    CHECK(g_calls[FN_INPUT] == 1, "a new Confirm: its first direction went");
+    CHECK(syn_poke_u8(syn_hud_root() + DBF_OFF_HUD_READY_OFFSET, 0), "the HUD goes away");
+    Sleep(INTERVAL_MS + 20u);
+    entry_tick();
+    CHECK(g_calls[FN_INPUT] == 1 && actions_idle() && ended("Code entry failed: the HUD went away (every change put back)"),
+          "the code stops: the HUD went away; the action bytes are 0");
+    end_keys();
 }
 
 /* --- main ------------------------------------------------------------------------------------------------------ */
@@ -719,9 +1741,10 @@ int main(int argc, char** argv)
 
     setvbuf(stdout, NULL, _IONBF, 0);
     if (argc < 3) {
-        puts("usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll> [<hellforge_modloader.dll>]]\n"
+        puts("usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll>] [<hellforge_modloader.dll>]\n"
              "cases: no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel"
-             " on-fails masked-log");
+             " on-fails masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem"
+             " scramble no-entry-admission no-host-entry release-retry");
         return 2;
     }
     name = argv[2];
@@ -730,15 +1753,18 @@ int main(int argc, char** argv)
             g_case = (CaseId)i;
             known = true;
         }
-    if (!known || (CASES[g_case].stub && argc < 4) || (CASES[g_case].loader && argc < 5)) {
+    if (!known || argc < 3 + (CASES[g_case].stub ? 1 : 0) + (CASES[g_case].loader ? 1 : 0)) {
         printf("FAIL unknown case \"%s\" or a missing stub\n", name);
         return 2;
     }
     printf("== %s\n", CASES[g_case].title);
     CreateThread(NULL, 0, watchdog, NULL, 0, NULL);
+    /* First, before any DLL or heap block can land there. */
+    CHECK(map_game_code(), "game.dll's code pages are mapped, with a 12-byte stub at each game function DBF calls");
 
     syn_default(&g_scene);
-    CHECK(syn_build(&g_scene), "the synthetic 25480438 image builds, with the generated witness table");
+    CHECK(build_scene(&g_scene), "the synthetic 25480438 image builds, with the generated witness table and the stubs");
+    if (!CASES[g_case].entry) CHECK(prepare_appdata(name, NULL), "a LOCALAPPDATA of its own, with no settings.ini");
 
     g_api.version = HF_MOD_SDK_VERSION;
     g_api.size = sizeof g_api;
@@ -749,10 +1775,11 @@ int main(int argc, char** argv)
     g_api.on = g_case == C_ON_AT_ONCE ? api_on_at_once : g_case == C_ON_FAILS ? api_on_fails : api_on;
     g_api.module_base = api_module_base;
     g_api.read = api_read;
-    g_api.write = syn_write;
+    g_api.write = CASES[g_case].entry ? api_write : syn_write;
+    g_api.stratagem_row = syn_stratagem_row;
     g_api.on_game_thread = g_case == C_NO_TICK ? api_refuse_game_thread : api_on_game_thread;
-    g_api.read_code = api_read;
-    g_ticks_via_host = g_case == C_API5;
+    g_api.read_code = api_read_code;
+    g_ticks_via_host = g_case == C_API5 || (CASES[g_case].entry && CASES[g_case].stub);
 
     /* The stubs first, so DBF finds them by name as it finds the real ones (GetModuleHandleA). */
     if (CASES[g_case].stub) {
@@ -767,7 +1794,7 @@ int main(int argc, char** argv)
         CHECK(GetModuleHandleA("goose_overlay.dll") == NULL, "no goose_overlay.dll is loaded");
     }
     if (CASES[g_case].loader) {
-        g_loader = LoadLibraryA(argv[4]);
+        g_loader = LoadLibraryA(argv[CASES[g_case].stub ? 4 : 3]);
         CHECK(g_loader != NULL && GetModuleHandleA("hellforge_modloader.dll") == g_loader,
               "the stub loader loads as hellforge_modloader.dll");
         if (!g_loader) return 1;
@@ -788,6 +1815,17 @@ int main(int argc, char** argv)
     case C_NULL_PANEL: run_null_panel(); break;
     case C_ON_FAILS: run_on_fails(); break;
     case C_MASKED_LOG: run_masked_log(); break;
+    case C_LIST_CONFIRM: run_list_confirm(); break;
+    case C_INSTANT: run_instant(); break;
+    case C_MENU_CLOSE: run_interrupted(false); break;
+    case C_MISSION_END: run_interrupted(true); break;
+    case C_SHORTCUT: run_shortcut(); break;
+    case C_SHORTCUT_HUD: run_shortcut_hud(); break;
+    case C_MOD_STRATAGEM: run_mod_stratagem(); break;
+    case C_SCRAMBLE: run_scramble(); break;
+    case C_NO_ENTRY_ADMISSION: run_no_entry_admission(); break;
+    case C_NO_HOST_ENTRY: run_no_host_entry(); break;
+    case C_RELEASE_RETRY: run_release_retry(); break;
     default: run_standard(); break;
     }
 

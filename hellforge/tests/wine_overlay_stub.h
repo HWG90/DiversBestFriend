@@ -10,7 +10,8 @@
  *
  * The exports below let the host see what the mod asked for and drive what the real host would drive: the game-thread
  * callbacks (stub_tick, as the host's own HellForge slot runs them) and a panel's draw (stub_draw, as the render thread
- * does). stub_refuse_panels(1) makes register_panel return NULL and keep nothing, as the real host does when it takes no
+ * does, in a 3840 x 2160 frame of scale 2, capturing when the panel is a window: an open window has the input, and a HUD
+ * panel is drawn while none is open; stub_set_capturing(0 or 1) says so for every panel, -1 back to that rule). stub_refuse_panels(1) makes register_panel return NULL and keep nothing, as the real host does when it takes no
  * window; stub_register_calls counts the calls either way. Windows only; for the Wine test only. */
 #ifndef DBF_WINE_OVERLAY_STUB_H
 #define DBF_WINE_OVERLAY_STUB_H

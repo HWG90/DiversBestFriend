@@ -7,8 +7,10 @@
 #                                                of src/) and the Python tests (tools/test_*.py)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
-#                                                once per case, with the stub Overlay Hosts and loader built here; then the
-#                                                real BindPort of src/platform_win.c (tests/wine_bind.c) in a program of its own
+#                                                once per case, with the stub Overlay Hosts and loader built here and a stub
+#                                                at each game function DBF calls (the code-entry cases press keys in a window
+#                                                of the host's own); then the real BindPort of src/platform_win.c
+#                                                (tests/wine_bind.c) in a program of its own
 #        ./build.sh install <HellForge installation>
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
@@ -142,11 +144,18 @@ run_wine_tests() {
   w() { printf 'Z:%s' "${1//\//\\}"; }
   # Each case in a process of its own (the DLL keeps static state); its full output is kept in build/wine/<case>.log.
   local passed=0 failed=0 name status stubs
+  # The code-entry cases (Plan 2, Task 12) drive the real DLL end to end: a stub at each game function, settings.ini,
+  # keys pressed in a window of the host's own; each runs with the API 5 stub host and the stub loader (no-host-entry with
+  # the loader alone).
   for name in no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel on-fails \
-              masked-log; do
+              masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem scramble \
+              no-entry-admission no-host-entry release-retry; do
     case $name in
       no-host) stubs=() ;;
-      host-api5) stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      host-api5|list-confirm|instant|menu-close|mission-end|shortcut|shortcut-hud|mod-stratagem|scramble|no-entry-admission|\
+      release-retry)
+        stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      no-host-entry) stubs=("$(w "$out/modloader/hellforge_modloader.dll")") ;;
       masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       host-api3|host-api4) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
       *) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")") ;; # the cases of the API 4 stub alone
@@ -160,8 +169,8 @@ run_wine_tests() {
     if [ "$status" = 0 ] && grep -qx "== $name: 0 failure(s)" "$out/$name.log"; then echo "PASS $name"; passed=$((passed + 1))
     else echo "FAIL $name (exit $status; log $out/$name.log)"; failed=$((failed + 1)); fi
   done
-  # The real BindPort (src/platform_win.c, which the DLL does not call until dbf.c wires it) in a program of its own: it
-  # needs no game and no stub host, so it runs once, after the cases.
+  # The real BindPort (src/platform_win.c) in a program of its own: it needs no game and no stub host, so it runs once,
+  # after the cases.
   "$zig" cc "${flags[@]}" -I "$mod/src" -I "$here/tests" -I "$sdk" "$here/tests/wine_bind.c" "$mod/src/platform_win.c" \
       -o "$out/wine_bind.exe" || die "The BindPort probe did not compile."
   status=0
