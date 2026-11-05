@@ -47,7 +47,10 @@ def run_game_vm(work, install, loader, dll, staged):
 def stage(package, install, loader):
     cli = install / "app/cli-linux/HellForge.Cli"
     app = json.loads((install / "app/app-build.json").read_bytes())
-    loader_zip = loader / "dist/HF-LLL-0.1.0-25480438.zip"
+    loader_name = "HF-LLL-0.1.0-25480438.zip"
+    loader_zip = install / "mods" / loader_name
+    if not loader_zip.is_file():
+        loader_zip = loader / "dist" / loader_name
     with tempfile.TemporaryDirectory(prefix="dbf-hud-stage-") as temp:
         work = Path(temp)
         for folder in ("mods", "app", "game/data", "game/bin", "logs"):
@@ -86,7 +89,7 @@ def stage(package, install, loader):
         subprocess.run(["luajit", hud_pack.HF / "tests/check_hud_discovery.lua", loader.resolve(),
                         staged.name, hud_pack.ADDON, data, *sorted(p.name for p in data.iterdir())], input=staged.read_bytes(), check=True)
         run_game_vm(work, install, loader, paths[0], staged)
-        print(json.dumps({"game_vm_sha256": VM_SHA256, "launcher": app["version"], "commit": app["commit"], "version": manifest["version"],
+        print(json.dumps({"hf_lll_sha256": hashlib.sha256(loader_zip.read_bytes()).hexdigest(), "game_vm_sha256": VM_SHA256, "launcher": app["version"], "commit": app["commit"], "version": manifest["version"],
                           "planned_dll": paths[0].name, "dll_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest(),
                           "staged_patch": staged.name, "patch_sha256": hashlib.sha256(staged.read_bytes()).hexdigest(),
                           "package_sha256": hashlib.sha256(package.read_bytes()).hexdigest(),
