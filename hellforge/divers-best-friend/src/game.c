@@ -279,7 +279,6 @@ static bool position_ok(float f)
 static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have_kinds, uint32_t entries,
                        const GameLocal* local)
 {
-    uint32_t used[DBF_VAL_CARD_COUNT]; /* per row: the kind whose code it got, 0 for none */
     uintptr_t panel = root + DBF_OFF_HUD_PANEL_OFFSET, list = panel + DBF_OFF_LIST_OFFSET;
     const struct {
         uintptr_t node, parent;
@@ -340,13 +339,13 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
             row->kind = 0;
             fail(v, "stratagem entries unreadable");
         }
-        used[v->row_count] = local ? read_code(v, row, local) : 0;
+        row->code_kind = local ? read_code(v, row, local) : 0;
         v->row_count++;
     }
     /* Two kinds on one HellForge array (codes.h, rule 3): the kind read first got its code before the second showed the
      * share, so it is dropped here, and both rows go without. */
     for (int i = 0; i < v->row_count; i++) {
-        if (used[i] == 0 || !codes_shared(used[i])) continue;
+        if (!codes_shared(v->rows[i].code_kind)) continue;
         memset(v->rows[i].code, 0, sizeof v->rows[i].code);
         v->rows[i].code_len = 0;
         fail(v, "shared code array");

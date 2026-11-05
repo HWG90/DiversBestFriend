@@ -88,6 +88,7 @@ typedef struct DbfRow {
                                                  HellForge mods); 0 when the card's entry is not in the payload */
     uint8_t code[DBF_CODE_CAPACITY];          /* directions 1 up, 2 right, 3 down, 4 left: the definition's, or the
                                                  remapped kind's under a scramble effect (see scramble_known) */
+    uint32_t code_kind;                       /* source definition after scrambling, for shared-array checks */
     uint8_t code_len;                         /* 0 when there is no code */
     uint32_t entry;                           /* the payload entry the card shows (+0x3748) */
     uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];   /* the card's timer block (+0x3718), decoded by logic_timer (logic.h) */

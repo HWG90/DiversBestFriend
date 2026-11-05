@@ -8,6 +8,7 @@
 #include "logic.h"
 #include "snapshot.h"
 #include "codes.h"
+#include "memory.h"
 
 #define HUD_EXPORT __declspec(dllexport)
 static SRWLOCK lock = SRWLOCK_INIT;
@@ -24,10 +25,13 @@ static char last_message[192];
  * definitions and codes; the Lua VM never races codes_read's per-pass state. */
 typedef struct HudRow {
     uintptr_t definition;
-    uint32_t kind;
+    uint32_t kind, code_kind;
     uint8_t length, directions[DBF_CODE_CAPACITY];
 } HudRow;
-static HudRow rows[DBF_VAL_CARD_COUNT];
+/* Equipped entries without cards have definition zero: code lookup may use
+ * them, while row lookup still admits only a stock HUD card. */
+#define HUD_ENTRIES (DBF_VAL_CARD_COUNT + DBF_VAL_SLOT_MAX)
+static HudRow rows[HUD_ENTRIES];
 static unsigned row_count;
 
 void hud_bridge_init(uintptr_t base, size_t size, const HudBridgePort* api)
@@ -106,10 +110,32 @@ bool hud_bridge_owned(void)
     return result;
 }
 
+static unsigned append_equipped(HudRow* current, unsigned count, const GameLocal* local)
+{
+    uint32_t entries;
+    if (!mem_u32(local->payload + DBF_OFF_PAYLOAD_COUNT_OFFSET, &entries)
+        || entries < DBF_VAL_PAYLOAD_SLOTS_MIN || entries > DBF_VAL_PAYLOAD_ENTRY_MAX) return count;
+    for (unsigned slot = DBF_VAL_SLOT_MIN; slot <= DBF_VAL_SLOT_MAX; ++slot) {
+        uintptr_t index = slot + DBF_VAL_PAYLOAD_SLOT_BASE;
+        uint32_t kind;
+        if (!mem_u32(local->payload + DBF_OFF_PAYLOAD_KINDS_OFFSET + index * DBF_OFF_PAYLOAD_ENTRY_STRIDE, &kind)
+            || !kind) continue;
+        unsigned i = 0;
+        while (i < count && current[i].kind != kind) ++i;
+        if (i < count) continue;
+        DbfCode code;
+        if (!codes_read(kind, local, &code, NULL, 0)) continue;
+        HudRow* out = &current[count++];
+        *out = (HudRow){ .kind = kind, .code_kind = code.kind_used, .length = code.len };
+        memcpy(out->directions, code.dir, code.len);
+    }
+    return count;
+}
+
 void hud_bridge_publish(const GameView* v, const DbfSettings* s, int buttons, bool terminal_allowed,
                         bool build_ok, bool can_grant)
 {
-    HudRow current[DBF_VAL_CARD_COUNT];
+    HudRow current[HUD_ENTRIES];
     unsigned count = 0;
     if (build_ok && hud_bridge_requested() && v->local_ok && v->hud_ready && v->in_gameplay) {
         for (int i = 0; i < v->row_count && i < (int)DBF_VAL_CARD_COUNT; ++i) {
@@ -118,9 +144,15 @@ void hud_bridge_publish(const GameView* v, const DbfSettings* s, int buttons, bo
             HudRow* out = &current[count++];
             out->definition = codes_definition(row->kind);
             out->kind = row->kind;
+            out->code_kind = row->code_kind;
             out->length = row->code_len;
             memcpy(out->directions, row->code, out->length);
         }
+        if (v->table_rva) count = append_equipped(current, count, &v->local);
+        /* An equipped-only code can reveal a shared loader array after the
+         * active row was read. Withdraw both before publishing this tick. */
+        for (unsigned i = 0; i < count; ++i)
+            if (codes_shared(current[i].code_kind)) current[i].length = 0;
     }
     AcquireSRWLockExclusive(&lock);
     verified = build_ok;

@@ -1642,14 +1642,47 @@ static void press_slot1(int opens_before)
     CHECK(g_calls[FN_OPEN] == opens_before + 1 && syn_menu_stray_calls() == 0, "DBF opened the menu");
 }
 
+/* Lua resolves equipped shortcuts before opening the stock menu. */
+static void check_closed_slot_codes(HMODULE dll, const SynScene* scene)
+{
+    int (*acquire)(const void*) = (void*)need(dll, "dbf_hud_acquire");
+    void (*release)(const void*) = (void*)need(dll, "dbf_hud_release");
+    int (*code)(unsigned, unsigned char*, unsigned) = (void*)need(dll, "dbf_hud_code");
+    uint64_t (*row)(unsigned) = (void*)need(dll, "dbf_hud_row");
+    if (!acquire || !release || !code || !row) return;
+    char token = 0;
+    uint8_t dirs[DBF_VAL_CODE_MAX];
+    unsigned first = scene->stratagems[4].kind;
+    CHECK(!acquire(&token), "request the HUD in a closed zero-card scene");
+    entry_tick();
+    CHECK(acquire(&token), "zero active cards still allow a HUD lease");
+    for (int i = 4; i < 8; ++i) {
+        const SynStratagem* st = &scene->stratagems[i];
+        CHECK(!row(st->kind) && code(st->kind, dirs, sizeof dirs) == st->code_len &&
+              !memcmp(dirs, st->code, st->code_len), "equipped slot supplies its code without a presentation row");
+    }
+    CHECK(!code(first, dirs, 1) && !code(scene->stratagems[0].kind, dirs, sizeof dirs),
+          "short buffers and unequipped cardless kinds fail closed");
+    uintptr_t count = syn_payload(scene->local_entry) + DBF_OFF_PAYLOAD_COUNT_OFFSET;
+    CHECK(syn_poke_u32(count, 7), "invalidate the local equipped payload");
+    entry_tick();
+    CHECK(!code(first, dirs, sizeof dirs), "the next publication withdraws stale equipped codes");
+    CHECK(syn_poke_u32(count, 8), "restore the equipped payload");
+    entry_tick();
+    CHECK(code(first, dirs, sizeof dirs) == scene->stratagems[4].code_len, "equipped code recovers");
+    release(&token);
+    CHECK(!code(first, dirs, sizeof dirs), "release withdraws equipped codes immediately");
+}
+
 /* shortcut: slot 1 (kind 118, four directions) from a closed menu, one direction per tick, the key held to the end. */
-static void run_shortcut(void)
+static void run_shortcut(HMODULE dll)
 {
     static const char SETTINGS[] = "[dbf]\ninput_interval_ms = 0\n";
     char text[sizeof BASE_SETTINGS + sizeof SETTINGS];
     SynScene scene;
     const SynStratagem* st;
     shortcut_scene(&scene);
+    for (int i = 0; i < (int)DBF_VAL_CARD_COUNT; ++i) scene.card_entry[i] = SYN_INACTIVE;
     st = &scene.stratagems[4];
     snprintf(text, sizeof text, "%s%s", BASE_SETTINGS, SETTINGS);
     if (!entry_start(&scene, text, st->kind, st->code, st->code_len)) return;
@@ -1657,6 +1690,8 @@ static void run_shortcut(void)
     entry_tick();
     CHECK(originals(), "before: the menu binding is Hold, both trigger dwords 2");
 
+    check_closed_slot_codes(dll, &scene);
+    entry_tick(); /* The fallback owner samples released keys before its next rising edge. */
     press_slot1(0);
     CHECK(g_calls[FN_REQUEST] == 1 && syn_requested_slot() == 5, "and asked for the stratagem slot (5)");
     CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_CONFIRM, "with the confirm sound");
@@ -2084,7 +2119,7 @@ int main(int argc, char** argv)
     case C_INSTANT: run_instant(); break;
     case C_MENU_CLOSE: run_interrupted(false); break;
     case C_MISSION_END: run_interrupted(true); break;
-    case C_SHORTCUT: run_shortcut(); break;
+    case C_SHORTCUT: run_shortcut(dll); break;
     case C_SHORTCUT_HUD: run_shortcut_hud(); break;
     case C_MOD_STRATAGEM: run_mod_stratagem(); break;
     case C_SCRAMBLE: run_scramble(); break;
