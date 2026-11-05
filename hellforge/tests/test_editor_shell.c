@@ -279,7 +279,7 @@ int main(void)
     draw(&snapshot);
     keyboard('F',true);
     expect_tab(0);
-    CHECK(focus==1 && strcspn(focused_field,"#")==6 && !strncmp(focused_field,"Search",6),"Ctrl+F focuses a Browse input in the same frame");
+    CHECK(focus==1 && !strncmp(focused_field,"##Search",8),"Ctrl+F focuses a Browse input in the same frame");
     text_input=1;
     keyboard(0x75,false);
     expect_tab(0);

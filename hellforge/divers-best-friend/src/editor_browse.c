@@ -8,7 +8,7 @@ bool editor_browse_available(const OvApi* ov)
     return ov && ov->size >= offsetof(OvApi, heading) + sizeof ov->heading &&
            ov->heading && ov->begin_child && ov->end_child && ov->same_line && ov->content_region_avail &&
            ov->push_color && ov->pop_color && ov->theme && ov->selectable && ov->input_text &&
-           ov->set_keyboard_focus_here && ov->want_text_input && ov->is_item_active && ov->key_pressed && ov->key_down &&
+           ov->item_rect && ov->draw_text && ov->set_next_item_width && ov->set_keyboard_focus_here && ov->want_text_input && ov->is_item_active && ov->key_pressed && ov->key_down &&
            ov->text && ov->textf && ov->text_disabled && ov->text_wrapped && ov->separator &&
            ov->checkbox && ov->combo && ov->slider_int && ov->small_button && ov->begin_disabled &&
            ov->end_disabled && ov->push_id_int && ov->pop_id && ov->begin_table && ov->end_table &&
@@ -245,12 +245,7 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     if (!ov || !s) return;
     editor_change_count(s);
     if (feedback) ov->text_wrapped(feedback);
-    if (focus_search) ov->set_keyboard_focus_here();
-    ov->input_text(search_id ? "Search##b" : "Search##a", search, sizeof search);
-    search_active = ov->is_item_active() != 0;
-    bool keys = !focus_search && navigation_allowed(ov);
-    enum Pane before = pane;
-    if (keys) navigate(ov);
+    if (focus_search) pane = OPTIONS;
     float width, height;
     ov->content_region_avail(&width, &height);
     begin_pane(ov, CATEGORIES, "##categories", width * .18f, height);
@@ -275,6 +270,21 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     ov->same_line();
     begin_pane(ov, OPTIONS, "##options", width * .29f, height);
     ov->heading("Options");
+    ov->set_next_item_width(-1);
+    if (focus_search) ov->set_keyboard_focus_here();
+    ov->input_text(search_id ? "##SearchB" : "##SearchA", search, sizeof search);
+    search_active = ov->is_item_active() != 0;
+    if (search_active) pane = OPTIONS;
+    else if (!search[0]) {
+        float x0, y0, x1, y1;
+        ov->item_rect(&x0, &y0, &x1, &y1);
+        float padding = (y1 - y0) * .15f;
+        ov->draw_text(x0 + 2 * padding, y0 + padding, ov->theme(OV_THEME_TEXT_DIM),
+                      0, y1 - y0 - 2 * padding, "Search   Ctrl+F");
+    }
+    bool keys = !focus_search && navigation_allowed(ov);
+    enum Pane before = pane;
+    if (keys) navigate(ov);
     if (selected >= 0 && !matches(hud_option_descriptor((unsigned)selected))) selected = -1;
     for (int i = 0; i < HUD_OPTION_COUNT; ++i) {
         const HudOption* d = hud_option_descriptor((unsigned)i);
