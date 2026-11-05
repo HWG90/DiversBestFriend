@@ -201,6 +201,13 @@ run_wine_tests() {
   if [ "$status" = 0 ] && grep -qx 'PASS HUD preference persistence' "$out/hud-prefs.log"; then
     echo "PASS hud-prefs"; passed=$((passed + 1))
   else echo "FAIL hud-prefs (exit $status; log $out/hud-prefs.log)"; failed=$((failed + 1)); fi
+  "$zig" cc "${flags[@]}" -UNDEBUG -I "$mod/src" "$here/tests/wine_migration.c" \
+      "$mod/src"/{migration,migration_win,hud_prefs_win,hud_options,settings}.c -o "$out/wine_migration.exe" \
+      || die "The first-start import probe did not compile."
+  if WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
+      "$(w "$out/wine_migration.exe")" > "$out/migration.log" 2>&1 && grep -q '^First-start import: .* passed' "$out/migration.log"; then
+    echo "PASS first-start import"; passed=$((passed + 1))
+  else echo "FAIL first-start import (log $out/migration.log)"; failed=$((failed + 1)); fi
   if [ "$skipped" -gt 0 ]; then echo "wine-test: $passed passed, $failed failed, $skipped skipped"
   else echo "wine-test: $passed passed, $failed failed"; fi
   [ "$failed" -eq 0 ]

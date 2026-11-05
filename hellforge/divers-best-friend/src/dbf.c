@@ -59,6 +59,7 @@
 #include "hud_options.h"
 #include "hud_prefs.h"
 
+#include "migration.h"
 #define DBF_VERSION "R50-hellforge.4"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
@@ -235,10 +236,28 @@ static void load_settings(void)
                        FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
-        log_settings_failure(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? "No settings file at "
-                                                                                            : "Could not open ",
-                             path);
-        return;
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
+            log_settings_failure("Could not open ", path);
+            return;
+        }
+        /* The path buffer begins with this process's LocalAppData. The full
+         * destination is already retained separately for the settings writer. */
+        path[n] = 0;
+        MigrationResult imported = migration_first_start(path, g_settings_path);
+        if (imported == MIGRATION_NONE) {
+            log_settings_failure("No settings file at ", g_settings_path);
+            return;
+        }
+        if (imported == MIGRATION_CREATED) log_line("Imported Lua DBF preferences into " DBF_SETTINGS_NAME);
+        /* Also reopen on create failure: a concurrent writer may have won.
+         * Apply only the published file, never uncommitted import state. */
+        wcscpy(path, g_settings_path);
+        file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (file == INVALID_HANDLE_VALUE) {
+            log_settings_failure("Could not load first-start import at ", path);
+            return;
+        }
     }
     if (GetFileSizeEx(file, &size) && size.QuadPart > (LONGLONG)SETTINGS_MAX_BYTES)
         log_line(DBF_SETTINGS_NAME " is larger than 64 KiB: only its first 64 KiB are read");
