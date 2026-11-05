@@ -110,6 +110,11 @@ void syn_timer_bytes(int card, uint32_t entry, uint32_t kind, uint8_t out[DBF_OF
 /* HellForge's move: copies the table's 150 entries to `rva` and points the displacement at it. */
 bool syn_relocate_table(uint32_t rva);
 
+/* A second definition for `kind` (naming the kind, inside the settings block, past every code array) with its own code
+ * of `n` directions; returns its address, or 0 when n is out of range or a write fails. A test points one table's entry
+ * at it to tell the tables apart. There is one: a later call replaces it. */
+uintptr_t syn_alternate_definition(uint32_t kind, int n, const uint8_t* code);
+
 /* A new session for the same player: the session, the player manager and the local mission entry all get `peer`. */
 bool syn_change_peer(uint64_t peer);
 

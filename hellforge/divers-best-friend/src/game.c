@@ -1,5 +1,5 @@
 /* game: the read-only readers (see game.h), ported from R46's native.lua (hud, valid, snapshot) and input.lua (lookup,
- * context, code, the payload kinds). Portable C11: standard headers, memory.h, admission.h and the generated address
+ * context, code, decorate's payload and kinds). Portable C11: standard headers, memory.h, admission.h and the generated address
  * header only. Every number below is a DBF_RVA_*, DBF_OFF_* or DBF_VAL_* from that header, each with its R46 line. */
 #include <stdbool.h>
 #include <stddef.h>
@@ -111,19 +111,47 @@ static bool identity_changed(GameView* v)
     return fail(v, "local payload changed");
 }
 
-/* input.lua:95-139 (context): player manager -> network index -> registry key -> avatar (unit and input owner agree)
- * -> player context -> the player's peer, which must be the session's -> the one mission entry with that peer, whose
- * payload is the local one. */
-static bool read_local(GameView* v, Local* out)
+/* R46's display path (input.lua:218-229, what decorate and the cooldown dock use): the session's peer, the one mission
+ * entry carrying it, and that entry's payload. The (peer, payload) found is the local identity: when either is not the
+ * last one found, this read reports the change instead of a payload. */
+static bool read_payload(GameView* v, Local* out)
 {
-    uintptr_t pm, registry, manager, unit, avatar, mission, payload = 0;
-    uint32_t players, network, registry_index, key, avatars, avatar_index, unit_key, owner, context, player_index, peers;
-    uint64_t peer, session;
+    uintptr_t mission, payload = 0;
+    uint32_t peers;
+    uint64_t peer;
+    if (!session_peer(&peer)) return fail(v, "session unreadable");
+    if (peer == 0) return fail(v, "local session unavailable");
+    if (g_have_identity && peer != g_identity_peer) return identity_changed(v);
+    if (!mem_ptr(g_base + DBF_RVA_MISSION, &mission) || !mem_u32(mission + DBF_OFF_MISSION_PEER_COUNT_OFFSET, &peers))
+        return fail(v, "mission unreadable");
+    if (peers > DBF_VAL_MISSION_PEER_MAX) return fail(v, "invalid mission peer count");
+    for (uint32_t i = 0; i < peers; i++) {
+        uintptr_t entry = mission + (uintptr_t)i * DBF_OFF_MISSION_ENTRY_STRIDE;
+        uint64_t entry_peer;
+        if (!mem_u64(entry, &entry_peer)) return fail(v, "mission unreadable");
+        if (entry_peer != peer) continue;
+        if (payload != 0) return fail(v, "ambiguous local payload");
+        payload = entry + DBF_OFF_MISSION_PAYLOAD_OFFSET;
+    }
+    if (payload == 0) return fail(v, "local mission payload unavailable");
+    if (g_have_identity && payload != g_identity_payload) return identity_changed(v);
+    g_have_identity = true;
+    g_identity_peer = peer;
+    g_identity_payload = payload;
+    out->peer = peer;
+    out->payload = payload;
+    return true;
+}
 
-    /* The session's peer is the identity: when it is not the last one, this is another payload, whatever else this read
-     * would find. */
-    if (g_have_identity && session_peer(&session) && session != g_identity_peer) return identity_changed(v);
-
+/* R46's code-entry context (input.lua:102-126, what display_codes and entry use): player manager -> network index ->
+ * registry key -> avatar (unit and input owner agree) -> player context -> the player's peer, which must be the
+ * session's. Its mission step (input.lua:127-136) finds the entry carrying that same peer, the payload read_payload
+ * found. Only local_ok and the codes depend on it. */
+static bool read_local_player(GameView* v, uint64_t session)
+{
+    uintptr_t pm, registry, manager, unit, avatar;
+    uint32_t players, network, registry_index, key, avatars, avatar_index, unit_key, owner, context, player_index;
+    uint64_t peer;
     if (!mem_ptr(g_base + DBF_RVA_PLAYERS, &pm) || !mem_u32(pm + DBF_OFF_PLAYERS_COUNT_OFFSET, &players))
         return fail(v, "player manager unreadable");
     if (players == 0) return fail(v, "no local player");
@@ -153,28 +181,7 @@ static bool read_local(GameView* v, Local* out)
     if (!lookup(v, pm, DBF_OFF_PLAYERS_LOOKUP_OFFSET, context, DBF_VAL_PLAYER_INDEX_LIMIT, &player_index)) return false;
     if (!mem_u64(pm + DBF_OFF_PLAYERS_PEER_OFFSET + (uintptr_t)player_index * DBF_OFF_PLAYERS_PEER_STRIDE, &peer))
         return fail(v, "player manager unreadable");
-    if (!session_peer(&session)) return fail(v, "session unreadable");
-    if (peer != session || peer == 0) return fail(v, "local peer mismatch");
-
-    if (!mem_ptr(g_base + DBF_RVA_MISSION, &mission) || !mem_u32(mission + DBF_OFF_MISSION_PEER_COUNT_OFFSET, &peers))
-        return fail(v, "mission unreadable");
-    if (peers > DBF_VAL_MISSION_PEER_MAX) return fail(v, "invalid mission peer count");
-    for (uint32_t i = 0; i < peers; i++) {
-        uintptr_t entry = mission + (uintptr_t)i * DBF_OFF_MISSION_ENTRY_STRIDE;
-        uint64_t entry_peer;
-        if (!mem_u64(entry, &entry_peer)) return fail(v, "mission unreadable");
-        if (entry_peer != peer) continue;
-        if (payload != 0) return fail(v, "ambiguous local payload");
-        payload = entry + DBF_OFF_MISSION_PAYLOAD_OFFSET;
-    }
-    if (payload == 0) return fail(v, "local mission payload unavailable");
-
-    if (g_have_identity && payload != g_identity_payload) return identity_changed(v);
-    g_have_identity = true;
-    g_identity_peer = peer;
-    g_identity_payload = payload;
-    out->peer = peer;
-    out->payload = payload;
+    if (peer != session) return fail(v, "local peer mismatch");
     return true;
 }
 
@@ -257,8 +264,9 @@ static void read_code(GameView* v, DbfRow* row)
 
 /* --- the list cards (R46 native.lua:85-100, 264-278; input.lua:230-237) ---------------------------------------- */
 
+/* Codes are read only when `with_codes`: the definition table was accepted and the code-entry chain held. */
 static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have_kinds, uint32_t entries,
-                       bool have_table)
+                       bool with_codes)
 {
     uintptr_t panel = root + DBF_OFF_HUD_PANEL_OFFSET, list = panel + DBF_OFF_LIST_OFFSET;
     const struct {
@@ -309,7 +317,7 @@ static void read_cards(GameView* v, uintptr_t root, uintptr_t payload, bool have
             row->kind = 0;
             fail(v, "stratagem entries unreadable");
         }
-        if (have_table) read_code(v, row);
+        if (with_codes) read_code(v, row);
         v->row_count++;
     }
 }
@@ -369,9 +377,10 @@ void game_read(GameView* out)
         out->menu_open = open == DBF_VAL_MENU_OPEN;
     }
 
-    /* The local player and its payload (input.lua:95-139). No payload, no rows. */
-    if (!read_local(out, &local)) return;
-    out->local_ok = true;
+    /* The local payload by R46's display path: no payload (or a new one), no rows. Then the code-entry chain, which
+     * only codes need. */
+    if (!read_payload(out, &local)) return;
+    out->local_ok = read_local_player(out, local.peer);
 
     /* The payload's kinds and the definitions. */
     if (admitted(out, FEAT_STRATAGEMS)) {
@@ -382,5 +391,5 @@ void game_read(GameView* out)
 
     /* The cards, open menu or closed; not when the menu-open byte is not a flag (R46 drops the snapshot then). */
     if (!open_ok || !admitted(out, FEAT_HUD_READ)) return;
-    read_cards(out, root, local.payload, have_kinds, entries, have_table);
+    read_cards(out, root, local.payload, have_kinds, entries, have_table && out->local_ok);
 }

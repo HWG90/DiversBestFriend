@@ -74,6 +74,24 @@ static bool bare_row_is(const DbfRow* r, int card, const SynScene* s, int entry)
         && memcmp(r->timer, timer, sizeof timer) == 0;
 }
 
+/* The same row read with its kind but without a code (the code-entry chain failed). */
+static bool kind_row_is(const DbfRow* r, int card, const SynScene* s, int entry)
+{
+    uint8_t timer[DBF_OFF_CARD_TIMER_SIZE];
+    const SynStratagem* st = &s->stratagems[entry];
+    syn_timer_bytes(card, (uint32_t)entry, st->kind, timer);
+    return r->active && r->entry == (uint32_t)entry && r->kind == st->kind && r->code_len == 0
+        && memcmp(r->timer, timer, sizeof timer) == 0;
+}
+
+static bool default_rows_without_codes(const GameView* v, const SynScene* s)
+{
+    if (v->row_count != 4) return false;
+    for (int i = 0; i < 4; i++)
+        if (!kind_row_is(&v->rows[i], i, s, i)) return false;
+    return true;
+}
+
 static bool default_rows(const GameView* v, const SynScene* s)
 {
     if (v->row_count != 4) return false;
@@ -193,6 +211,31 @@ static void test_cards_in_list_order(void)
           "cards 1, 3 and 15 active: three rows in list order (entries 3, 0, 1), card 15 included");
 }
 
+/* Makes the two tables differ, so a read shows which one it used: the table at `moved_rva` points kind 118 at a second
+ * definition with its own code (ALTERNATE), and the vanilla table loses its entry for kind 4. */
+static const uint8_t ALTERNATE[4] = { 4, 4, 2, 1 };
+
+static bool tell_tables_apart(uint32_t moved_rva)
+{
+    uintptr_t alternate = syn_alternate_definition(118, 4, ALTERNATE);
+    return alternate != 0 && syn_poke_u64(SYN_GAME_BASE + moved_rva + 118u * DBF_OFF_DEFINITION_STRIDE, alternate)
+        && syn_poke_u64(SYN_GAME_BASE + VANILLA_TABLE + 4u * DBF_OFF_DEFINITION_STRIDE, 0);
+}
+
+/* Read through the moved table: kind 118 has the alternate code, kinds 4, 50 and 63 their own. */
+static bool rows_follow_moved(const GameView* v, const SynScene* s)
+{
+    return v->row_count == 4 && v->rows[0].kind == 118 && code_is(&v->rows[0], ALTERNATE, 4)
+        && row_is(&v->rows[1], 1, s, 1) && row_is(&v->rows[2], 2, s, 2) && row_is(&v->rows[3], 3, s, 3);
+}
+
+/* Read through the vanilla table: kind 118 has its own code, kind 4 none (its entry is gone). */
+static bool rows_follow_vanilla(const GameView* v, const SynScene* s)
+{
+    return v->row_count == 4 && row_is(&v->rows[0], 0, s, 0) && v->rows[1].kind == 4 && v->rows[1].code_len == 0
+        && row_is(&v->rows[2], 2, s, 2) && row_is(&v->rows[3], 3, s, 3);
+}
+
 /* Review Focus 1: the definition table, vanilla or moved by HellForge, and the rule for accepting it. */
 static void test_definition_table(void)
 {
@@ -206,6 +249,10 @@ static void test_definition_table(void)
     v = read_view();
     CHECK(v->table_rva == moved && default_rows(v, &s) && reason_is(v, ""),
           "moved table: same codes, table_rva == image_size + 0x1000");
+    CHECK(tell_tables_apart(moved), "the moved copy and the vanilla table made to differ");
+    v = read_view();
+    CHECK(v->table_rva == moved && rows_follow_moved(v, &s) && reason_is(v, ""),
+          "moved table: the codes come from the copy, not from the vanilla table");
     syn_poke_u32(SYN_GAME_BASE + DBF_RVA_DEFINITION_DISPLACEMENT, 0x1234567u);
     v = read_view();
     CHECK(reason_is(v, "definition table unrecognised") && v->table_rva == 0 && no_codes(v),
@@ -227,16 +274,19 @@ static void test_definition_table(void)
     }
     syn_poke_u32(SYN_GAME_BASE + DBF_RVA_DEFINITION_DISPLACEMENT, moved);
     v = read_view();
-    CHECK(v->table_rva == moved && default_rows(v, &s), "back to the moved table: codes again");
+    CHECK(v->table_rva == moved && rows_follow_moved(v, &s) && reason_is(v, ""),
+          "back to the moved table: its codes again");
     syn_poke_u32(SYN_GAME_BASE + DBF_RVA_DEFINITION_DISPLACEMENT, VANILLA_TABLE);
     v = read_view();
-    CHECK(v->table_rva == VANILLA_TABLE && default_rows(v, &s), "back to the vanilla table: followed at once");
+    CHECK(v->table_rva == VANILLA_TABLE && rows_follow_vanilla(v, &s) && reason_is(v, "invalid definition"),
+          "back to the vanilla table: followed at once (kind 118's own code, kind 4 gone)");
 
     syn_default(&s);
     s.table_rva = SYN_IMAGE_SIZE + 0x3ff000u;
     start(&s);
+    CHECK(tell_tables_apart(SYN_IMAGE_SIZE + 0x3ff000u), "a scene built with a moved table, the tables made to differ");
     v = read_view();
-    CHECK(v->table_rva == SYN_IMAGE_SIZE + 0x3ff000u && default_rows(v, &s) && reason_is(v, ""),
+    CHECK(v->table_rva == SYN_IMAGE_SIZE + 0x3ff000u && rows_follow_moved(v, &s) && reason_is(v, ""),
           "a table moved before the first read is followed (image_size + 0x3ff000)");
     syn_unmap(SYN_GAME_BASE + DBF_RVA_DEFINITION_DISPLACEMENT);
     v = read_view();
@@ -265,8 +315,8 @@ static void test_local_payload_changed(void)
     CHECK(!v->local_ok && reason_is(v, "local payload changed") && v->row_count == 0,
           "only the session's peer changed: \"local payload changed\" first");
     v = read_view();
-    CHECK(!v->local_ok && reason_is(v, "local peer mismatch") && v->row_count == 0,
-          "then \"local peer mismatch\" while the session and the player disagree");
+    CHECK(!v->local_ok && reason_is(v, "local mission payload unavailable") && v->row_count == 0,
+          "then no mission entry carries the session's peer: no payload, no rows");
     syn_poke_u64(syn_session() + DBF_OFF_SESSION_PEER_OFFSET, OTHER_PEER);
     v = read_view();
     CHECK(v->local_ok && default_rows(v, &s), "they agree again: rows again");
@@ -517,12 +567,54 @@ static void test_admission_gates(void)
           "wrong build: build_ok false, nothing read");
 }
 
+/* The rows come from R46's display path (input.lua:218-234): the session's peer, the one mission entry carrying it, its
+ * payload. The code-entry chain (input.lua:102-126) only decides local_ok and the codes. */
+static void test_display_path(void)
+{
+    SynScene s;
+    const GameView* v;
+    start_default(&s);
+    syn_poke_u32(syn_players() + DBF_OFF_PLAYERS_NETWORK_OFFSET, 4); /* no registry entry for the local player */
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "local ownership mapping unavailable"),
+          "registry entry missing: local_ok false, reason names the failing step");
+    CHECK(default_rows_without_codes(v, &s) && v->menu_open && v->in_gameplay && v->table_rva == VANILLA_TABLE,
+          "registry entry missing: rows and kinds still served, no codes");
+
+    start_default(&s);
+    syn_poke_u64(syn_mission() + (uintptr_t)s.local_entry * DBF_OFF_MISSION_ENTRY_STRIDE, OTHER_PEER);
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "local mission payload unavailable") && v->row_count == 0 && rest_is_zero(v),
+          "payload missing: no rows");
+
+    start_default(&s);
+    syn_poke_u32(syn_players() + DBF_OFF_PLAYERS_COUNT_OFFSET, 0);
+    refuse_witness("bravo", true);
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "no local player") && v->row_count == 4 && no_codes(v)
+              && bare_row_is(&v->rows[0], 0, &s, 0),
+          "chain broken and Stratagems refused: rows without kinds, the chain's reason first");
+
+    start_default(&s);
+    syn_poke_u32(syn_players() + DBF_OFF_PLAYERS_COUNT_OFFSET, 0);
+    v = read_view();
+    CHECK(!v->local_ok && default_rows_without_codes(v, &s), "a read with the chain broken keeps the identity");
+    syn_poke_u32(syn_players() + DBF_OFF_PLAYERS_COUNT_OFFSET, 2);
+    syn_change_peer(OTHER_PEER);
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "local payload changed") && v->row_count == 0,
+          "a new session after it is still reported once");
+    v = read_view();
+    CHECK(v->local_ok && default_rows(v, &s), "and then read whole");
+}
+
 static void test_local_player(void)
 {
     SynScene s;
     const GameView* v;
     uintptr_t pm = syn_players(), m = syn_avatars();
-    struct { uintptr_t at; int size; uint64_t value; const char* reason; } cases[] = {
+    /* The code-entry chain fails: local_ok false, no codes, rows and kinds still served. */
+    struct { uintptr_t at; int size; uint64_t value; const char* reason; } chain[] = {
         { pm + DBF_OFF_PLAYERS_COUNT_OFFSET, 4, 0, "no local player" },
         { pm + DBF_OFF_PLAYERS_NETWORK_OFFSET, 4, 0x7fff, "local network index unavailable" },
         { pm + DBF_OFF_PLAYERS_NETWORK_OFFSET, 4, 4, "local ownership mapping unavailable" },
@@ -539,28 +631,46 @@ static void test_local_player(void)
         { syn_local_avatar() + DBF_OFF_AVATAR_COMPONENT_OFFSET + DBF_OFF_COMPONENT_OWNER_OFFSET, 4, 0x1234,
           "input owner mismatch" },
         { syn_local_avatar() + DBF_OFF_AVATAR_CONTEXT_OFFSET, 4, 0x77, "local ownership mapping unavailable" },
-        { syn_session() + DBF_OFF_SESSION_PEER_OFFSET, 8, OTHER_PEER, "local peer mismatch" },
+        { pm + DBF_OFF_PLAYERS_PEER_OFFSET + 2u * DBF_OFF_PLAYERS_PEER_STRIDE, 8, OTHER_PEER, "local peer mismatch" },
+    };
+    /* The display path fails: no payload, no rows. */
+    struct { uintptr_t at; int size; uint64_t value; const char* reason; } payload[] = {
+        { syn_session() + DBF_OFF_SESSION_PEER_OFFSET, 8, OTHER_PEER, "local mission payload unavailable" },
+        { syn_session() + DBF_OFF_SESSION_PEER_OFFSET, 8, 0, "local session unavailable" },
         { syn_mission() + DBF_OFF_MISSION_PEER_COUNT_OFFSET, 4, 33, "invalid mission peer count" },
         { syn_mission() + DBF_OFF_MISSION_PEER_COUNT_OFFSET, 4, 1, "local mission payload unavailable" },
         { syn_mission(), 8, 0x1100aabbccdd2233ull, "ambiguous local payload" },
         { syn_mission() + DBF_OFF_MISSION_ENTRY_STRIDE, 8, OTHER_PEER, "local mission payload unavailable" },
     };
-    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+    for (size_t i = 0; i < sizeof chain / sizeof chain[0]; i++) {
         char text[128];
         start_default(&s);
-        if (cases[i].size == 4) syn_poke_u32(cases[i].at, (uint32_t)cases[i].value);
-        else syn_poke_u64(cases[i].at, cases[i].value);
+        if (chain[i].size == 4) syn_poke_u32(chain[i].at, (uint32_t)chain[i].value);
+        else syn_poke_u64(chain[i].at, chain[i].value);
         v = read_view();
-        snprintf(text, sizeof text, "local player: \"%s\" (case %u), no rows", cases[i].reason, (unsigned)i);
-        CHECK(!v->local_ok && reason_is(v, cases[i].reason) && v->row_count == 0 && v->in_gameplay && v->hud_ready,
+        snprintf(text, sizeof text, "code-entry chain: \"%s\" (case %u), rows and kinds kept, no codes", chain[i].reason,
+                 (unsigned)i);
+        CHECK(!v->local_ok && reason_is(v, chain[i].reason) && default_rows_without_codes(v, &s) && v->in_gameplay
+                  && v->hud_ready,
+              text);
+    }
+    for (size_t i = 0; i < sizeof payload / sizeof payload[0]; i++) {
+        char text[128];
+        start_default(&s);
+        if (payload[i].size == 4) syn_poke_u32(payload[i].at, (uint32_t)payload[i].value);
+        else syn_poke_u64(payload[i].at, payload[i].value);
+        v = read_view();
+        snprintf(text, sizeof text, "display path: \"%s\" (case %u), no rows", payload[i].reason, (unsigned)i);
+        CHECK(!v->local_ok && reason_is(v, payload[i].reason) && v->row_count == 0 && v->in_gameplay && v->hud_ready,
               text);
     }
 
     start_default(&s);
     syn_poke_u64(syn_session() + DBF_OFF_SESSION_PEER_OFFSET, 0);
     syn_poke_u64(pm + DBF_OFF_PLAYERS_PEER_OFFSET + 2u * DBF_OFF_PLAYERS_PEER_STRIDE, 0);
+    syn_poke_u64(syn_mission() + (uintptr_t)s.local_entry * DBF_OFF_MISSION_ENTRY_STRIDE, 0);
     v = read_view();
-    CHECK(!v->local_ok && reason_is(v, "local peer mismatch"), "a zero peer is no peer");
+    CHECK(!v->local_ok && reason_is(v, "local session unavailable") && v->row_count == 0, "a zero peer is no peer");
 
     start_default(&s);
     syn_unmap(syn_session() + DBF_OFF_SESSION_PEER_OFFSET);
@@ -620,6 +730,7 @@ int main(void)
     test_entries_and_kinds();
     test_codes();
     test_admission_gates();
+    test_display_path();
     test_local_player();
     test_first_reason_wins();
     test_reinit();

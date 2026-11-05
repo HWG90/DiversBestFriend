@@ -102,6 +102,7 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define DEF_STRIDE 408u    /* one 400-byte definition per kind, 8 apart, even kinds 4 bytes in (4 mod 8, as live kind 50) */
 #define CODES_AT 0xf000u   /* the code arrays, inside the settings block after the definitions */
 #define CODE_STRIDE 96u
+#define ALTERNATE_AT 0x12c00u /* syn_alternate_definition: 400 bytes, then its code array, before SETTINGS_SIZE */
 
 /* Who the local player is. */
 #define LOCAL_NETWORK 3u
@@ -466,7 +467,8 @@ bool syn_build(const SynScene* s)
         if (st->kind >= 1 && st->kind < TABLE_ENTRIES) put_code(&b, st->kind, st->code_len, st->code);
     }
     if (syn_definition(TABLE_ENTRIES - 1u) + 400u > AT_SETTINGS + CODES_AT
-        || syn_code_array(TABLE_ENTRIES - 1u) + 4u * SYN_CODE_MAX > AT_SETTINGS + SETTINGS_SIZE)
+        || syn_code_array(TABLE_ENTRIES - 1u) + 4u * SYN_CODE_MAX > AT_SETTINGS + ALTERNATE_AT
+        || ALTERNATE_AT + 400u + 4u * SYN_CODE_MAX > SETTINGS_SIZE)
         b.ok = false;
     return b.ok;
 }
@@ -498,6 +500,15 @@ bool syn_relocate_table(uint32_t rva)
     uint8_t table[TABLE_ENTRIES * 8u];
     if (!g_built || syn_read(SYN_GAME_BASE + RVA_TABLE, table, sizeof table) != 0) return false;
     return syn_poke(SYN_GAME_BASE + rva, table, sizeof table) && syn_poke_u32(SYN_GAME_BASE + RVA_DISPLACEMENT, rva);
+}
+
+uintptr_t syn_alternate_definition(uint32_t kind, int n, const uint8_t* code)
+{
+    uintptr_t info = AT_SETTINGS + ALTERNATE_AT, data = info + 400u;
+    bool ok = g_built && n >= 0 && n <= SYN_CODE_MAX && (n == 0 || code) && syn_poke_u32(info, kind)
+        && syn_poke_u64(info + DEF_CODE, data) && syn_poke_u32(info + DEF_COUNT, (uint32_t)n);
+    for (int i = 0; ok && i < n; i++) ok = syn_poke_u32(data + (uintptr_t)i * 4u, code[i]);
+    return ok ? info : 0;
 }
 
 bool syn_change_peer(uint64_t peer)

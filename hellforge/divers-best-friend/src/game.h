@@ -1,30 +1,41 @@
 /* game: what DBF reads from the game, read-only, ported from R46 (the Lua DBF for build 25480438).
  *
  * game_read fills a GameView each tick: whether a mission is being played, whether the gameplay HUD is up, whether the
- * stratagem menu is open, whether the local player's mission payload was found, and the HUD's stratagem list: its
- * active cards in list order, each with the payload entry it shows, that entry's kind and code, and the card's timer
+ * stratagem menu is open, whether the local player could be followed to its input owner, and the HUD's stratagem list:
+ * its active cards in list order, each with the payload entry it shows, that entry's kind and code, and the card's timer
  * block. It never writes game memory and never calls game code: every read goes through memory.h (mem_read, mem_u8,
  * mem_u32, mem_u64, mem_ptr, mem_ptr_aligned) and every address, offset and constant comes from addresses_25480438.h.
  *
+ * Two paths lead to the local player, as in R46:
+ *   the display path (input.lua:218-234, R46's decorate, what its list highlight and cooldown dock used): the session's
+ *     peer, the one mission entry carrying it, and that entry's payload. The rows and their kinds come from it: when it
+ *     finds no payload, row_count is 0.
+ *   the code-entry chain (input.lua:102-126, R46's context, what its display_codes and code entry used): player manager,
+ *     network index, registry key, avatar (unit and input owner agree), player context, and that player's peer, which
+ *     must be the session's. local_ok says it held; the codes need it. When it fails (while dead, or dropping in, the
+ *     list can still be up), the rows and kinds are still served, without codes, and reason names the failing step.
+ *
  * Each part is read only while admission admits its feature (adm_feature() == ADMIT_OK):
- *   FEAT_STATE       the game state, the HUD ready byte, the menu-open byte and the local player (registry, avatar,
- *                    session peer, mission payload); without it nothing is read
+ *   FEAT_STATE       the game state, the HUD ready byte, the menu-open byte, the display path and the code-entry chain;
+ *                    without it nothing is read
  *   FEAT_STRATAGEMS  the payload's kinds, the definition table and the codes
  *   FEAT_HUD_READ    the list cards
- * A part that is not admitted or not readable is left empty, and `reason` says why. Rows need the local payload: when
- * local_ok is false, row_count is 0.
+ * A part that is not admitted or not readable is left empty, and `reason` says why.
  *
- * reason: the first reason met in read order (state, HUD, local player, payload, definitions, cards), cut to fit; "" when
- * everything was read. Examples: "<feature name>: <admission reason>" ("Stratagems: witness bravo differs"),
- * "not initialised", "not in gameplay", "HUD not ready", "invalid menu-open flag", "no local player",
- * "local peer mismatch", "local payload changed", "definition table unrecognised",
+ * reason: the first reason met in read order (state, HUD, local payload, code-entry chain, payload entries, definitions,
+ * cards), cut to fit; "" when everything was read. Examples: "<feature name>: <admission reason>"
+ * ("Stratagems: witness bravo differs"), "not initialised", "not in gameplay", "HUD not ready", "invalid menu-open flag",
+ * "local mission payload unavailable", "local payload changed", "no local player", "local peer mismatch",
+ * "definition table unrecognised",
  * "HUD hierarchy not recognized: list parent mismatch", "card 3 parent mismatch", "invalid definition".
  *
  * Where it differs from R46, on purpose:
  * - Rows are read whether the menu is open or closed (R46's include_closed), for the cooldown display.
  * - A card whose parent link or state byte is wrong is skipped (and named in reason); R46 dropped the whole list. A wrong
  *   link above the cards (panel, HUD container, fade, content, list) still drops the whole list.
- * - The local player is read without R46's whole-HUD check (input.lua:99): that check belongs to code entry.
+ * - The code-entry chain is followed without its menu-active bit (input.lua:118; R46's display_codes skipped it too, by
+ *   passing allow_closed) and without R46's whole-HUD check (input.lua:99): here the HUD hierarchy is checked by the
+ *   card reads, so one bad card costs that card, not every code.
  * - Codes are read only for vanilla kinds (1 to 149), and only from code arrays inside the settings block: R46 accepted
  *   an array elsewhere only when the Lua HD2Runtime mod owned it, which has no counterpart here. Kinds from HellForge
  *   mods (150 and up) are listed without a code and without a reason.
@@ -37,8 +48,9 @@
  * the one the game expects. Plan 2 adds the remap.
  *
  * Kept across reads: the image bounds (game_init), the definition table's RVA once accepted (accepted again whenever the
- * displacement changes), and the local identity (session peer and payload address) of the last read that found one, so
- * the read on which it changes says "local payload changed" and serves no rows. Rows are never kept.
+ * displacement changes), and the local identity (the display path's session peer and payload address) of the last read
+ * that found one, so the read on which it changes says "local payload changed", has local_ok false and serves no rows;
+ * the next read takes the new identity. Rows are never kept.
  *
  * Portable C11: standard headers, memory.h, admission.h and the generated header only. Not thread-safe: only the game
  * thread calls it. */
@@ -66,7 +78,9 @@ typedef struct DbfRow {
 } DbfRow;
 
 typedef struct GameView {
-    bool build_ok, in_gameplay, hud_ready, menu_open, local_ok;
+    bool build_ok, in_gameplay, hud_ready, menu_open;
+    bool local_ok;                            /* the code-entry chain held (codes are read only then); rows do not
+                                                 need it */
     bool scramble_known;                      /* always false in this plan: codes are not scramble-remapped */
     uint32_t table_rva;                       /* where the definition table is: 0x37cb600 or HellForge's moved copy;
                                                  0 when it was not read or not accepted */
