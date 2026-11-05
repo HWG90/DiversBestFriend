@@ -12,17 +12,9 @@ static enum View view;
 bool editor_shell_available(const OvApi* ov)
 {
     return ov && ov->version >= 6 && ov->size >= offsetof(OvApi, bold_font) + sizeof ov->bold_font &&
-           ov->bold_font && ov->heading && ov->key_cap && ov->button_primary && ov->selectable_ex &&
-           ov->cursor_screen_pos && ov->set_cursor_screen_pos && ov->content_region_avail && ov->draw_layer &&
-           ov->draw_rect_filled && ov->draw_text && ov->text_size && ov->begin_child && ov->end_child &&
-           ov->key_pressed && ov->key_down && ov->want_text_input && ov->input_text && ov->set_open &&
-           ov->is_item_active && ov->begin_table && ov->end_table && ov->table_next_column &&
-           ov->table_setup_column && ov->table_headers_row && ov->table_next_row &&
-           ov->push_color && ov->pop_color && ov->text && ov->text_disabled && ov->separator &&
-           ov->draw_line && ov->theme && ov->set_keyboard_focus_here &&
-           ov->small_button && ov->button && ov->checkbox && ov->combo && ov->slider_int &&
-           ov->selectable && ov->begin_disabled && ov->end_disabled && ov->same_line &&
-           ov->push_id_int && ov->pop_id && ov->textf && ov->text_wrapped;
+           editor_browse_available(ov) && ov->bold_font && ov->key_cap && ov->button_primary &&
+           ov->selectable_ex && ov->cursor_screen_pos && ov->set_cursor_screen_pos && ov->draw_layer &&
+           ov->draw_rect_filled && ov->draw_line && ov->text_size && ov->set_open && ov->button;
 }
 
 static float width_of(const OvApi* ov, int font, float size, const char* text)
