@@ -247,10 +247,30 @@ bool latch_acquire(const GameLocal* l, char* reason, size_t n)
     return true;
 }
 
+/* A saved record is still owned only in this table, under this key, and below the live count. */
+typedef enum { BUCKET_OWNED, BUCKET_CHANGED, BUCKET_UNREADABLE } BucketState;
+
+static BucketState owned_bucket_count(uint32_t* count)
+{
+    uintptr_t map = g_latch.controls + DBF_OFF_BINDING_MAP_OFFSET, table;
+    uint32_t capacity, key;
+    if (!mem_u32(map + DBF_OFF_BINDING_MAP_CAPACITY_OFFSET, &capacity))
+        return BUCKET_UNREADABLE;
+    if (capacity != DBF_VAL_BINDING_MAP_CAPACITY) return BUCKET_CHANGED;
+    if (!mem_ptr(map, &table)) return BUCKET_UNREADABLE;
+    if (table != g_latch.table) return BUCKET_CHANGED;
+    if (!mem_u32(g_latch.bucket, &key)) return BUCKET_UNREADABLE;
+    if (key != DBF_VAL_BINDING_MENU_KEY) return BUCKET_CHANGED;
+    if (!mem_u32(g_latch.bucket + DBF_OFF_BINDING_BUCKET_COUNT_OFFSET, count))
+        return BUCKET_UNREADABLE;
+    if (*count > DBF_VAL_BINDING_COUNT_MAX) return BUCKET_CHANGED;
+    return BUCKET_OWNED;
+}
+
 bool latch_refresh(const GameLocal* l, char* reason, size_t n)
 {
-    uintptr_t table, map, dword[2];
-    uint32_t capacity, key, count, value;
+    uintptr_t dword[2];
+    uint32_t count, value;
     say(reason, n, "", NULL);
     if (!g_latch.held) return say(reason, n, "menu latch not held", NULL);
     if (mem_journal_count(MEM_OWNER_LATCH) != g_latch.entries) {
@@ -261,15 +281,9 @@ bool latch_refresh(const GameLocal* l, char* reason, size_t n)
     }
     if (!admitted(FEAT_LATCH, reason, n)) return false;
     if (!l || l->controls != g_latch.controls) return say(reason, n, "controls changed", NULL);
-    /* The same map and bucket (menu_latch.lua:46-50): the bucket still Display Stratagem List's, every patched record
-     * below its count. */
-    map = g_latch.controls + DBF_OFF_BINDING_MAP_OFFSET;
-    if (!mem_u32(map + DBF_OFF_BINDING_MAP_CAPACITY_OFFSET, &capacity) || !mem_ptr(map, &table)
-        || !mem_u32(g_latch.bucket, &key) || !mem_u32(g_latch.bucket + DBF_OFF_BINDING_BUCKET_COUNT_OFFSET, &count))
-        return say(reason, n, "menu bindings unreadable", NULL);
-    if (capacity != DBF_VAL_BINDING_MAP_CAPACITY || table != g_latch.table || key != DBF_VAL_BINDING_MENU_KEY
-        || count > DBF_VAL_BINDING_COUNT_MAX)
-        return say(reason, n, "menu binding changed", NULL);
+    BucketState bucket = owned_bucket_count(&count);
+    if (bucket == BUCKET_UNREADABLE) return say(reason, n, "menu bindings unreadable", NULL);
+    if (bucket == BUCKET_CHANGED) return say(reason, n, "menu binding changed", NULL);
     for (uint32_t r = 0; r < g_latch.records; r++) {
         MemSwap swap;
         if (g_latch.index[r] >= count) return say(reason, n, "menu binding changed", NULL);
@@ -310,13 +324,24 @@ int latch_release(bool avatar_valid)
             lost = mem_forget_all(MEM_OWNER_LATCH);
             log_line("latch: the controls object changed; the menu latch was dropped without writing it back");
         } else {
+            uint32_t count;
+            BucketState bucket = owned_bucket_count(&count);
             g_latch.unreadable_logged = false;
             /* menu_latch.lua:38: the actions dword only for the player the latch was taken for. */
             if (!avatar_valid && mem_forget(MEM_OWNER_LATCH, g_latch.actions + DBF_OFF_ACTION_TRIGGER_OFFSET)) {
                 lost++;
                 log_line("latch: the player changed; the old player's menu trigger was left alone");
             }
-            lost += mem_restore(MEM_OWNER_LATCH);
+            if (bucket == BUCKET_UNREADABLE) {
+                lost += mem_journal_count(MEM_OWNER_LATCH);
+            } else {
+                if (bucket == BUCKET_CHANGED) count = 0;
+                for (uint32_t r = 0; r < g_latch.records; r++) {
+                    uint32_t index = g_latch.index[r];
+                    if (index >= count && mem_forget(MEM_OWNER_LATCH, record_at(g_latch.bucket, index))) lost++;
+                }
+                lost += mem_restore(MEM_OWNER_LATCH);
+            }
         }
     }
     if (mem_journal_count(MEM_OWNER_LATCH) == 0) memset(&g_latch, 0, sizeof g_latch);

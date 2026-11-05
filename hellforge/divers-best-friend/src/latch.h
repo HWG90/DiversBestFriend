@@ -43,9 +43,12 @@
  *     reads again: the next call retries (R46 returned here, menu_latch.lua:27, but never retried);
  *   - when it reads as another controls object, every LATCH entry is dropped without writing (mem_forget_all; R46
  *     restores nothing then), with one log line;
- *   - otherwise, when avatar_valid is false (the player is not the one the latch was taken for), the actions + 24
- *     dword's entry is dropped without writing (mem_forget, one log line), and the rest restored;
- *   - otherwise everything is restored: mem_restore(MEM_OWNER_LATCH) (memory.h): each record and dword gets its original
+ *   - with the same controls, record entries outside the current bucket count are dropped without writing. All record
+ *     entries are dropped if the table or key changed, the capacity is unrecognised, or the count exceeds 16. If this
+ *     metadata cannot be read, restoration waits for a retry;
+ *   - when avatar_valid is false (the player is not the one the latch was taken for), the actions + 24
+ *     dword's entry is dropped without writing (mem_forget, one log line);
+ *   - the remaining entries are restored: mem_restore(MEM_OWNER_LATCH) (memory.h): each record and dword gets its original
  *     back while it still holds the latch's bytes; one the game already put back counts as restored; one someone else
  *     changed meanwhile is left alone and counted; one whose write failed stays journaled and counts, for the next
  *     latch_release (or acquire) to retry.
@@ -125,7 +128,7 @@ bool latch_refresh(const GameLocal* l, char* reason, size_t n);
 
 /* Gives the lease back (see the top): `avatar_valid` when the player is still the one the latch was taken for. How many
  * entries were not put back. Call it again (each tick) while LATCH entries are left: after a failed write, or while the
- * controls pointer cannot be read. */
+ * controls pointer or binding metadata cannot be read. */
 int latch_release(bool avatar_valid);
 
 /* The lease is held (acquired, not yet released). */

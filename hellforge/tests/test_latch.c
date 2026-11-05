@@ -72,7 +72,15 @@ static int write_port(uintptr_t address, const void* data, size_t size)
     return syn_write_mapped(address, data, size);
 }
 
-static const MemPort MEM = { syn_read, write_port };
+static uintptr_t g_unreadable;
+
+static int read_port(uintptr_t address, void* data, size_t size)
+{
+    if (address == g_unreadable) return -1;
+    return syn_read(address, data, size);
+}
+
+static const MemPort MEM = { read_port, write_port };
 
 /* After `after` more writes, the next `count` fail (without writing). */
 static void fail_writes(int after, int count)
@@ -119,6 +127,7 @@ static char g_why[DBF_REASON_SIZE];
 static bool start_with(const SynScene* s)
 {
     bool built = syn_build(s);
+    g_unreadable = 0;
     mem_init(&MEM);
     adm_init(syn_adm_port(), 0);
     built = built && syn_poke_u64(SYN_GAME_BASE + RVA_EFFECTS, AT_EFFECTS);
@@ -469,14 +478,32 @@ static void test_refresh(void)
     acquire();
     syn_poke_u32(syn_binding_bucket(syn_menu_bucket()) + 4u, 2);
     CHECK(!refresh() && reason_is("menu binding changed"), "the bucket's count below a patched record: refused");
+    g_writes = 0;
+    CHECK(latch_release(true) == 1 && g_writes == 3
+              && record_is(syn_menu_bucket(), 0, SYN_MENU_RECORDS[0]) && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED)
+              && dword_is("controls trigger", syn_controls_menu_trigger(), 2)
+              && dword_is("local trigger", syn_local_menu_trigger(), 2) && journal_is(0, 0),
+          "  release restores only the records still owned and both triggers");
     start();
     acquire();
     syn_poke_u32(syn_binding_bucket(syn_menu_bucket()), 0x50001u);
     CHECK(!refresh() && reason_is("menu binding changed"), "the bucket no longer Display Stratagem List's: refused");
+    g_writes = 0;
+    CHECK(latch_release(true) == 2 && g_writes == 2
+              && record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED)
+              && dword_is("controls trigger", syn_controls_menu_trigger(), 2)
+              && dword_is("local trigger", syn_local_menu_trigger(), 2) && journal_is(0, 0),
+          "  release restores only the records still owned and both triggers");
     start();
     acquire();
     syn_poke_u64(syn_controls() + BINDING_MAP, syn_bindings() + 0x100000u);
     CHECK(!refresh() && reason_is("menu binding changed"), "the map moved to another table: refused");
+    g_writes = 0;
+    CHECK(latch_release(true) == 2 && g_writes == 2
+              && record_is(syn_menu_bucket(), 0, HOLD_PATCHED) && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED)
+              && dword_is("controls trigger", syn_controls_menu_trigger(), 2)
+              && dword_is("local trigger", syn_local_menu_trigger(), 2) && journal_is(0, 0),
+          "  release restores only the records still owned and both triggers");
     start();
     acquire();
     syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls() + 0x10000u);
@@ -633,6 +660,30 @@ static void test_release(void)
           "acquire while the kept entries still cannot be checked: refused, nothing new taken");
     syn_poke_u64(SYN_GAME_BASE + RVA_CONTROLS, syn_controls());
     CHECK(latch_release(true) == 0 && originals(), "  and the pointer back: restored");
+
+    start();
+    acquire();
+    fail_writes(2, 1); /* both dwords restore, then record 2 fails */
+    CHECK(latch_release(true) == 1 && journal_is(1, 0), "one binding record stays journaled after a failed restore");
+    syn_poke_u32(syn_binding_bucket(syn_menu_bucket()) + 4u, 2);
+    g_writes = 0;
+    CHECK(latch_release(true) == 1 && g_writes == 0 && journal_is(0, 0)
+              && record_is(syn_menu_bucket(), 2, LONG_HOLD_PATCHED),
+          "retry after list shrink forgets the detached record without writing");
+
+    for (int field = 0; field < 4; field++) {
+        start();
+        acquire();
+        uintptr_t map = syn_controls() + BINDING_MAP;
+        uintptr_t bucket = syn_binding_bucket(syn_menu_bucket());
+        uintptr_t fields[] = { map, map + 8u, bucket, bucket + 4u };
+        g_unreadable = fields[field];
+        g_writes = 0;
+        CHECK(latch_release(true) == 4 && g_writes == 0 && journal_is(4, 0) && latched_bytes(),
+              "unreadable binding metadata keeps the lease bytes and journal for retry");
+        g_unreadable = 0;
+        CHECK(latch_release(true) == 0 && originals(), "retry with readable metadata restores the owned entries");
+    }
 
     /* The checks are made again on a retry. */
     start();
