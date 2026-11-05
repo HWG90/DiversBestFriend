@@ -5,6 +5,11 @@
 #                                                (tests/check_imports.sh)
 #        ./build.sh test                         the SDK check, the Linux unit tests (tests/test_*.c with the portable units
 #                                                of src/) and the Python tests (tools/test_*.py)
+#        ./build.sh test-c                       Linux C tests only (no Lua inputs or Python packaging tests)
+#        ./build.sh package [zip]                rebuild the DLL and write the combined root-manifest HellForge zip
+#        ./build.sh verify-package [zip]         compare every zip member against the DLL, sources and rebuilt archive
+#        ./build.sh verify-stage [zip]           test launcher import, DLL plan, patch staging and HF-LLL discovery in a scratch root
+#                                                (uses HF_INSTALL, HF_LLL_ROOT or adjacent HF-LLL, and luajit)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
 #                                                once per case, with the stub Overlay Hosts and loader built here and a stub
@@ -107,7 +112,9 @@ run_tests() {
     if timeout 120 "$here/build/tests/$name"; then echo "PASS $name"; passed=$((passed + 1))
     else echo "FAIL $name (exit $?)"; failed=$((failed + 1)); fi
   done
-  if run_python_tests; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+  if [[ ${1:-} != c-only ]]; then
+    if run_python_tests; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+  fi
   echo "tests: $passed passed, $failed failed"
   [ "$failed" -eq 0 ]
 }
@@ -211,29 +218,33 @@ install_mod() {
     [ -f "$sdk/$header" ] || die "no $header in $sdk (set HF_SDK)."
   done
 
+  # Serialize competing installs through this script, even when UTC seconds differ.
+  local lock_fd
+  exec {lock_fd}<"$install/mods"
+  flock --nonblock "$lock_fd" || die "Another mod install is in progress."
   local stamp backup dest="$install/mods/divers-best-friend" commit dirty=false
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   backup="$install/backport-backups/$stamp"
   mkdir -p "$install/backport-backups"
   mkdir "$backup" || die "$backup already exists."
-  if [ -e "$dest" ]; then cp -a "$dest" "$backup/previous"; fi
+  # Build and verify the whole import before moving the installed mod. Stage on the same
+  # filesystem as dest so activation and rollback are directory renames.
+  local staged
+  staged=$(mktemp -d -- "$install/mods/.dbf-install.XXXXXXXX")
+  trap 'rm -rf -- "$staged"' EXIT
+  python3 -I "$here/tools/hud_pack.py" package "$staged/mod.zip"
+  mkdir "$staged/new"
+  unzip -q "$staged/mod.zip" -d "$staged/new"
   if [ -f "$install/mods/hellforge-mods.json" ]; then cp -a "$install/mods/hellforge-mods.json" "$backup/"; fi
-
-  # The mod folder as it is shipped: nothing else in this folder goes along, and nothing old stays in src/.
-  rm -rf "$dest"
-  mkdir -p "$dest"
-  cp "$mod/hellforge-mod.json" "$mod/$dllName" "$mod/LICENSE" "$dest/"
-  if [ -f "$mod/README.md" ]; then cp "$mod/README.md" "$dest/"; fi
-  cp -r "$mod/src" "$dest/src"
 
   commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
   if [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then dirty=true; fi
   # The receipt records the SDK headers the DLL was built against: their version and each header's SHA-256 (the vendored
   # ones unless HF_SDK points elsewhere, which "vendored" says).
-  python3 -I - "$dest" "$backup/receipt.json" "$stamp" "$commit" "$dirty" "$repo" "$gameBuild" "$sdk" \
-      "$([ "$sdk" = "$vendored_sdk" ] && echo true || echo false)" <<'PY'
+  python3 -I - "$dest" "$staged/receipt.json" "$stamp" "$commit" "$dirty" "$repo" "$gameBuild" "$sdk" \
+      "$([ "$sdk" = "$vendored_sdk" ] && echo true || echo false)" "$staged/new" <<'PY'
 import datetime, hashlib, json, os, re, sys
-dest, receipt, stamp, commit, dirty, repo, game, sdk, vendored = sys.argv[1:10]
+dest, receipt, stamp, commit, dirty, repo, game, sdk, vendored, staged = sys.argv[1:]
 HEADERS = ("hellforge_mod.h", "hellforge_lua.h", "hellforge_content.h", "hellforge_components.h")
 sdk_headers = {}
 for name in HEADERS:
@@ -242,12 +253,12 @@ for name in HEADERS:
 with open(os.path.join(sdk, "hellforge_mod.h"), encoding="utf-8") as f:
     sdk_version = int(re.search(r"^#define HF_MOD_SDK_VERSION\s+(\d+)", f.read(), re.M).group(1))
 files = {}
-for folder, _, names in os.walk(dest):
+for folder, _, names in os.walk(staged):
     for name in names:
         path = os.path.join(folder, name)
         with open(path, "rb") as f:
-            files[os.path.relpath(path, dest).replace(os.sep, "/")] = hashlib.sha256(f.read()).hexdigest()
-manifest = json.load(open(os.path.join(dest, "hellforge-mod.json"), encoding="utf-8"))
+            files[os.path.relpath(path, staged).replace(os.sep, "/")] = hashlib.sha256(f.read()).hexdigest()
+manifest = json.load(open(os.path.join(staged, "hellforge-mod.json"), encoding="utf-8"))
 with open(receipt, "w", encoding="utf-8", newline="\n") as f:
     json.dump({
         "installed_at_utc": datetime.datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -261,6 +272,14 @@ with open(receipt, "w", encoding="utf-8", newline="\n") as f:
     }, f, indent=2, ensure_ascii=False)
     f.write("\n")
 PY
+  if [ -e "$dest" ]; then mv -- "$dest" "$backup/previous"; fi
+  if ! mv -- "$staged/new" "$dest"; then
+    if [ -e "$backup/previous" ]; then mv -- "$backup/previous" "$dest"; fi
+    die "Could not activate the staged mod."
+  fi
+  mv -- "$staged/receipt.json" "$backup/receipt.json"
+  rm -rf -- "$staged"
+  trap - EXIT
   echo "Installed $dest"
   echo "Backup and receipt: $backup"
 }
@@ -268,7 +287,14 @@ PY
 case ${1:-} in
   dll) build_dll ;;
   test) run_tests ;;
+  test-c) run_tests c-only ;;
+  package) shift; build_dll; python3 -I "$here/tools/hud_pack.py" package "$@" ;;
+  verify-package) shift; python3 -I "$here/tools/hud_pack.py" verify "$@" ;;
+  verify-stage)
+    shift
+    package=$(python3 -I "$here/tools/hud_pack.py" verify "$@")
+    python3 "$here/tools/check_hud_pack_stage.py" "$package" "$hf" "${HF_LLL_ROOT:-$repo/../HF-LLL}" ;;
   wine-test) run_wine_tests ;;
   install) shift; install_mod "$@" ;;
-  *) echo "usage: $0 dll | test | wine-test | install <HellForge installation>" >&2; exit 2 ;;
+  *) echo "usage: $0 dll | test | test-c | package [zip] | verify-package [zip] | verify-stage [zip] | wine-test | install <HellForge installation>" >&2; exit 2 ;;
 esac

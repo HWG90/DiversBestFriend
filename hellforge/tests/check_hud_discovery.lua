@@ -1,5 +1,6 @@
 -- Offline integration check. Feed HF-LLL's real scanner the patch from the release zip.
-local loader, patch_name, expected_name = ...
+local loader, patch_name, expected_name, staged_dir = ...
+local arguments = {...}
 LLL_DISCOVERY_HASH = dofile(loader .. "/src/discovery_hash.lua")
 local discover = dofile(loader .. "/src/discovery.lua")
 local patch = assert(io.read("*a"))
@@ -34,6 +35,22 @@ assert(closed and #names == 1, diagnostics)
 assert(not expected_name or names[1] == expected_name, names[1])
 local entry = assert(details[names[1]])
 assert(entry.kind == "addon" and entry.archive == patch_name)
+if staged_dir then
+    local staged_files = {}
+    for i = 5, #arguments do staged_files[#staged_files + 1] = arguments[i] end
+    local all, warnings, report, _, active = discover({
+        data = staged_dir,
+        files = function() return staged_files end,
+        read = function(path)
+            local file = assert(io.open(path, "rb"))
+            local bytes = assert(file:read("*a"))
+            assert(file:close())
+            return bytes
+        end,
+    })
+    assert(#warnings == 0, table.concat(warnings, "\n"))
+    assert(#all >= 1 and active[expected_name] and active[expected_name].archive == patch_name, report)
+end
 local body = patch:sub(entry.offset + 9, entry.offset + entry.length)
 assert(loadstring(body, "@" .. names[1])) -- compile only, no game globals or native calls
 
