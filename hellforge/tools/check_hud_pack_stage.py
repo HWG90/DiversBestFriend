@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,6 +10,38 @@ import tempfile
 from zipfile import ZipFile
 
 import hud_pack
+
+
+VM_SHA256 = "2c8720c9f446c848436ad993b1a88099d76f0b0b09df53689719b797c3039ce7"
+
+
+def run_game_vm(work, install, loader, dll, staged):
+    vm = work / "lua51.dll"
+    shutil.copyfile(install / "game/bin/lua51.dll", vm)
+    if hashlib.sha256(vm.read_bytes()).hexdigest() != VM_SHA256:
+        raise ValueError("unexpected game VM for build 25480438")
+    shutil.copyfile(dll, work / dll.name)
+    shutil.copyfile(hud_pack.HF / "tests/staged_hud_vm.lua", work / "smoke.lua")
+    body = hud_pack.verify_archive(staged.read_bytes())
+    (work / "staged.lua").write_bytes(body)
+    cc = "x86_64-w64-mingw32-gcc"
+    runner = work / "hf_lua.exe"
+    subprocess.run([cc, "-O2", loader / "tools/hf_lua.c", vm, "-o", runner], check=True)
+    subprocess.run([cc, "-shared", "-DHF_LUA_API=__declspec(dllexport)", "-I", hud_pack.HF / "sdk",
+                    hud_pack.HF / "tests/wine_modloader_stub.c", "-o", work / "hellforge_modloader.dll"], check=True)
+    steam = Path.home() / ".local/share/Steam"
+    proton = os.environ.get("PROTON", str(steam / "steamapps/common/Proton - Experimental/proton"))
+    prefix = hud_pack.HF / "build/stage-proton"
+    prefix.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "STEAM_COMPAT_DATA_PATH": str(prefix),
+           "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steam), "WINEDEBUG": "-all"}
+    for key in ("SteamAppId", "SteamGameId", "WINEPREFIX"):
+        env.pop(key, None)
+    subprocess.run([proton, "run", runner, "smoke.lua"], env=env, cwd=work, timeout=180, check=True)
+    receipt = (work / "vm-passed.txt").read_text(encoding="ascii")
+    if receipt != "PASS staged HUD VM: 3 enable/frame/shutdown cycles (LuaJIT 2.1.0-alpha)":
+        raise ValueError("game VM did not acknowledge the final shutdown")
+    print(receipt)
 
 
 def stage(package, install, loader):
@@ -52,7 +85,8 @@ def stage(package, install, loader):
                     raise ValueError("staged companion differs: " + suffix)
         subprocess.run(["luajit", hud_pack.HF / "tests/check_hud_discovery.lua", loader.resolve(),
                         staged.name, hud_pack.ADDON, data, *sorted(p.name for p in data.iterdir())], input=staged.read_bytes(), check=True)
-        print(json.dumps({"launcher": app["version"], "commit": app["commit"], "version": manifest["version"],
+        run_game_vm(work, install, loader, paths[0], staged)
+        print(json.dumps({"game_vm_sha256": VM_SHA256, "launcher": app["version"], "commit": app["commit"], "version": manifest["version"],
                           "planned_dll": paths[0].name, "dll_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest(),
                           "staged_patch": staged.name, "patch_sha256": hashlib.sha256(staged.read_bytes()).hexdigest(),
                           "package_sha256": hashlib.sha256(package.read_bytes()).hexdigest(),

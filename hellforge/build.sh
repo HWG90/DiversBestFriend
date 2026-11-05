@@ -9,13 +9,14 @@
 #        ./build.sh package [zip]                rebuild the DLL and write the combined root-manifest HellForge zip
 #        ./build.sh verify-package [zip]         compare every zip member against the DLL, sources and rebuilt archive
 #        ./build.sh verify-stage [zip]           test launcher import, DLL plan, patch staging and HF-LLL discovery in a scratch root
-#                                                (uses HF_INSTALL, HF_LLL_ROOT or adjacent HF-LLL, and luajit)
+#                                                and run the staged HUD on the game VM (HF_INSTALL, HF_LLL_ROOT or adjacent
+#                                                HF-LLL, luajit, x86_64-w64-mingw32-gcc and PROTON)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
 #                                                once per case, with the stub Overlay Hosts and loader built here and a stub
 #                                                at each game function DBF calls (the code-entry cases press keys in a window
 #                                                of the host's own); then the real BindPort of src/platform_win.c
-#                                                (tests/wine_bind.c) in a program of its own
+#                                                (tests/wine_bind.c) and the HUD settings.ini persistence probe
 #        ./build.sh install <HellForge installation>
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
@@ -191,6 +192,15 @@ run_wine_tests() {
   grep -E '^(==|PASS|FAIL|SKIP)' "$out/bind-port.log" || true
   if [ "$status" = 0 ] && grep -qx "== bind-port: 0 failure(s)" "$out/bind-port.log"; then echo "PASS bind-port"; passed=$((passed + 1))
   else echo "FAIL bind-port (exit $status; log $out/bind-port.log)"; failed=$((failed + 1)); fi
+  "$zig" cc "${flags[@]}" -UNDEBUG -I "$mod/src" "$here/tests/wine_hud_prefs.c" "$mod/src/hud_prefs_win.c" \
+      "$mod/src/settings.c" "$mod/src/hud_options.c" -o "$out/wine_hud_prefs.exe" || die "The HUD preferences probe did not compile."
+  status=0
+  WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx" WINEDEBUG=-all timeout 300 "$(dirname "$proton")/files/bin/wine" \
+      "$(w "$out/wine_hud_prefs.exe")" > "$out/hud-prefs.log" 2>&1 || status=$?
+  sed -i 's/\r$//' "$out/hud-prefs.log"
+  if [ "$status" = 0 ] && grep -qx 'PASS HUD preference persistence' "$out/hud-prefs.log"; then
+    echo "PASS hud-prefs"; passed=$((passed + 1))
+  else echo "FAIL hud-prefs (exit $status; log $out/hud-prefs.log)"; failed=$((failed + 1)); fi
   if [ "$skipped" -gt 0 ]; then echo "wine-test: $passed passed, $failed failed, $skipped skipped"
   else echo "wine-test: $passed passed, $failed failed"; fi
   [ "$failed" -eq 0 ]

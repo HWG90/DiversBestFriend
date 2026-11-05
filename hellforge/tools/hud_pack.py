@@ -38,12 +38,8 @@ def factories():
         yield original["src/" + name + ".lua"].decode("utf-8")
     style = (HUD / "hd2_ui_style.lua").read_text(encoding="utf-8")
     yield "local kit = (function()\n" + style + "\nend)()\nreturn {style=kit, cooldown_tokens=kit.tokens}"
-    terminal = ("terminal_guards", "terminal")
-    present = [(HUD / (name + ".lua")).is_file() for name in terminal]
-    if any(present) and not all(present):
-        raise ValueError("terminal_guards.lua and terminal.lua must be supplied together")
-    optional = terminal if all(present) else ()
-    for name in (*WHEEL, "cooldown_gui", "cooldown_dock", "weapon_reader", "weapon_strip", *optional, "runtime"):
+    for name in (*WHEEL, "cooldown_gui", "binding_warning", "cooldown_dock", "weapon_reader", "weapon_strip",
+                 "terminal_guards", "terminal", "runtime"):
         yield (HUD / (name + ".lua")).read_text(encoding="utf-8")
 
 
@@ -56,7 +52,7 @@ def render():
     return template.replace(marker, modules).encode("utf-8")
 
 
-def verify_archive(data, expected):
+def verify_archive(data, expected=None):
     """Validate a single Stingray Lua resource, independently of the writer."""
     if len(data) < 184 or struct.unpack_from("<III", data) != (0xF0000011, 1, 1):
         raise ValueError("expected one archive type and one resource")
@@ -73,8 +69,9 @@ def verify_archive(data, expected):
     if struct.unpack_from("<II", data, offset) != (size - 8, 2):
         raise ValueError("invalid addon source envelope")
     body = data[offset + 8:offset + size]
-    if not body.startswith(("-- HD2-Addon: " + ADDON + "\n").encode()) or body != expected:
+    if not body.startswith(("-- HD2-Addon: " + ADDON + "\n").encode()) or (expected is not None and body != expected):
         raise ValueError("archived source disagrees with the host or its inputs")
+    return body
 
 
 def release_files():
