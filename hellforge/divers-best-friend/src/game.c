@@ -401,6 +401,7 @@ void game_read(GameView* out)
         return;
     }
     out->hud_ready = true;
+    out->hud = root;
     open_ok = mem_u8(root + DBF_OFF_HUD_PANEL_OFFSET + DBF_OFF_OPEN_BYTE_OFFSET, &open);
     if (!open_ok) {
         fail(out, "menu-open flag unreadable");

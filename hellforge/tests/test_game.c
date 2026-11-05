@@ -168,6 +168,7 @@ static void test_reads_the_mission(void)
     CHECK(v->build_ok && v->in_gameplay && v->hud_ready && v->menu_open && v->local_ok,
           "gameplay, HUD ready, menu open, local player found");
     CHECK(reason_is(v, ""), "nothing is missing: reason is empty");
+    CHECK(v->hud == syn_hud_root(), "the view names the HUD it read (R46's HUD identity)");
     CHECK(v->table_rva == VANILLA_TABLE, "the vanilla definition table");
     CHECK(!v->scramble_known, "scramble_known is false: the test table maps no scramble witness, so no query ran");
     CHECK(v->row_count == 4, "four active cards, four rows");
@@ -372,6 +373,7 @@ static void test_not_in_gameplay(void)
     CHECK(!v->in_gameplay && reason_is(v, "not in gameplay") && v->row_count == 0 && !v->local_ok && !v->hud_ready
               && !v->menu_open && rest_is_zero(v),
           "game state 3: in_gameplay false, \"not in gameplay\", no rows");
+    CHECK(v->hud == 0, "and no HUD");
     CHECK(v->build_ok, "build_ok is still reported");
 
     syn_default(&s);
@@ -381,6 +383,7 @@ static void test_not_in_gameplay(void)
     CHECK(v->in_gameplay && !v->hud_ready && reason_is(v, "HUD not ready") && v->row_count == 0 && !v->local_ok
               && !v->menu_open,
           "ready byte 0: \"HUD not ready\", no rows");
+    CHECK(v->hud == 0, "a HUD that is not ready is no HUD");
     syn_poke_u8(syn_hud_root() + DBF_OFF_HUD_READY_OFFSET, 2);
     v = read_view();
     CHECK(!v->hud_ready && reason_is(v, "HUD not ready"), "ready byte 2: not ready either");
@@ -392,6 +395,23 @@ static void test_not_in_gameplay(void)
     syn_unmap(syn_game_state() + DBF_OFF_GAME_MODE_OFFSET);
     v = read_view();
     CHECK(!v->in_gameplay && reason_is(v, "game state unreadable") && v->row_count == 0, "game state unreadable");
+}
+
+/* GameView.hud is R46's HUD identity (native.lua:76-84, input.lua:98: the HUD root's address), which dbf.c compares to
+ * the one a code entry began with. */
+static void test_hud_identity(void)
+{
+    SynScene s;
+    const GameView* v;
+    const uintptr_t other = (uintptr_t)0x3f000000000ull;
+    CHECK(start_default(&s), "the default scene builds");
+    v = read_view();
+    CHECK(v->hud == syn_hud_root() && v->hud != 0, "the HUD root it read");
+    CHECK(syn_poke_u8(other + DBF_OFF_HUD_READY_OFFSET, 1) && syn_poke_u64(SYN_GAME_BASE + DBF_RVA_HUD_ROOT, other),
+          "the game builds another HUD");
+    v = read_view();
+    CHECK(v->hud_ready && v->hud == other, "the view names the new HUD");
+    CHECK(v->row_count == 0, "(whose list is not the one the cards hang from: no rows)");
 }
 
 static void test_card_links(void)
@@ -958,6 +978,7 @@ int main(void)
     test_definition_table();
     test_local_payload_changed();
     test_not_in_gameplay();
+    test_hud_identity();
     test_card_links();
     test_entries_and_kinds();
     test_codes();

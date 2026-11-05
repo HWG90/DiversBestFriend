@@ -104,6 +104,8 @@ typedef struct GameLocal {
 
 typedef struct GameView {
     bool build_ok, in_gameplay, hud_ready, menu_open;
+    uintptr_t hud;                            /* the HUD root's address while hud_ready, else 0: R46's HUD identity
+                                                 (native.lua:76-84, input.lua:98), which a code entry must keep */
     bool local_ok;                            /* the code-entry chain held (codes are read only then); rows do not
                                                  need it */
     bool scramble_known;                      /* the game's scramble query ran for this read's codes: they follow a
