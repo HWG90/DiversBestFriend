@@ -74,7 +74,7 @@ local function new_renderer(b,scope)
   attach(owner,child);finish(owner)
  end
  local function create(root,row,resource)
-  storage=ffi.new('uint8_t[?]',size+64)
+  storage=b.alloc_widget(size+64)
   address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
   ffi.fill(ffi.cast('void *',address-16),16,165);ffi.fill(ffi.cast('void *',address+size),16,165)
   identity,parent=root,row

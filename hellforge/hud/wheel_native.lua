@@ -54,7 +54,7 @@ local function wheel_admission(bridge)
         return true
     end
 end
-local function native_backend(bridge)
+local function native_backend(bridge,token)
     local ffi = require('ffi')
     if not pcall(ffi.typeof,'NSR_vec2') then
         ffi.cdef 'typedef struct { float x, y; } NSR_vec2;'
@@ -348,6 +348,15 @@ local function native_backend(bridge)
             end
         end
         return {identity=root,hud_visible=hud_visible,panel=panel,list=list,rows=rows,open=open=='\1',list_geometry=container,dock_rows=include_closed,dock_parent=root+0x258,stamina_bounds=stamina_bounds,health_bounds=health_bounds,dock_y=dock_y,dock_below_y=dock_below_y,dock_anchor=dock_anchor,center=center,geometry=string.format('viewport=%.1fx%.1f matrix=%s list=%.1fx%.1f matrix=%s',viewport.width,viewport.height,table.concat(viewport.matrix,','),container.width,container.height,table.concat(container.matrix,','))}
+    end
+    function backend.alloc_widget(bytes)
+        local p=bridge.dbf_hud_widget_alloc(token,bytes)
+        if p==nil then
+            collectgarbage('collect')
+            p=bridge.dbf_hud_widget_alloc(token,bytes)
+        end
+        assert(p~=nil,'Native HUD widget storage unavailable')
+        return ffi.gc(p,bridge.dbf_hud_widget_drop)
     end
     local release_ui
     function backend.release_owned_ui(storage,address,identity,parent,retired)

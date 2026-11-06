@@ -104,6 +104,7 @@ local b={base=0,valid=function(id)return id==root end,
     set=function(at,key,v)widget(at)[key]=v end,
     dock_font=function()return {font='a',material='b',atlas='c'} end,
     dock_text_position=function(_,x,y)return x+960,y end,
+    alloc_widget=function(n)return ffi.new('uint8_t[?]',n)end,
     release_owned_ui=function(_,at,id,p)assert(id==root and parent[at]==p);cleanup=cleanup+1;return true end}
 local d=module.cooldown_dock(b,{context_scope=function(_,fn)return fn(111)end},{})
 local s={identity=root,dock_y=144,dock_parent=root+0x258,health_bounds=hp,stamina_bounds=bar,

@@ -7,6 +7,8 @@ ffi.cdef[[
     int dbf_hud_acquire(const void *token);
     void dbf_hud_release(const void *token);
     uint64_t dbf_hud_base(void);
+    void *dbf_hud_widget_alloc(const void* token, unsigned bytes);
+    void dbf_hud_widget_drop(void *raw);
     int dbf_hud_read(uint64_t address,void *out,uint32_t bytes);
     int dbf_hud_guard(unsigned rva,const void *expected,unsigned bytes);
     int dbf_hud_option(const char *key);
@@ -462,7 +464,7 @@ local function dbf_hud_runtime(bridge)
                     return
                 end
                 if not self.b then
-                    local prepared,b=pcall(native_backend,bridge)
+                    local prepared,b=pcall(native_backend,bridge,self.token)
                     if not prepared then
                         report('Waiting for game image: '..tostring(b))
                         self.retry_at=self.elapsed+500

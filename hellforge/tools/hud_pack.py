@@ -4,7 +4,6 @@ import importlib.util
 import json
 from pathlib import Path
 import re
-import struct
 import subprocess
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
@@ -14,8 +13,6 @@ ROOT = HF.parent
 MOD = HF / "divers-best-friend"
 HUD = HF / "hud"
 HOST = HF / "tools/hud_archive_host.lua"
-ADDON = "mods/goose/divers_best_friend"
-PATCH = "data/9ba626afa44a3aa3.patch_0"
 R46 = ("layout", "guards", "mission_blacklist", "pointing", "camera",
        "icon_colors", "duplicate", "emote", "blacklist", "feedback")
 WHEEL = ("wheel_native", "wheel_latch", "wheel_input", "wheel_selection", "wheel_release", "wheel_expanded")
@@ -28,14 +25,19 @@ def source_module(name, path):
     return module
 
 
-archive = source_module("dbf_archive", ROOT / "build.py")
 r46 = source_module("dbf_r46", ROOT / "tools/release_package.py")
 
 
 def factories():
-    original = r46.sources("BSL")
+    original = r46.sources(None)
     for name in R46:
-        yield original["src/" + name + ".lua"].decode("utf-8")
+        body = original["src/" + name + ".lua"].decode("utf-8")
+        if name in ("duplicate", "emote"):
+            allocation = "storage=ffi.new('uint8_t[?]',"
+            if body.count(allocation) != 1:
+                raise ValueError("unexpected native root allocator in " + name)
+            body = body.replace(allocation, "storage=b.alloc_widget(")
+        yield body
     style = (HUD / "hd2_ui_style.lua").read_text(encoding="utf-8")
     yield "local kit = (function()\n" + style + "\nend)()\nreturn {style=kit, cooldown_tokens=kit.tokens}"
     for name in (*WHEEL, "cooldown_gui", "binding_warning", "cooldown_dock", "weapon_reader", "weapon_strip",
@@ -52,34 +54,19 @@ def render():
     return template.replace(marker, modules).encode("utf-8")
 
 
-def verify_archive(data, expected=None):
-    """Validate a single Stingray Lua resource, independently of the writer."""
-    if len(data) < 184 or struct.unpack_from("<III", data) != (0xF0000011, 1, 1):
-        raise ValueError("expected one archive type and one resource")
-    if struct.unpack_from("<Q", data, 32)[0] != len(data):
-        raise ValueError("wrong archive size")
-    if struct.unpack_from("<QI", data, 80) != (archive.TYPE, 1):
-        raise ValueError("invalid Lua type descriptor")
-    name, kind, offset = struct.unpack_from("<QQQ", data, 104)
-    size, gpu, stream = struct.unpack_from("<III", data, 160)
-    if (name, kind) != (archive.resource_hash(ADDON), archive.TYPE):
-        raise ValueError("wrong addon resource key or type")
-    if gpu or stream or offset < 184 or offset % 16 or size < 8 or offset + size > len(data):
-        raise ValueError("invalid addon resource bounds or sidecar dependency")
-    if struct.unpack_from("<II", data, offset) != (size - 8, 2):
-        raise ValueError("invalid addon source envelope")
-    body = data[offset + 8:offset + size]
-    if not body.startswith(("-- HD2-Addon: " + ADDON + "\n").encode()) or (expected is not None and body != expected):
-        raise ValueError("archived source disagrees with the host or its inputs")
-    return body
+def payload_header():
+    """Compile-time bytes of DBF's private VM chunk, reproduced in the source ZIP."""
+    body = render()
+    # Hex bytes avoid execution-charset conversion, string-size limits and C escapes.
+    rows = (", ".join(f"0x{byte:02x}" for byte in body[i:i + 20]) for i in range(0, len(body), 20))
+    return ("/* Generated from DBF HUD sources by hud_pack.py. */\n"
+            "static const char dbf_hud_payload[] = {\n" + ",\n".join(rows) + "\n};\n").encode("ascii")
 
 
 def release_files():
     body = render()
     subprocess.run(["luajit", "-e", 'assert(loadstring(io.read("*a"), "@DBF_HUD"))'], input=body, check=True)
-    patch = archive.make_archive({archive.resource_hash(ADDON): struct.pack("<II", len(body), 2) + body})
-    verify_archive(patch, body)
-    files = {PATCH: patch, PATCH + ".stream": b"", PATCH + ".gpu_resources": b""}
+    files = {}
     manifest = json.loads((MOD / "hellforge-mod.json").read_bytes())
     dll = manifest["code"]["dll"]
     if dll != "divers_best_friend.dll" or manifest["code"].get("prebuilt") is not True:
@@ -89,6 +76,9 @@ def release_files():
     for path in sorted((MOD / "src").iterdir()):
         if path.suffix in (".c", ".h"):
             files["src/" + path.name] = path.read_bytes()
+    files["src/dbf_hud_payload.h"] = payload_header()
+    if body not in files[dll]:
+        raise ValueError("DBF DLL lacks the current embedded HUD payload; rebuild with build.sh dll")
     if (MOD / "README.md").is_file():
         files["README.md"] = (MOD / "README.md").read_bytes()
     files["CREDITS.md"] = (ROOT / "CREDITS.md").read_bytes()
@@ -120,9 +110,19 @@ def write_zip(target, files):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("package", "verify"))
+    parser.add_argument("mode", choices=("package", "verify", "header"))
     parser.add_argument("path", nargs="?", type=Path)
     args = parser.parse_args()
+    if args.mode == "header":
+        if not args.path:
+            parser.error("header requires a destination")
+        args.path.parent.mkdir(parents=True, exist_ok=True)
+        content = payload_header()
+        if not args.path.exists() or args.path.read_bytes() != content:
+            with tempfile.NamedTemporaryFile(dir=args.path.parent, delete=False) as tmp:
+                tmp.write(content)
+            Path(tmp.name).replace(args.path)
+        return
     files = release_files()
     version = json.loads(files["hellforge-mod.json"])["version"]
     if not re.fullmatch(r"[A-Za-z0-9._-]+", version):

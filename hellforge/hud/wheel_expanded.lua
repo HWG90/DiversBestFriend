@@ -88,7 +88,7 @@ local function expanded_wheel(b,scope,input)
                 address,storage=nil,nil
             end
             if not address then
-                storage=ffi.new('uint8_t[?]',SIZE+64)
+                storage=b.alloc_widget(SIZE+64)
                 address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
                 ffi.fill(ffi.cast('void *',address-16),16,165)
                 ffi.fill(ffi.cast('void *',address+SIZE),16,165)

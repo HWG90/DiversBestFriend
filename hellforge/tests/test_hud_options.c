@@ -91,7 +91,7 @@ static void render(void)
     settings_defaults(&snap.options);
     snap.hud_owned = true;
     ui_settings_draw(&ov, &snap);
-    CHECK(fake_ov_find("tab:SETTINGS", 0) >= 0 && fake_ov_find("text:Native HUD archive: connected", 0) >= 0,
+    CHECK(fake_ov_find("tab:SETTINGS", 0) >= 0 && fake_ov_find("text:Private HUD: connected", 0) >= 0,
           "settings tab and connected archive diagnostic");
     CHECK(icon_disabled && list_enabled, "mode change updates dependent controls within the same draw");
     CHECK(snap.options.selection_mode_ordered == 1 && snap.options.weapon_status_strip && snap.options.dock_gap == 24,
@@ -108,7 +108,7 @@ static void render(void)
     snap.hud_owned = false;
     fake_ov_reset();
     ui_settings_draw(&ov, &snap);
-    CHECK(fake_ov_find("text:Native HUD archive: waiting", 0) >= 0, "waiting archive diagnostic");
+    CHECK(fake_ov_find("text:Private HUD: waiting", 0) >= 0, "waiting archive diagnostic");
 }
 int main(void)
 {

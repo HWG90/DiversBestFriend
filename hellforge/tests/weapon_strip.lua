@@ -154,6 +154,7 @@ local backend={
     set=function(p,k,v)mine(p)[k]=v end,
     get_text_style=function(p)return {unpack(nodes[p].style)}end,
     set_text_style=function(p,style)mine(p).style={unpack(style)}end,
+    alloc_widget=function(n)return ffi.new('uint8_t[?]',n)end,
     release_owned_ui=function(storage,p,id,parent)
         assert(storage and p==strip and id==root and parent==stockrow and nodes[p].owner==stockrow)
         nodes[p].owner=nil;releases=releases+1;return true

@@ -1,5 +1,4 @@
--- HD2-Addon: mods/goose/divers_best_friend
--- HF-LLL drives this record on its update thread.
+-- Private DBF record compiled into its DLL. The native driver calls it in the engine VM.
 local factories = {
 -- @modules@
 }
@@ -10,7 +9,6 @@ local runtime, stopping
 
 function record.on_enable()
     assert(not rawget(_G, lease), "DBF HUD already has an owner")
-    rawset(_G, lease, record)
     stopping = false
     for _, factory in ipairs(factories) do
         setfenv(factory, scope)
@@ -20,6 +18,7 @@ function record.on_enable()
     runtime = scope.dbf_hud_runtime()
     assert(type(runtime) == "table" and type(runtime.shutdown) == "function"
         and type(runtime.update) == "function", "Incomplete DBF HUD runtime")
+    rawset(_G, lease, record)
 end
 
 function record.on_update(dt)

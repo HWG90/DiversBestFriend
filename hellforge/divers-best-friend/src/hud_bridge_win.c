@@ -15,8 +15,15 @@ static SRWLOCK lock = SRWLOCK_INIT;
 static uintptr_t image;
 static size_t image_size;
 static HudBridgePort port;
-static bool verified, granted, terminal_active;
+static bool verified, granted, terminal_active, abandoned;
 static const void* claimant;
+static const void* claimant_registry;
+static _Thread_local const void* driving_registry;
+
+void hud_bridge_vm_context(const void* registry)
+{
+    driving_registry = registry;
+}
 static DbfSettings options;
 static int levels = -1;
 static char last_message[192];
@@ -72,10 +79,84 @@ HUD_EXPORT int dbf_hud_guard(unsigned rva, const void* expected, unsigned length
     return 1;
 }
 
+/* All five native widget root layouts put the parent at aligned root + 0xf0.
+ * Engine links must outlive a Lua VM that closes with incomplete cleanup. Only
+ * recycle an allocation after Lua drops it AND the native root is detached. */
+enum { WIDGET_SLOTS = 64 };
+static struct { void* raw; bool dropped; } widgets[WIDGET_SLOTS];
+
+static void collect_widgets(void)
+{
+    for (int i = 0; i < WIDGET_SLOTS; ++i) {
+        if (!widgets[i].dropped) continue;
+        uintptr_t root = ((uintptr_t)widgets[i].raw + 31) & ~(uintptr_t)15;
+        void* parent;
+        memcpy(&parent, (const void*)(root + 0xf0), sizeof parent);
+        if (parent) continue;
+        HeapFree(GetProcessHeap(), 0, widgets[i].raw);
+        widgets[i].raw = NULL;
+        widgets[i].dropped = false;
+    }
+}
+
+HUD_EXPORT void* dbf_hud_widget_alloc(const void* token, unsigned bytes)
+{
+    if (bytes < 0x110 || bytes > 0x40000) return NULL;
+    void* raw = NULL;
+    AcquireSRWLockExclusive(&lock);
+    if (granted && token == claimant) {
+        collect_widgets();
+        for (int i = 0; i < WIDGET_SLOTS; ++i) {
+            if (widgets[i].raw) continue;
+            raw = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bytes);
+            widgets[i].raw = raw;
+            break;
+        }
+    }
+    ReleaseSRWLockExclusive(&lock);
+    return raw;
+}
+
+HUD_EXPORT void dbf_hud_widget_drop(void* raw)
+{
+    if (!raw) return;
+    AcquireSRWLockExclusive(&lock);
+    for (int i = 0; i < WIDGET_SLOTS; ++i) {
+        if (widgets[i].raw == raw) { widgets[i].dropped = true; break; }
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+
+void hud_bridge_vm_lost(const void* registry)
+{
+    AcquireSRWLockExclusive(&lock);
+    if (!registry || registry != claimant_registry) {
+        ReleaseSRWLockExclusive(&lock);
+        return;
+    }
+    claimant_registry = NULL;
+    /* A pending request made no gameplay changes. A lost granted owner can
+     * have outstanding writes: quarantine both native and Lua mutation until
+     * process exit, without retaining or comparing a freed Lua token. */
+    if (granted) {
+        abandoned = true;
+        snap_copy_text(last_message, sizeof last_message, "HUD VM closed before cleanup; restart required");
+    }
+    claimant = NULL;
+    granted = false;
+    terminal_active = false;
+    levels = -1;
+    row_count = 0;
+    ReleaseSRWLockExclusive(&lock);
+}
+
 HUD_EXPORT int dbf_hud_acquire(const void* token)
 {
     AcquireSRWLockExclusive(&lock);
-    if (token && verified && !claimant) claimant = token;
+    if (token && verified && !abandoned && !claimant) {
+        claimant = token;
+        claimant_registry = driving_registry;
+    }
     int result = token && claimant == token && granted;
     ReleaseSRWLockExclusive(&lock);
     return result;
@@ -86,6 +167,7 @@ HUD_EXPORT void dbf_hud_release(const void* token)
     AcquireSRWLockExclusive(&lock);
     if (claimant == token) {
         granted = false;
+        claimant_registry = NULL;
         claimant = NULL;
         levels = -1;
         terminal_active = false;
@@ -97,7 +179,7 @@ HUD_EXPORT void dbf_hud_release(const void* token)
 bool hud_bridge_requested(void)
 {
     AcquireSRWLockShared(&lock);
-    bool result = claimant != NULL;
+    bool result = abandoned || claimant != NULL;
     ReleaseSRWLockShared(&lock);
     return result;
 }

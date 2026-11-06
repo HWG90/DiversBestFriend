@@ -7,10 +7,10 @@
 #                                                of src/) and the Python tests (tools/test_*.py)
 #        ./build.sh test-c                       Linux C tests only (no Lua inputs or Python packaging tests)
 #        ./build.sh package [zip]                rebuild the DLL and write the combined root-manifest HellForge zip
-#        ./build.sh verify-package [zip]         compare every zip member against the DLL, sources and rebuilt archive
-#        ./build.sh verify-stage [zip]           test launcher import, DLL plan, patch staging and HF-LLL discovery in a scratch root
-#                                                and run the staged HUD on the game VM (HF_INSTALL, HF_LLL_ROOT or adjacent
-#                                                HF-LLL, luajit, x86_64-w64-mingw32-gcc and PROTON)
+#        ./build.sh verify-package [zip]         compare every zip member against the DLL, sources and embedded HUD
+#        ./build.sh verify-stage [zip]           import and stage the .9-to-.10 update in a scratch installation,
+#                                                then exercise the planned DLL on the pinned game VM (HF_INSTALL,
+#                                                DBF_PREVIOUS_ZIP, x86_64-w64-mingw32-gcc and PROTON)
 #        ./build.sh wine-test                    the DLL (as dll does), then the real DLL under Proton's Wine: tests/wine_host.c
 #                                                loads it with a stand-in HfApi over the synthetic image of tests/synthetic.c,
 #                                                once per case, with the stub Overlay Hosts and loader built here and a stub
@@ -59,9 +59,10 @@ build_dll() {
   [ -f "$mod/src/dbf.c" ] || die "$mod/src/dbf.c is missing"
   # HellForge's source-mod flags (ModKit.Flags), run from the mod folder as HellForge runs them. A DLL from an earlier
   # build is removed first, so a failed build never leaves a stale one behind.
+  python3 -I "$here/tools/hud_pack.py" header "$here/build/generated/dbf_hud_payload.h"
   rm -f "$mod/$dllName"
   (cd "$mod" && "$zig" cc -std=c11 -target x86_64-windows-gnu -shared -O2 -Wall -Werror -Wno-unused-parameter -s \
-      -I "$sdk" src/*.c -o "$dllName") || die "The mod did not compile with HellForge's source-mod flags."
+      -I "$sdk" -I "$here/build/generated" src/*.c -o "$dllName") || die "The mod did not compile with HellForge's source-mod flags."
   rm -f "$mod"/*.lib
   echo "Built $mod/$dllName ($(( $(stat -c %s "$mod/$dllName") / 1024 )) KB, SHA-256 $(sha256sum "$mod/$dllName" | cut -c1-16)...)"
   "$here/tests/check_imports.sh" "$mod/$dllName"
@@ -323,7 +324,7 @@ case ${1:-} in
   verify-stage)
     shift
     package=$(python3 -I "$here/tools/hud_pack.py" verify "$@")
-    python3 "$here/tools/check_hud_pack_stage.py" "$package" "$hf" "${HF_LLL_ROOT:-$repo/../HF-LLL}" ;;
+    python3 "$here/tools/check_hud_pack_stage.py" "$package" "$hf" --previous "${DBF_PREVIOUS_ZIP:-$here/build/exports/divers-best-friend-R50-hellforge.9.zip}" ;;
   wine-test) run_wine_tests ;;
   install) shift; install_mod "$@" ;;
   *) echo "usage: $0 dll | test | test-c | package [zip] | verify-package [zip] | verify-stage [zip] | wine-test | install <HellForge installation>" >&2; exit 2 ;;

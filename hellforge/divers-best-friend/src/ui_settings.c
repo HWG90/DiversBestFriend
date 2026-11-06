@@ -145,7 +145,7 @@ void ui_status_draw(const OvApi* ov, const DbfSnapshot* s)
     ov->text(l.text);
 
     if (s->mcm_registered) ov->text("Mod Configuration Menu: connected");
-    ov->text(s->hud_owned ? "Native HUD archive: connected" : "Native HUD archive: waiting");
+    ov->text(s->hud_owned ? "Private HUD: connected" : "Private HUD: waiting");
 
     if (s->hud_status[0]) ov->text(s->hud_status);
 

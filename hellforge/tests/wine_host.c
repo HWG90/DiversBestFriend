@@ -1384,6 +1384,25 @@ static void check_hud_handoff(HMODULE dll, const SynStratagem* st)
     entry_tick();
     CHECK(acquire(&first) && !acquire(&second) && native_chosen(-1), "only the claimant owns the restored HUD");
     CHECK(terminal(&first) && !terminal(&second) && !terminal(NULL), "terminal gate requires the exact granted token");
+    void* (*alloc_widget)(const void*, unsigned) = (void*)need(dll, "dbf_hud_widget_alloc");
+    void (*drop_widget)(void*) = (void*)need(dll, "dbf_hud_widget_drop");
+    if (!alloc_widget || !drop_widget) return;
+    CHECK(!alloc_widget(&second, 512), "widget storage requires the granted token");
+    void* blocks[64] = {0};
+    unsigned count = 0;
+    while (count < 64 && (blocks[count] = alloc_widget(&first, 512))) ++count;
+    CHECK(count == 64 && !alloc_widget(&first, 512), "widget allocation is bounded");
+    if (count) {
+        uintptr_t root = ((uintptr_t)blocks[0] + 31) & ~(uintptr_t)15;
+        void** parent = (void**)(root + 0xf0);
+        *parent = blocks[0];
+        drop_widget(blocks[0]);
+        CHECK(!alloc_widget(&first, 512), "VM collection preserves a linked native widget");
+        *parent = NULL;
+        blocks[0] = alloc_widget(&first, 512);
+        CHECK(blocks[0] != NULL, "detaching the widget permits reuse");
+        for (unsigned i = 0; i < count; ++i) drop_widget(blocks[i]);
+    }
     uintptr_t obstruction = syn_ui() + DBF_OFF_UI_OBSTRUCTION_OFFSET + DBF_OFF_UI_OBSTRUCTION_WORD_OFFSET;
     CHECK(syn_poke_u32(obstruction, 1), "set selector obstruction");
     entry_tick();

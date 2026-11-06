@@ -12,6 +12,8 @@ typedef struct HudBridgePort {
     void (*log)(const char*);
 } HudBridgePort;
 void hud_bridge_init(uintptr_t base, size_t size, const HudBridgePort* port);
+void hud_bridge_vm_context(const void* registry);
+void hud_bridge_vm_lost(const void* registry);
 bool hud_bridge_requested(void);
 void hud_bridge_publish(const GameView* view, const DbfSettings* settings, int buttons,
                         bool terminal_allowed, bool verified, bool can_grant);

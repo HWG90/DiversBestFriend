@@ -493,7 +493,7 @@ local function cooldown_dock(b,scope,input)
         end
         scope.context_scope(s.dock_parent,function(resource)
             if not address then
-                storage=ffi.new('uint8_t[?]',0x15150)
+                storage=b.alloc_widget(0x15150)
                 address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
                 identity,parent=s.identity,s.dock_parent
                 init(address,1);b.set(address,'size',{0,0});b.set(address,'anchor',{0.5,0})

@@ -58,11 +58,12 @@
 #include "editor_shell.h"
 #include "dbf_mcm.h"
 #include "hud_bridge.h"
+#include "dbf_vm_win.h"
 #include "settings_editor.h"
 #include "hud_prefs.h"
 #include "migration.h"
 
-#define DBF_VERSION "R50-hellforge.9"
+#define DBF_VERSION "R50-hellforge.10"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
 #define DBF_TITLE "Diver's Best Friend"
@@ -675,6 +676,7 @@ static void apply_settings(void)
 static void Tick(HfMod* mod, float dt, void* user)
 {
     static DbfSnapshot s; /* the game thread's only: snap_publish copies it */
+    dbf_vm_tick(g_hf, g_mod);
     apply_settings();
     dbf_mcm_tick(&g_settings, persist_settings, NULL);
     uint64_t now = GetTickCount64();
