@@ -67,6 +67,7 @@ scope.input_backend=function() return {
     begin_release=function() started=started+1;return {code={1,2}} end,
     hold_release=noop,end_release=noop,
 } end
+scope.blur_probe=object
 scope.duplicate_cards=object
 scope.expanded_wheel=object
 local row_missing=false
@@ -245,3 +246,23 @@ mode_for_blur=3;tick(routes,200);assert(routes:ready() and calls==1)
 assert(blur_logs[#blur_logs]=='fixture blur stage','factory diagnostics reach the bridge')
 assert(routes:shutdown())
 dofile('hellforge/tests/wheel_blur.lua')
+
+-- A persistent diagnostic command cannot re-show after manager disable.
+local prior_options=bridge.dbf_hud_option
+local enabled,probe_visible,probe_steps=true,false,0
+bridge.dbf_hud_option=function(key)
+    if key=='enabled' then return enabled and 1 or 0 end
+    return prior_options(key)
+end
+scope.blur_probe=function() return {
+    step=function() probe_visible=true;probe_steps=probe_steps+1 end,
+    hide=function() probe_visible=false end,
+} end
+mode_for_blur=2;snapshot.open=false
+local diagnostic=scope.dbf_hud_runtime(bridge)
+tick(diagnostic,300);tick(diagnostic,300);assert(probe_visible)
+enabled=false
+local steps=probe_steps
+for i=1,4 do tick(diagnostic,300);assert(not probe_visible and probe_steps==steps) end
+assert(diagnostic:shutdown() and not token and not probe_visible)
+print('Diagnostic probe remains hidden across repeated disabled polls and shutdown')

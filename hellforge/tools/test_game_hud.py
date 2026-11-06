@@ -11,7 +11,7 @@ TESTS = HF / "tests"
 
 class GameHud(unittest.TestCase):
     def test_engine_controllers(self):
-        for script in ("test_hud_runtime", "test_hud_wheel_input", "binding_warning",
+        for script in ("test_hud_runtime", "test_hud_wheel_input", "binding_warning", "blur_probe",
                        "cooldown_hud", "offline_terminal"):
             with self.subTest(controller=script):
                 subprocess.run(["luajit", TESTS / (script + ".lua")], cwd=HF.parent, check=True)

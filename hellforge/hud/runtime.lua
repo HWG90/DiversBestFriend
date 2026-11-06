@@ -108,6 +108,7 @@ local function dbf_hud_runtime(bridge)
         r.dock=cooldown_dock(r.b,r.dupes,r.input)
         r.notices=cooldown_closed_notices(r.b)
         r.warning=binding_warning(bridge)
+        r.probe=r.probe or blur_probe(bridge)
         r.initialized=true
         report('engine HUD owner ready')
     end
@@ -138,6 +139,7 @@ local function dbf_hud_runtime(bridge)
             clean('list','restore')
             clean('hidden','restore')
         end
+        clean('probe','hide')
         clean('blur','hide')
         clean('wheel','hide')
         clean('expanded','hide')
@@ -496,6 +498,8 @@ local function dbf_hud_runtime(bridge)
                 self.owned=true
                 initialize()
             end
+            if bridge.dbf_hud_option('enabled')~=0 then r.probe.step(self.b.milliseconds())
+            else r.probe.hide() end
             frame(math.max(0.001,math.min(tonumber(dt) or 1/60,0.05)))
         end)
         if not ok then

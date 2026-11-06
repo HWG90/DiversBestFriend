@@ -41,7 +41,7 @@ def factories():
         yield body
     style = (HUD / "hd2_ui_style.lua").read_text(encoding="utf-8")
     yield "local kit = (function()\n" + style + "\nend)()\nreturn {style=kit, cooldown_tokens=kit.tokens}"
-    for name in (*WHEEL, "cooldown_gui", "binding_warning", "cooldown_dock", "weapon_reader", "weapon_strip",
+    for name in (*WHEEL, "cooldown_gui", "blur_probe", "binding_warning", "cooldown_dock", "weapon_reader", "weapon_strip",
                  "terminal_guards", "terminal", "runtime"):
         yield (HUD / (name + ".lua")).read_text(encoding="utf-8")
 
