@@ -231,17 +231,29 @@ end
 -- radii ~118..256 and a 45-degree arc. Inset the mesh inside its alpha
 -- edge. Six chords keep the inner chords outside the transparent hub.
 -- The expanded sprite first squeezes the tangential axis, then rotates.
-local function wheel_blur()
+local function wheel_blur(log)
     local lease,signature
     local probe_world,material,probe_after
     local unavailable_until={}
+    -- Independent stage values survive mesh rebuilds: moving geometry must not
+    -- produce a fresh sequence of diagnostics every frame.
+    local stages={}
+    local function stage(name,value)
+        if stages[name]==value then return end
+        stages[name]=value
+        if log then log('Wheel blur '..name..': '..tostring(value)) end
+    end
     -- Stock archive 007e093ca718ca1a, resource IDs 2391483ABBDA5A58
     -- and 3C6484761C78B9A0. Neither material exposes a wedge mask.
     local materials={'content/ui/shared/material/gui_blur','content/ui/shared/material/blur_background'}
     local self={}
-    function self.hide()
+    local function clear()
         if lease then lease.release();lease=nil end
         signature=nil
+    end
+    function self.hide()
+        clear()
+        if stages.activation then stage('activation','inactive') end
     end
     local function reject_material(now)
         unavailable_until[material]=now+5000
@@ -249,14 +261,25 @@ local function wheel_blur()
         self.hide()
     end
     function self.draw(source,count,expanded,alpha,now)
-        if not source.list_geometry or count<=0 or alpha<=0 then self.hide();return end
+        if not source or not source.list_geometry or count<=0 or alpha<=0 then
+            stage('source','skipped: missing geometry, empty rows or zero opacity')
+            self.hide();return
+        end
+        stage('source','ready')
         local sr=rawget(_G,'stingray')
-        if not sr or not sr.Gui.triangle or not sr.Gui.destroy_triangle or not sr.Gui.material then self.hide();return end
+        local missing
+        for _,name in ipairs({'triangle','destroy_triangle','material'}) do
+            if not sr or not sr.Gui or not sr.Gui[name] then missing='Gui.'..name;break end
+        end
+        stage('api',missing and ('invalid: '..missing) or 'ready')
+        if missing then self.hide();return end
         local app=sr.Application
         local world=app.main_world()
+        local main_world=world
         for _,candidate in pairs(app.worlds() or {}) do
             if candidate~=world then world=candidate;break end
         end
+        stage('world',world and (tostring(world)..(world==main_world and ' (main)' or ' (non-main)')) or 'unavailable')
         if not world then self.hide();return end
         if lease and (lease.world~=world or not lease.valid()) then self.hide() end
         if world~=probe_world or not material and now>=probe_after then
@@ -268,9 +291,12 @@ local function wheel_blur()
                 end
             end
         end
+        stage('material',material and ('selected: '..material) or 'unavailable (retry in 5s)')
         if not material then return end
         local width,height=sr.Gui.resolution()
-        if not width or not height or width<=0 or height<=0 then self.hide();return end
+        local resolution_valid=width and height and width>0 and height>0
+        stage('resolution',resolution_valid and (tostring(width)..'x'..tostring(height)) or 'invalid')
+        if not resolution_valid then self.hide();return end
         local sectors=expanded and math.max(8,count) or 8
         local scale,offset=radial.wheel_scale or 1,radial.vertical_offset or 0
         local list,center=source.list_geometry,source.center
@@ -281,7 +307,7 @@ local function wheel_blur()
         local key=table.concat(plane,',')..':'..table.concat({origin_x,origin_y,width,height,sectors,expanded and count or 8,
             expanded and 1 or 0,scale,offset,alpha},',')
         if signature==key and lease then return end
-        self.hide()
+        clear()
         lease=cooldown_gui_pool(sr,'DBFWheelBlurGuiPool').acquire(world,{})
         local gui,G=lease.gui,lease.api
         local ink=style.tokens.colors.text
@@ -302,6 +328,7 @@ local function wheel_blur()
             local function triangle(a,b,d)
                 local ok,id=pcall(G.triangle,gui,a[1],b[1],d[1],0x225,tint,material,a[2],b[2],d[2])
                 if not ok or not id then
+                    stage('triangles','submission failed: '..material)
                     reject_material(now)
                     error(ok and 'Wheel blur triangle unavailable' or id)
                 end
@@ -317,13 +344,17 @@ local function wheel_blur()
                 inner,outer=next_inner,next_outer
             end
         end
+        stage('triangles','submitted: '..tostring(sectors*12)..' / '..material)
         -- Gui.material queries this GUI's assigned material after retained
         -- primitives exist. Never show a mesh whose blur binding failed.
         local bound,handle=pcall(G.material,gui,material)
         if not bound or not handle then
+            stage('binding','failed: '..material)
             reject_material(now);return
         end
+        stage('binding','bound: '..material)
         lease.show();signature=key
+        stage('activation','active (submission only; visual blur unverified)')
     end
     return self
 end

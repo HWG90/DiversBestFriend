@@ -222,7 +222,11 @@ bridge.dbf_hud_option=function(key)
     return old_get(key)
 end
 local calls=0
-scope.wheel_blur=function()
+local blur_logs={}
+bridge.dbf_hud_log=function(message) blur_logs[#blur_logs+1]=message end
+scope.wheel_blur=function(log)
+    assert(type(log)=='function')
+    log('fixture blur stage')
     local b=object()
     b.draw=function(source,_,expanded,alpha)
         assert(source==snapshot and not expanded and alpha==0.41)
@@ -232,7 +236,12 @@ scope.wheel_blur=function()
 end
 local routes=scope.dbf_hud_runtime(bridge)
 tick(routes,200);assert(routes:ready() and not routes.blur)
+assert(blur_logs[#blur_logs]=='Wheel blur route: skipped source: List view')
+local log_count=#blur_logs
+tick(routes,200);assert(#blur_logs==log_count,'unchanged route must stay quiet')
 mode_for_blur=1;tick(routes,200);assert(routes:ready() and not routes.blur)
+assert(blur_logs[#blur_logs]=='Wheel blur route: skipped source: Cards layout (copied rows)')
 mode_for_blur=3;tick(routes,200);assert(routes:ready() and calls==1)
+assert(blur_logs[#blur_logs]=='fixture blur stage','factory diagnostics reach the bridge')
 assert(routes:shutdown())
 dofile('hellforge/tests/wheel_blur.lua')

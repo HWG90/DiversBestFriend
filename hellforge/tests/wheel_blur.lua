@@ -111,3 +111,49 @@ available=fallback
 draw(8,false,1,5201);assert(visible and probes==before+2,'alternate material after GUI binding failure')
 blur.hide()
 print('Retained textured wedge blur, material fallback, transformed clipping, opacity and teardown passed')
+
+-- Stage diagnostics must remain quiet across retained and rebuilt geometry.
+local logs={}
+blur=scope.wheel_blur(function(message) logs[#logs+1]=message end)
+local function contains(fragment)
+    for _,message in ipairs(logs) do
+        if message:find(fragment,1,true) then return true end
+    end
+    return false
+end
+available=fallback;reject=nil;fail_at=nil
+local triangle_api=sr.Gui.triangle
+sr.Gui.triangle=nil
+draw(8,true,0.5,10000)
+assert(contains('api: invalid: Gui.triangle'))
+local n=#logs
+draw(8,true,0.5,10001);assert(#logs==n,'invalid API gate logs once')
+sr.Gui.triangle=triangle_api
+available=nil
+draw(8,true,0.5,10002)
+assert(contains('material: unavailable'))
+n=#logs
+draw(8,true,0.5,10003);draw(8,true,0.5,15003)
+assert(#logs==n,'negative material retries must not repeat diagnostics')
+available=fallback
+draw(8,true,0.5,20003)
+for _,fragment in ipairs({'api: ready','world:','material: selected:',
+    'triangles: submitted: 96','binding: bound:','activation: active'}) do
+    assert(contains(fragment),fragment)
+end
+n=#logs
+draw(8,true,0.5,20004)
+plane[5]=plane[5]+1
+draw(8,true,0.5,20005)
+assert(#logs==n,'retention and moving geometry must not repeat stage logs')
+blur.hide();assert(#logs==n+1 and contains('activation: inactive'))
+blur.hide();assert(#logs==n+1,'repeated cleanup must be quiet')
+draw(8,true,0.5,20006);assert(#logs==n+2,'reopening logs activation only')
+blur.hide();world={};reject=fallback
+draw(8,true,0.5,20007)
+assert(contains('binding: failed:') and not visible and next(triangles)==nil)
+reject=nil
+draw(8,true,0.5,25008)
+assert(visible,'binding rejection retains delayed recovery')
+blur.hide()
+print('Blur stage diagnostics deduplicate gates, retries and moving geometry; binding recovery passes')

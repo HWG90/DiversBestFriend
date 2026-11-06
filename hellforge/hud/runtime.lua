@@ -80,6 +80,12 @@ local transient={
 
 local function dbf_hud_runtime(bridge)
     local r={status='waiting for companion',token=ffi.new('uint8_t[1]'),attempts=0}
+    local function blur_route(reason)
+        if r.blur_route~=reason then
+            r.blur_route=reason
+            bridge.dbf_hud_log('Wheel blur route: '..reason)
+        end
+    end
     local function report(message)
         if r.status~=message then
             r.status=message
@@ -302,6 +308,7 @@ local function dbf_hud_runtime(bridge)
         end
         local surface,missing=surface_ready(mode,s.experimental_layout,now)
         if not surface then
+            blur_route('skipped source: waiting for HUD witness')
             if r.blur then r.blur.hide() end
             report('Waiting for HUD witness: '..missing);return
         end
@@ -405,10 +412,14 @@ local function dbf_hud_runtime(bridge)
             for _,row in ipairs(snapshot.rows) do if row.address==address then timer=row end end
             r.wheel.timer(timer)
         end
+        blur_route(blur_source and (mode==1 and 'expanded wedges' or 'native wheel')
+            or (mode==2 and 'skipped source: List view'
+            or copied and 'skipped source: Cards layout (copied rows)'
+            or 'skipped source: closed, hidden or unprepared wheel'))
         if not blur_source then
             if r.blur then r.blur.hide() end
         elseif now>=(r.blur_retry or 0) then
-            r.blur=r.blur or wheel_blur()
+            r.blur=r.blur or wheel_blur(function(message) bridge.dbf_hud_log(message) end)
             local expanded=mode==1
             local ok,why=pcall(r.blur.draw,blur_source,#snapshot.rows,expanded,
                 expanded and s.wedge_opacity/100 or s.native_opacity/100,now)
