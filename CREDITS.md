@@ -4,7 +4,7 @@
 
 **[CowboyBingus](https://github.com/CowboyBingus) deserves the foundation credit.** Their loader, native settings/bindings infrastructure, public interfaces, documentation, and wider HELLDIVERS 2 modding work made this project practical.
 
-Required, separately installed dependencies:
+The original Bingus edition uses the following separately installed dependencies. For the HellForge edition, follow the installation guide included in its bundle.
 
 - **[Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader)** — addon discovery/loading, coexistence in the game's LuaJIT runtime, and shared logging. Use v18 / API 1 for the documented build.
 - **[Mod Bindings Menu](https://github.com/CowboyBingus/ModBindingsMenu/releases/tag/v2.0)** — native bindings, automatic action allocation, and activation state for Next/Previous/Confirm. This addon needs v2.0, not the older two-slot v1 release.

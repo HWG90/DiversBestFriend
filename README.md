@@ -6,11 +6,19 @@
 
 *Automated Stratagem System*
 
+## HellForge edition
+
+For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Extract it, import the two inner ZIPs in HellForge, and enable **NEST** and **Diver’s Best Friend**. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md)
+
+DBF draws its wheel, cooldowns and weapon strip on the game HUD. NEST (Native Extension and Settings Toolkit) provides the settings window, shared hotkeys and input handling. Other HellForge mods can register panels with the same installed framework.
+
+## Original Lua releases
+
 Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
 [Homecoming release notes](docs/RELEASE-r46.md) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
-## Current release: R46 — The Homecoming Update
+### R46 — The Homecoming Update
 
 Cooldown dock and compact overview, native game-font timers, Wedge Wheel customization, four unbound gameplay hotkeys, and optional randomized input pacing. Existing saved preferences and bindings are retained.
 
@@ -35,7 +43,7 @@ Radial layouts retain the original stratagem list at the top left. Mouse/stick p
 
 The mod enters the selected code through the normal game input path. Availability restrictions still apply, and you throw the beacon yourself.
 
-## Requirements
+## Requirements for the original Bingus edition
 
 This project would not exist without **[CowboyBingus](https://github.com/CowboyBingus)** and their shared modding infrastructure.
 
@@ -53,7 +61,7 @@ Install dependencies separately; they are not bundled. The original external Str
 
 [LLL R30+](https://github.com/HWG90/LLL/releases) can load the dedicated R45 loose package. Extract `DiversBestFriend-R45-LLL.zip` into LLL's Mods directory and remove the previous ASS archive provider. Keep Mod Bindings Menu and Mod Options Menu available through LLL's shared-addon route. Use one winning startup loader. ASS remains restart-only; installing a loose package does not make its native UI owners safe to hot-reload. See [installation](docs/INSTALLATION.md).
 
-## Quick start
+## Bingus quick start
 
 1. Close the game and install the three dependencies above.
 2. Import the release ZIP into Arsenal, enable it, and deploy. Follow Shared Loader's installation and priority instructions.
