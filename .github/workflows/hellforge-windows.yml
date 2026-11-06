@@ -20,10 +20,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/windows-smoke
+          python -I tools/hud_pack.py header build/generated/dbf_hud_payload.h
           cd build/windows-smoke
           src=../../divers-best-friend/src
           tests=../../tests
-          includes=(-I../../sdk -I"$src" -I"$tests")
+          includes=(-I../generated -I../../sdk -I"$src" -I"$tests")
           gcc -std=c11 -O2 -shared "${includes[@]}" "$src"/*.c -o divers_best_friend.dll
           gcc -std=c11 -O1 "${includes[@]}" "$tests/wine_host.c" "$tests/synthetic.c" -o host.exe
           gcc -std=c11 -O1 -shared -DSTUB_API=5 "${includes[@]}" "$tests/wine_overlay_stub.c" "$tests/fake_ov.c" -o goose_overlay.dll
