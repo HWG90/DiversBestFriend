@@ -59,7 +59,7 @@ component(driver,0x28,wid,weapon); array(driver+0x50)
 component(control,0x30,wid,weapon); word(control+0x20,1)
 local modes, configs=array(control+0x60),array(control+0x58)
 word(modes,2); word(modes+4,0x50)
-for i,kind in ipairs({3,2,11,1}) do word(configs+0x34c+i*4,kind) end
+for i,kind in ipairs({3,2,8,1}) do word(configs+0x34c+i*4,kind) end
 map(control+0x70,wid,0)
 local definitions=array(control+0xb0)
 word(definitions+0x90,1); word(definitions+0x94,2)
@@ -67,11 +67,44 @@ float(definitions+0x154,25);float(definitions+0x158,50);float(definitions+0x15c,
 word(rpm+0x38,1);ptr(array(rpm+0x68),weapon)
 local rates=array(rpm+0x70);word(rates+0x1c,2)
 float(rates+0x10,450);float(rates+0x14,600);float(rates+0x18,900)
+-- Native kind 8 resolves the selected projectile through the RPM definition.
+map(rpm+0x50,wid,0)
+map(rpm+0x90,wid,0)
+local projectile_definition=array(rpm+0xd0)
+word(projectile_definition,115);word(projectile_definition+0x240,224)
+local function asset(at,hex)
+    word(at,tonumber(hex:sub(9),16));word(at+4,tonumber(hex:sub(1,8),16))
+end
+local aphet,flak='9dcc0312a14e11e6','f8ede5f922c05cb6'
+local projectile_a,projectile_b=allocate(),allocate()
+ptr(base+0x37c7670+115*8,projectile_a);asset(projectile_a+0x10,aphet)
+ptr(base+0x37c7670+224*8,projectile_b);asset(projectile_b+0x10,flak)
+local function static_definition(offset,n,stride)
+    local p=array(owner+offset)
+    local lo,hi=0x6f0b5c5f,0xa8cffb31
+    local home=((hi%n)*(2^32%n)+lo%n)%n
+    word(p+home*16,lo);word(p+home*16+4,hi);word(p+home*16+8,0)
+    return p+n*16
+end
+local static_projectile=static_definition(0xf12e80,542,0x268)
+word(static_projectile,115);word(static_projectile+0x240,224)
+local native_definitions={
+    [9]=static_definition(0xf12cd8,22,0xc0),
+    [10]=static_definition(0xf12cd0,18,0x58),
+    [11]=static_definition(0xf12bd8,730,0x4d0),
+    [12]=static_definition(0xf12c88,10,0x2f0),
+}
+for kind,p in pairs(native_definitions) do
+    local offsets=({[9]={0x80,0x90},[10]={0x18,0x40},[11]={0xa0,0xa8},[12]={0x158,0x2d0}})[kind]
+    asset(p+offsets[1],aphet);asset(p+offsets[2],flak)
+end
+local read_hook
 local guards,accept=0,true
 local bridge={
     dbf_hud_base=function() return base end,
     dbf_hud_guard=function() guards=guards+1;return accept and 1 or 0 end,
     dbf_hud_read=function(at, buffer, size)
+        if read_hook then read_hook(tonumber(at),size) end
         assert(size<=4096)
         for i=0,size-1 do buffer[i]=bytes[at+i] or 0 end
         return 1
@@ -81,13 +114,122 @@ local make_reader = dofile(hud..'/weapon_reader.lua').weapon_reader
 local icons = dofile(hud..'/weapon_strip.lua').weapon_strip_icons
 local reader=make_reader({base=base},bridge)
 local first=assert(reader.poll(),reader.status)
-assert(guards>20 and first.fire_mode=='SEMI' and first.ammo_mode=='APHET')
+assert(guards>20 and first.fire_mode=='SEMI' and first.ammo_options[1].asset==aphet and first.ammo_options[1].kind==8)
 local row=icons(first)
 assert(#row==4 and row[1].asset=='3efff09cd12fb89a' and row[2].value==900)
 assert(row[3].asset=='9dcc0312a14e11e6' and row[4].value==50)
 word(modes+4,0x54);word(configs+0x350,0)
 local switched=icons(assert(reader.poll(),reader.status))
 assert(#switched==3 and switched[1].role=='rpm' and switched[2].asset=='f8ede5f922c05cb6')
+-- Unknown weapon resources use the same native paths: no resource whitelist.
+-- Both choices of every target programmable kind, with unrelated control bits.
+local shifts={[8]=2,[9]=6,[10]=8,[11]=10,[12]=14}
+for kind=8,12 do
+    word(configs+0x358,kind)
+    for selected=0,1 do
+        word(modes+4,0x1000+0x20+selected*2^shifts[kind])
+        local model=assert(reader.poll(),reader.status)
+        assert(not model.ammo_error,model.ammo_error)
+        assert(model.ammo_options[1].kind==kind and model.ammo_options[1].index==selected)
+        assert(model.ammo_options[1].asset==(selected==0 and aphet or flak))
+    end
+    word(modes+4,2*2^shifts[kind])
+    local refused=assert(reader.poll(),reader.status)
+    assert(#refused.ammo_options==0 and refused.ammo_error:find('outside native choices',1,true))
+    assert(icons(refused)[1].role=='rpm','invalid optional metadata preserves other axes')
+end
+word(configs+0x358,8);word(modes+4,0x50)
+-- Static projectile fallback, zero/out-of-range catalog IDs, missing texture.
+word(rpm+0x98,0)
+assert(assert(reader.poll()).ammo_options[1].asset==aphet)
+word(rpm+0x98,1)
+word(projectile_definition,0)
+asset(base+0x37c7560+0x10,flak)
+assert(assert(reader.poll()).ammo_options[1].asset==flak)
+word(projectile_definition,0x15f)
+assert(#assert(reader.poll()).ammo_options==0)
+word(projectile_definition,115);asset(projectile_a+0x10,'0000000000000000')
+assert(#assert(reader.poll()).ammo_options==0)
+asset(projectile_a+0x10,aphet)
+-- Mutation of the selected mode on the same weapon must refuse stale output.
+read_hook=function(at)
+    if at==projectile_a+0x10 then word(modes+4,0x54) end
+end
+assert(reader.poll()==nil and reader.status:find('programmable selection changed',1,true))
+read_hook=nil;word(modes+4,0x50)
+-- Component identity changes while catalog data is read must refuse the glyph.
+read_hook=function(at)
+    if at==projectile_a+0x10 then word(rpm+0x58,0) end
+end
+local changed=assert(reader.poll())
+assert(#changed.ammo_options==0 and changed.ammo_error:find('component changed',1,true))
+read_hook=nil;word(rpm+0x58,1)
+assert(assert(reader.poll()).ammo_options[1].asset==aphet)
+-- Later RPM reads cannot race a component relocation unnoticed.
+read_hook=function(at)
+    if at==rates then word(rpm+0x58,0) end
+end
+assert(reader.poll()==nil and reader.status:find('programmable projectile component missing',1,true))
+read_hook=nil;word(rpm+0x58,1)
+read_hook=function(at)
+    if at==projectile_a+0x10 then word(control+0x38,0) end
+end
+assert(reader.poll()==nil and reader.status:find('control component changed',1,true))
+read_hook=nil;word(control+0x38,1)
+-- Four native axes can all be programmable; duplicate kinds remain one glyph.
+for i,kind in ipairs({9,10,11,12}) do word(configs+0x34c+i*4,kind) end
+word(modes+4,0)
+local all=assert(reader.poll(),reader.status)
+assert(#icons(all)==4 and not all.ammo_error)
+word(configs+0x350,10)
+assert(#icons(assert(reader.poll()))==3)
+for i,kind in ipairs({0,2,8,1}) do word(configs+0x34c+i*4,kind) end
+word(modes+4,0x50)
+-- P2: moving the override row after reading its old icon must not publish it.
+local function raced(action)
+    read_hook=function(at) if at==projectile_a+0x10 then read_hook=nil;action() end end
+    assert(reader.poll()==nil and reader.status:find('programmable source changed',1,true),reader.status)
+    read_hook=nil
+end
+word(projectile_definition+0x268,224)
+raced(function() map(rpm+0x90,wid,1) end)
+assert(assert(reader.poll()).ammo_options[1].asset==flak)
+map(rpm+0x90,wid,0)
+local relocated=allocate();word(relocated,224)
+raced(function() ptr(rpm+0xd0,relocated) end)
+ptr(rpm+0xd0,projectile_definition)
+raced(function() word(projectile_definition,224) end)
+word(projectile_definition,115)
+word(rpm+0x98,0)
+raced(function() map(rpm+0x90,wid,1) end)
+map(rpm+0x90,wid,0)
+-- Kind 4 is the separate rounds-component projectile selector (not packed bits).
+local rounds=global(0x3326cf0)
+component(rounds,0x28,wid,weapon)
+local round_state=array(rounds+0x58)
+map(rounds+0x68,wid,0)
+local round_definition=array(rounds+0xa8)
+word(round_definition+0x40,115);word(round_definition+0x44,224)
+local round_static=static_definition(0xf12820,50,0x88)
+word(round_static+0x40,115);word(round_static+0x44,224)
+word(configs+0x358,4)
+for selected=0,1 do
+    word(round_state+4,selected)
+    local item=assert(reader.poll()).ammo_options[1]
+    assert(item.kind==4 and item.index==selected and item.asset==(selected==0 and aphet or flak))
+end
+word(round_state+4,0)
+word(rounds+0x70,0)
+assert(assert(reader.poll()).ammo_options[1].asset==aphet)
+word(rounds+0x70,1)
+raced(function() word(round_state+4,1) end)
+word(round_state+4,2)
+assert(#assert(reader.poll()).ammo_options==0)
+word(configs+0x358,8)
+-- The resource bytes only select definition records, never hard-coded names.
+word(weapon,0x12345678);word(weapon+4,0xabcdef12)
+assert(assert(reader.poll()).ammo_options[1].asset==aphet)
+word(weapon,0x6f0b5c5f);word(weapon+4,0xa8cffb31)
 word(weapon+8,77)
 assert(reader.poll()==nil and reader.status:find('entity identity',1,true))
 accept=false

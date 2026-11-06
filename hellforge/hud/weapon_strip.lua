@@ -1,13 +1,12 @@
 local M={}
 local fire={SEMI='3efff09cd12fb89a',AUTO='6115051c9558c50e',BURST='131742904d846798',VOLLEY='16413ee2e6725687'}
-local ammo={FLAK='f8ede5f922c05cb6',APHET='9dcc0312a14e11e6'}
 local rpm={'52bbfc5a70359393','c7546fc9c7b6db4e','f03c671b15d01a6b'}
 local zoom={'6be28cced767bb52','46271d0b4ce4136c','a2ab43e85546f79a'}
 -- Icon texture IDs as uint64 cdata, built once from the hex names above.
 local asset_ids={}
 do
  local ffi=require('ffi')
- for _,group in ipairs({fire,ammo,rpm,zoom})do
+ for _,group in ipairs({fire,rpm,zoom})do
   for _,hex in pairs(group)do
    asset_ids[hex]=ffi.new('uint64_t',tonumber(hex:sub(1,8),16))*4294967296ULL+tonumber(hex:sub(9),16)
   end
@@ -22,7 +21,13 @@ function M.icons(model)
  if controls.rpm==true and model.rpm and type(index)=='number'and index%1==0 and index>=0 and index<=2 then
   result[#result+1]={role='rpm',asset=rpm[index+1],value=model.rpm}
  end
- if controls.ammo_mode==true and ammo[model.ammo_mode]then result[#result+1]={role='ammo_mode',asset=ammo[model.ammo_mode],value=model.ammo_mode}end
+ if controls.ammo_mode==true then
+  for _,item in ipairs(model.ammo_options or {})do
+   if type(item.asset)=='string' and #item.asset==16 and item.asset:match('^[0-9a-f]+$') and item.asset~='0000000000000000' then
+    result[#result+1]={role='ammo_mode',asset=item.asset,value=item.index,kind=item.kind}
+   end
+  end
+ end
  local zi=model.zoom_index
  if controls.zoom==true and model.zoom and type(zi)=='number'and zi%1==0 and zi>=0 and zi<=2 then
   result[#result+1]={role='zoom',asset=zoom[zi+1],value=model.zoom}
@@ -146,7 +151,10 @@ local function new_renderer(b,scope)
     local item=icons[i]
     if item then
      if assets[i]~=item.asset then
-      texture(p,0x3aa8b87e,asset_ids[item.asset]);uv(p,uv_min,uv_max);assets[i]=item.asset
+      -- Definition-provided textures use the same native RGB-mask material,
+      -- tint, UV crop and layout as the fixed fire/RPM/zoom glyphs.
+      local id=asset_ids[item.asset] or (ffi.new('uint64_t',tonumber(item.asset:sub(1,8),16))*4294967296ULL+tonumber(item.asset:sub(9),16))
+      texture(p,0x3aa8b87e,id);uv(p,uv_min,uv_max);assets[i]=item.asset
      end
      if resized then
       b.set(p,'size',{edge,edge});b.set(p,'position',{4+(i-1)*(edge+spacing),(height-edge)/2})

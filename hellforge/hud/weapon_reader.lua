@@ -4,6 +4,41 @@ local Layout = {
     selector=0x3326420, entity_map=0xf1aeb0, unit_map=0xf22ec8, records=0xf32f18,
 }
 local witnesses = {
+    {0x755d50, "488b1d990fbd02"},
+    {0x755dff, "488b4358488d14898b449004e92d010000"},
+    {0x759f4c, "83fe020f8338fdffff4c8b0594cdbc02"},
+    {0x759fb7, "498b4840488b0cc1e85c3ddaff85f6750e8b4040498904248bc6e9bcfcffff8b4044498904248bc6e9aefcffff"},
+    {0x4fdd42, "4c8b1da78fe202"},
+    {0x4fdd5b, "458b4b70418b5b78"},
+    {0x4fdd74, "498b7b68418b7374"},
+    {0x4fddc2, "4869c088000000490383a8000000"},
+    {0x4fd8ef, "4c8b902028f10048b815ae47e17a14ae4748f7e1488bc1482bc248d1e84803c248c1e8056bc032442bc045"},
+    {0x4fd95c, "4869c1880000004805200300004903c2c3"},
+    -- Programmable option selectors and native definition-driven icon paths.
+    {0x755f58, "695c75007d5c7500405d7500505d7500105e7500775e7500ea5e7500f85e7500095f75001a5f7500d95e75002b5f7500"},
+    {0x755ed9, "488b43604b8d0c498b448804c1e80aeb50488b43604b8d0c498b448804eb42488b43604b8d0c498b448804c1e802eb31488b43604b8d0c498b448804c1e806eb20488b43604b8d0c498b448804c1e808eb0f488b43604b8d0c498b448804c1e80e83e003"},
+    {0x75a4b4, "02a1750057a175008da275006ea3750038a2750001a27500aca175006ea375001da4750047a4750031a3750071a47500"},
+    {0x75a0a0, "009d7500b79d7500659d75004c9f7500419f7500389f7500839e7500e49f750086a0750086a0750086a0750086a07500"},
+    {0x759fe4, "83fe020f83a0fcffff4c8b05e4c6bc02"},
+    {0x75a057, "498b4868488b0cc1e89cb0dbff85f6750d8b00498904248bc6e91dfcffff8b8040020000498904248bc6e90cfcffff"},
+    {0x75a331, "488b8c2460010000e832f2daff85db7516488b80a0000000498903498bc34881c4300100005bc3488b80a8000000498903498bc34881c4300100005bc3"},
+    {0x75a36e, "488b842460010000483d5f0100000f831f01000085c07509488d05d3d10603eb0a8bc0488b84c170767c03"},
+    {0x75a409, "488b442430498903"},
+    {0x75a41d, "488b8c2460010000e8363fdbff488bc8488d43084803c0488b04c1498903498bc34881c4300100005bc3488b8c2460010000e86c3edbff8bcb83e101488d0c89488b44c818498903498bc34881c4300100005bc3488b8c2460010000e8a222dbff8bcb83e1014869c978010000488b840858010000498903498bc34881c4300100005bc3"},
+    {0x515122, "4c8b1daf15e102"},
+    {0x51513b, "458b8b98000000418b9ba0000000"},
+    {0x51515a, "498bbb90000000"},
+    {0x5151b2, "4869c068020000490383d0000000"},
+    {0x514c1f, "4c8b90802ef10048b8fb99d3e0ce8bd4f148f7e148c1ea0969c21e020000"},
+    {0x514c91, "4869c1680200004805e02100004903c2"},
+    {0x50e36f, "4c8b90d82cf10048b8a38b2ebae8a28b2e48f7e148c1ea026bc216442bc0"},
+    {0x50e3cc, "488d044948c1e0064805600100004903c2c3"},
+    {0x50e2cf, "4c8b90d02cf10048b88fe3388ee3388ee348f7e148c1ea048d04d203c044"},
+    {0x50e33c, "486bc1584805200100004903c2c3"},
+    {0x50c72f, "4c8b90882cf10048b8cdcccccccccccccc48f7e148c1ea038d049203c044"},
+    {0x50c79c, "4869c1f00200004805a00000004903c2c3"},
+    {0x50957f, "4c8b90d82bf10048b8379f711660f3196748f7e1488bc1482bc248d1e84803c248c1e80969c0da020000442bc045"},
+    {0x5095f1, "4869c1d00400004805a02d00004903c2c3"},
     {0x607200, "488b0561f2d10283b88400000000"},
     {0x6066ed, "8b9410a8030000"},
     {0xfd9c93, "4c8b15fe224902"},
@@ -129,6 +164,74 @@ local function weapon_reader(backend, bridge)
         local rec=r.read(owner+Layout.records+index*24,24)
         assert(r.u(rec,8)==id,'entity identity');return rec,owner+Layout.records+index*24
     end
+    -- Native definition maps: 16-byte hash slots followed by fixed-size rows.
+    -- Keys stay as eight bytes; no uint64 resource ID is rounded through a double.
+    local function definition(owner,rec,offset,n,stride)
+        local p=r.p(owner+offset);local key=rec:sub(1,8)
+        local home=((r.u(rec,4)%n)*(2^32%n)+r.u(rec,0)%n)%n
+        for probe=0,math.min(n,128)-1 do
+            local row=r.read(p+((home+probe)%n)*16,16)
+            if row:sub(1,8)==string.rep('\0',8) then return nil end
+            if row:sub(1,8)==key then
+                local i=r.u(row,8);assert(i<n and r.u(row,12)==0,'programmable definition index')
+                return r.read(p+n*16+i*stride,stride),p+n*16+i*stride
+            end
+        end
+        error('programmable definition probe limit')
+    end
+    local shifts={[8]=2,[9]=6,[10]=8,[11]=10,[12]=14}
+    local specs={ [9]={0xf12cd8,22,0xc0},[10]={0xf12cd0,18,0x58},
+        [11]={0xf12bd8,730,0x4d0},[12]={0xf12c88,10,0x2f0} }
+    local function programmable(kind,word,owner,id,rec,checks)
+        local selected=kind~=4 and math.floor(word/2^shifts[kind])%4 or nil
+        local data,offset,projectile,data_at,source
+        if kind==4 or kind==8 then
+            local rounds=kind==4
+            local global=rounds and 0x3326cf0 or 0x33266d8
+            local m=r.p(base+global)
+            local map,registry=rounds and 0x28 or 0x50,rounds and 0x40 or 0x68
+            local component_index=component(m,map,registry,id,rec)
+            assert(component_index,'programmable projectile component missing')
+            local selector_at
+            if rounds then
+                selector_at=r.p(m+0x58)+component_index*20+4
+                selected=r.u(r.read(selector_at,4),0)
+            end
+            assert(selected<2,'programmable selection outside native choices')
+            local index=r.map(m+(rounds and 0x68 or 0x90),id,65536)
+            local stride=rounds and 0x88 or 0x268
+            if index then
+                assert(index<4096,'programmable override index')
+                data_at=r.p(m+(rounds and 0xa8 or 0xd0))+index*stride
+                data=r.read(data_at,stride)
+            else
+                data,data_at=definition(owner,rec,rounds and 0xf12820 or 0xf12e80,rounds and 50 or 542,stride)
+            end
+            assert(data,'programmable projectile definition missing')
+            projectile=r.u(data,rounds and (0x40+selected*4) or (selected==0 and 0 or 0x240))
+            assert(projectile<0x15f,'programmable projectile out of range')
+            local at=projectile==0 and base+0x37c7560 or r.p(base+0x37c7670+projectile*8)
+            data=r.read(at+0x10,8);offset=0
+            assert(r.p(base+global)==m and component(m,map,registry,id,rec)==component_index,
+                'programmable projectile component changed')
+            source=table.concat({m,component_index,tostring(index),data_at,at,tostring(selector_at)},':')
+        else
+            assert(selected<2,'programmable selection outside native choices')
+            local spec=specs[kind]
+            data,data_at=definition(owner,rec,spec[1],spec[2],spec[3])
+            assert(data,'programmable icon definition missing')
+            offset=kind==9 and (0x80+selected*16) or kind==10 and (0x18+selected*40)
+                or kind==11 and (0xa0+selected*8) or (0x158+selected*0x178)
+            source=tostring(data_at)
+        end
+        local lo,hi=r.u(data,offset),r.u(data,offset+4)
+        assert(lo~=0 or hi~=0,'programmable icon missing')
+        local item={kind=kind,index=selected,projectile=projectile,asset=string.format('%08x%08x',hi,lo)}
+        -- Re-resolve the entire source before publication, including absent-to-
+        -- present overrides, moved arrays, changed projectile IDs/catalog entries.
+        if checks then checks[#checks+1]={kind=kind,word=word,item=item,source=source} end
+        return item,source
+    end
     local function config(m,id,rec,owner)
         local i=r.map(m+0x70,id,65536)
         if i then
@@ -239,6 +342,7 @@ local function weapon_reader(backend, bridge)
             avatar_id=aid,avatar_record=owner+Layout.records+ai*24,avatar_candidate=r.u(avatar,12),driver_state=driver_state}
 
         result.changeable={}
+        local ammo_checks={}
         local options_ok,options=pcall(function()
             local settings
             for _,offset in ipairs({0x3326ce0,0x33264c0}) do
@@ -253,7 +357,11 @@ local function weapon_reader(backend, bridge)
                 if kind>0 then kinds[kind]=true end
             end
             assert(r.read(main_address,24)==main_rec,'Weapon options entity changed')
-            return {fire_mode=kinds[3]==true,rpm=kinds[2]==true,ammo_mode=kinds[11]==true,zoom=kinds[1]==true}
+            local programmable_kinds={}
+            if kinds[4] then programmable_kinds[#programmable_kinds+1]=4 end
+            for kind=8,12 do if kinds[kind] then programmable_kinds[#programmable_kinds+1]=kind end end
+            return {fire_mode=kinds[3]==true,rpm=kinds[2]==true,ammo_mode=#programmable_kinds>0,
+                programmable_kinds=programmable_kinds,zoom=kinds[1]==true}
         end)
         if options_ok then result.changeable=options else result.options_error=tostring(options) end
         if not (result.changeable.fire_mode or result.changeable.rpm or result.changeable.ammo_mode or result.changeable.zoom)then self.status='ok';return result end
@@ -268,14 +376,18 @@ local function weapon_reader(backend, bridge)
                 local controls=r.read(r.p(manager+0x60)+index*12,12)
                 result.binding.ammo_controls=controls
                 assert(r.read(main_address,24)==main_rec,'ammo control weapon changed')
-                local selector=r.u(controls,4)
-                if math.floor(selector/0x1000)%2==1 then selector=selector-0x1000 end
                 local mode
-                if result.resource_hex=='a8cffb316f0b5c5f' then
-                    mode=({[0x50]='APHET',[0x54]='FLAK'})[selector]
-                elseif result.resource_hex=='26e40437ea275296' and selector==0x50 then
-                    mode='FLAK'
+                local ammo_options,errors={},{}
+                for _,kind in ipairs(result.changeable.programmable_kinds or {}) do
+                    local valid,item=pcall(programmable,kind,r.u(controls,4),owner,main_wid,main_rec,ammo_checks)
+                    if valid then ammo_options[#ammo_options+1]=item else errors[#errors+1]=tostring(item) end
                 end
+                -- A mid-read selection change must never publish a stale glyph.
+                assert(r.read(r.p(manager+0x60)+index*12,12)==controls,'programmable selection changed')
+                assert(r.p(base+0x3326ce0)==manager and component(manager,0x30,0x48,main_wid,main_rec)==index,
+                    'programmable control component changed')
+                result.ammo_options=ammo_options
+                if #errors>0 then result.ammo_error=table.concat(errors,'; ') end
                 local settings=config(manager,main_wid,main_rec,owner)
                 if result.changeable.zoom and settings then
                     local distinct={};local count=0
@@ -328,7 +440,22 @@ local function weapon_reader(backend, bridge)
             end)
             if ok and rpm then result.rpm=rpm;result.rpm_selectable=true elseif not ok then result.rpm_error=tostring(rpm) end
         end
-        if control_address then assert(r.u(r.read(control_address,4),0)==active_mode,'fire mode changed during snapshot') end
+        for _,check in ipairs(ammo_checks) do
+            local current,source=programmable(check.kind,check.word,owner,main_wid,main_rec)
+            assert(source==check.source and current.index==check.item.index and
+                current.projectile==check.item.projectile and current.asset==check.item.asset,
+                'programmable source changed during snapshot')
+        end
+        if control_address then
+            local manager=r.p(base+0x3326ce0)
+            local index=component(manager,0x30,0x48,main_wid,main_rec)
+            assert(index and r.p(manager+0x60)+index*12==control_address,'weapon control component changed')
+            local controls=r.read(control_address,12)
+            assert(r.u(controls,0)==active_mode,'fire mode changed during snapshot')
+            if result.binding.ammo_controls then
+                assert(controls==result.binding.ammo_controls,'programmable selection changed during snapshot')
+            end
+        end
         assert(r.read(main_address,24)==main_rec, 'weapon changed during snapshot')
         self.status='ok';return result
     end
