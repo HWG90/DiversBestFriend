@@ -1,6 +1,8 @@
 # DBF Reforged — R50 for HellForge
 
-The current release is **R50-hellforge.11**. This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF and NEST 0.8.2 or later. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
+The current release is **R50-hellforge.11**. This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the DBF ZIP directly in HellForge and enable DBF Reforged. NEST 0.8.2 is included for settings; an active compatible standalone NEST is reused. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
+
+If standalone NEST 0.8.1 is enabled, disable it and restart to use bundled 0.8.2, or update the standalone host. DBF displays a migration notice on the older host.
 
 Press **F7** to open the DBF menu directly. **Page Down** opens the NEST panel list. If a custom NEST configuration assigns F7 to that list, change its launcher shortcut to free F7 for DBF.
 

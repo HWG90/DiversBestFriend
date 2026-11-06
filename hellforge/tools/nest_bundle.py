@@ -1,14 +1,11 @@
-"""Pack DBF and NEST as separate importable mods. Stage both before publishing the bundle.
+"""Verify the single directly importable DBF release with its bundled NEST host.
 
-From hellforge/, run ./build.sh package, then:
-python3 tools/nest_bundle.py --dbf <DBF-release.zip> --nest <NEST-release.zip> --install <HellForge-installation>
+Legacy --dbf/--nest invocation remains supported, but produces no wrapper ZIP.
 """
 import argparse
 import hashlib
-from io import BytesIO
-import json
 from pathlib import Path
-import re
+import json
 import shutil
 import subprocess
 import tempfile
@@ -19,27 +16,9 @@ import hud_pack
 DBF = "goose.divers-best-friend"
 NEST = "goose.overlay-host"
 DLL = {DBF: "divers_best_friend.dll", NEST: "goose_overlay.dll"}
-HOST_FILES = {"hellforge-mod.json", DLL[NEST], "imgui-LICENSE.txt", "goose_overlay.h"}
-GUIDE = "INSTALL.md"
 
 
-def manifest(archive, mod_id):
-    names = archive.namelist()
-    if len(names) != len(set(names)) or names.count("hellforge-mod.json") != 1:
-        raise ValueError(f"{mod_id} needs a single root manifest and unique members")
-    item = json.loads(archive.read("hellforge-mod.json"))
-    code = item["code"]
-    if (item["id"] != mod_id or code["dll"] != DLL[mod_id] or code["prebuilt"] is not True
-            or code["game"] != "25480438" or code["dll"] not in names):
-        raise ValueError(f"unexpected stable ID, DLL or target for {mod_id}")
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", item["version"]):
-        raise ValueError(f"invalid {mod_id} version")
-    if mod_id == NEST and (set(names) != HOST_FILES or not item["name"].startswith("NEST")):
-        raise ValueError("expected the NEST release distribution")
-    return item
-
-
-def stage(bundle, packages, install, work):
+def stage(package, install, work, standalone=None):
     root = work / "install"
     for directory in ("mods", "app", "game/data", "game/bin", "logs"):
         (root / directory).mkdir(parents=True)
@@ -48,73 +27,65 @@ def stage(bundle, packages, install, work):
     cli = install / "app/cli-linux/HellForge.Cli"
 
     def run(command, *options):
-        output = subprocess.check_output([cli, command, "--install", root, *options], cwd=root)
-        return json.loads(output)
+        return json.loads(subprocess.check_output([cli, command, "--install", root, *options], cwd=root))
 
-    expected = {}
-    with ZipFile(bundle) as outer:
-        for mod_id, name in packages.items():
-            # Reproduce the player extracting each inner ZIP and feeding it to Import.
-            path = work / name
-            path.write_bytes(outer.read(name))
-            item = run("mod-add", "--file", path)
-            with ZipFile(path) as archive:
-                m = manifest(archive, mod_id)
-                if item["id"] != mod_id or item["version"] != m["version"]:
-                    raise ValueError(f"launcher imported unexpected mod for {name}")
-                expected[mod_id] = (m, archive.read(DLL[mod_id]))
-                if mod_id == DBF and any(p.startswith("data/") for p in archive.namelist()):
-                    raise ValueError("standalone DBF package unexpectedly contains a game patch")
+    if standalone:
+        run("mod-add", "--file", standalone.resolve())
+    first = run("mod-add", "--file", package.resolve())
+    again = run("mod-add", "--file", package.resolve())
+    if first["id"] != DBF or again["replaced"] != first["installed"]:
+        raise ValueError("same-version import did not replace stable DBF entry")
     plan = root / "plan.txt"
     result = run("mods-stage", "--logs", root / "logs", "--plan", plan, "--sandbox", "no")
+    expected_ids = {DBF, NEST} if standalone else {DBF}
     mods = result["mods"]
-    if len(mods) != 2 or {m["id"] for m in mods} != set(expected) or result["codeMods"] != 2:
-        raise ValueError(f"unexpected staged mods: {mods}")
+    if (len(mods) != len(expected_ids) or {m["id"] for m in mods} != expected_ids
+            or result["codeMods"] != len(expected_ids) or result["staged"]
+            or any(m["dataFiles"] or m["source"] for m in mods)
+            or any("Shared Loader" in p for p in result["problems"])):
+        raise ValueError(f"unexpected single-ZIP staging: {result}")
     rows = [line.split("\t") for line in plan.read_text().splitlines() if line.startswith("mod\t")]
-    for m in mods:
-        mod_id = m["id"]
-        authored, dll = expected[mod_id]
-        paths = [Path(row[3]).resolve() for row in rows if row[1] == mod_id]
-        if (len(paths) != 1 or not paths[0].is_relative_to(root) or paths[0].read_bytes() != dll
-                or m["code"] != DLL[mod_id] or m["version"] != authored["version"] or m["source"]
-                or m["dataFiles"] != 0):
-            raise ValueError(f"incorrect staged version, data or DLL for {mod_id}")
-        print(f'{mod_id} {m["version"]} {DLL[mod_id]} sha256={hashlib.sha256(dll).hexdigest()}')
-    if result["staged"] or any("Shared Loader" in problem for problem in result["problems"]):
-        raise ValueError(f"unexpected patch or Lua loader dependency: {result}")
-    app = json.loads((root / "app/app-build.json").read_bytes())
-    print(f'Launcher {app["version"]} {app["commit"]} staged both DLLs with zero data patches.')
+    dbf_rows = [row for row in rows if row[1] == DBF]
+    if len(dbf_rows) != 1:
+        raise ValueError("expected exactly one DBF entry point")
+    dll = Path(dbf_rows[0][3]).resolve()
+    with ZipFile(package) as archive:
+        for name in {DLL[DBF], *hud_pack.NEST_FILES}:
+            path = dll.parent / name
+            if not path.is_relative_to(root) or path.read_bytes() != archive.read(name):
+                raise ValueError("launcher lost or altered bundled file: " + name)
+    print(f"PASS direct ZIP import/reimport: {len(mods)} launcher mod(s), one DBF, bundled NEST intact")
 
 
-def build(dbf, nest, install, output):
-    dbf_bytes = dbf.read_bytes()
-    hud_pack.verify_zip(BytesIO(dbf_bytes), hud_pack.release_files())
+def build(dbf, nest, install, output, previous_nest=None):
+    files = hud_pack.release_files()
+    host = hud_pack.embedded_nest_files(nest)
+    if any(files[name] != data for name, data in host.items()):
+        raise ValueError("explicit NEST differs from package build input")
+    hud_pack.verify_zip(dbf, files)
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.resolve()) as tmp:
         work = Path(tmp)
-        parts = {NEST: nest.read_bytes(), DBF: dbf_bytes}
-        names, versions = {}, {}
-        for mod_id, data in parts.items():
-            with ZipFile(BytesIO(data)) as archive:
-                versions[mod_id] = manifest(archive, mod_id)["version"]
-            prefix = "NEST" if mod_id == NEST else "divers-best-friend"
-            names[mod_id] = f"{prefix}-{versions[mod_id]}.zip"
-        release = work / "bundle.zip"
-        files = {names[k]: v for k, v in parts.items()}
-        files[GUIDE] = (hud_pack.HF / "NEST-BUNDLE.md").read_bytes()
-        hud_pack.write_zip(release, files)
-        stage(release, names, install.resolve(), work)
-        target = output / f"divers-best-friend-{versions[DBF]}-with-NEST-{versions[NEST]}.zip"
-        release.replace(target)
+        lanes = [("bundled", None), ("standalone", nest)]
+        if previous_nest:
+            lanes.append(("legacy", previous_nest))
+        for mode, standalone in lanes:
+            lane = work / mode
+            lane.mkdir()
+            stage(dbf, install.resolve(), lane, standalone)
+        target = output / dbf.name
+        if target.resolve() != dbf.resolve():
+            hud_pack.write_zip(target, files)
         return target
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dbf", type=Path, required=True, help="verified DBF release ZIP from build.sh package")
-    parser.add_argument("--nest", type=Path, required=True, help="release ZIP from the NEST build")
-    parser.add_argument("--install", type=Path, required=True, help="read-only source of Linux launcher and metadata")
+    parser.add_argument("--dbf", type=Path, required=True)
+    parser.add_argument("--nest", type=Path, required=True)
+    parser.add_argument("--install", type=Path, required=True)
+    parser.add_argument("--previous-nest", type=Path, help="also check coexistence with an existing standalone host ZIP")
     parser.add_argument("--out-dir", type=Path, default=hud_pack.HF / "build/exports")
-    opts = parser.parse_args()
-    target = build(opts.dbf, opts.nest, opts.install, opts.out_dir)
+    args = parser.parse_args()
+    target = build(args.dbf, args.nest, args.install, args.out_dir, args.previous_nest)
     print(f"{target} sha256={hashlib.sha256(target.read_bytes()).hexdigest()}")

@@ -1,23 +1,17 @@
-# Install DBF Reforged R50 with NEST
+# Install DBF Reforged R50
 
-The current DBF release in this bundle is **R50-hellforge.11**.
+The current release is **R50-hellforge.11**, with NEST 0.8.2 included.
 
-1. Extract the downloaded bundle ZIP to a temporary folder. Inside are two mod ZIPs and this guide.
-2. In HellForge’s Mods page, import the **NEST** ZIP, then the **divers-best-friend** ZIP. Leave both inner ZIPs intact. If you already use the bundled NEST version or a newer compatible version, import just DBF. Earlier Goose Overlay Host releases use the same mod ID. If you have a customized unpacked host, use the upgrade instructions below.
-3. Enable **NEST** and **DBF Reforged**. DBF starts its HUD from its own DLL. If you use Bingus Shared Loader (BSL) for other addons on this game build, keep it enabled. DBF and BSL can run together. DBF-MCM is optional.
-4. In the game, press **F7** to open DBF settings. **Page Down** opens NEST’s shared panel list by default.
+1. In HellForge’s Mods page, import **divers-best-friend-R50-hellforge.11.zip** directly. Keep the ZIP intact.
+2. Enable **DBF Reforged**. The package includes its settings host; no separate NEST import is needed. An active compatible standalone NEST is reused.
+3. In the game, press **F7** to open DBF settings. **Page Down** opens NEST’s shared panel list by default. If a customized host assigns F7 to that list, change its list shortcut to free F7 for DBF.
 
-NEST (Native Extension and Settings Toolkit) provides shared panel rendering, input capture and hotkeys, and game-thread scheduling. DBF uses it for its settings and diagnostics. DBF draws its wheel, cooldown display and weapon strip on the native game HUD. Future HellForge mods can register their own panels and reuse the same installed copy of NEST.
+NEST (Native Extension and Settings Toolkit) provides shared panel rendering, input capture and hotkeys, and game-thread scheduling. DBF uses it for settings and diagnostics. DBF draws its wheel, cooldown display and weapon strip on the native game HUD. Future HellForge mods can reuse the active host.
 
-NEST 0.8.2 reads FS Sinclair Regular for body text and Medium for headings from your installed game data. The extractor is included in NEST’s DLL; the bundle does not redistribute game font files or require an installed Editor mod.
+NEST reads FS Sinclair Regular for body text and Medium for headings from your installed game data. The extractor is included in its DLL; the package does not redistribute game fonts or require an installed Editor mod.
 
-| HellForge mod ID | Binary |
-| --- | --- |
-| `goose.divers-best-friend` | `divers_best_friend.dll` |
-| `goose.overlay-host` | `goose_overlay.dll` |
+This ZIP has one root manifest: `goose.divers-best-friend`, with `divers_best_friend.dll` as its launcher entry point. `goose_overlay.dll`, its API header and ImGui license are ancillary files. The standalone NEST ID remains `goose.overlay-host`.
 
-HellForge imports one mod per archive. Importing each inner ZIP gives both mods their own launcher entry and lets them update independently. To update an earlier HellForge DBF, import the new DBF ZIP over the same mod ID. DBF keeps preferences in `%LOCALAPPDATA%\DBF\HellForge\settings.ini` in the game’s Windows environment.
+To update, import this ZIP over the existing DBF mod. Its stable ID prevents a duplicate DBF entry. If standalone NEST 0.8.1 is enabled, disable it in HellForge and restart the game so bundled 0.8.2 supplies the corrected fonts, or update the standalone host to 0.8.2. DBF reports this migration instead of opening its normal editor on the older host. Compatible standalone NEST 0.8.2 installations can remain enabled. DBF keeps preferences in `%LOCALAPPDATA%\DBF\HellForge\settings.ini` in the game’s Windows environment; keep any customized standalone `overlay-host.ini` and `imgui.ini`.
 
-### Upgrading an unpacked Goose Overlay Host
-
-If your existing host folder contains a customized `overlay-host.ini` or `imgui.ini`, close the game and back up those two files. Extract all files from the inner NEST ZIP **directly beside the existing host manifest**, replacing the shipped files. This keeps your hotkeys and window positions in place. Then import just the DBF ZIP. If your custom list hotkey is F7, move it to Page Down to free F7 for DBF.
+Existing Bingus Shared Loader (BSL) installations can keep running other addons alongside DBF. No BSL version is required. The game memory-build check remains build **25480438**. DBF-MCM is optional.

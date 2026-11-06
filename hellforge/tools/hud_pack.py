@@ -2,6 +2,7 @@
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -63,6 +64,25 @@ def payload_header():
             "static const char dbf_hud_payload[] = {\n" + ",\n".join(rows) + "\n};\n").encode("ascii")
 
 
+NEST_FILES = {"goose_overlay.dll", "goose_overlay.h", "imgui-LICENSE.txt"}
+
+
+def embedded_nest_files(path=None):
+    path = Path(path or os.environ.get("DBF_NEST_ZIP") or
+                HF.parent.parent / "overlay-host-mcm-geometry/dist/NEST-0.8.2.zip")
+    with ZipFile(path) as archive:
+        names = archive.namelist()
+        if len(names) != 4 or set(names) != NEST_FILES | {"hellforge-mod.json"}:
+            raise ValueError("expected NEST DLL, API header, license and manifest only")
+        manifest = json.loads(archive.read("hellforge-mod.json"))
+        code = manifest.get("code", {})
+        if (manifest.get("id") != "goose.overlay-host" or manifest.get("version") != "0.8.2"
+                or code.get("dll") != "goose_overlay.dll" or code.get("game") != "25480438"
+                or code.get("prebuilt") is not True):
+            raise ValueError("unexpected embedded NEST release identity or game target")
+        return {name: archive.read(name) for name in NEST_FILES}
+
+
 def release_files():
     body = render()
     subprocess.run(["luajit", "-e", 'assert(loadstring(io.read("*a"), "@DBF_HUD"))'], input=body, check=True)
@@ -82,6 +102,8 @@ def release_files():
     if (MOD / "README.md").is_file():
         files["README.md"] = (MOD / "README.md").read_bytes()
     files["CREDITS.md"] = (ROOT / "CREDITS.md").read_bytes()
+    files.update(embedded_nest_files())
+    files["INSTALL.md"] = (HF / "NEST-BUNDLE.md").read_bytes()
     return files
 
 

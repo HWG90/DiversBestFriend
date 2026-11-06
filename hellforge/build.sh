@@ -23,6 +23,8 @@
 # Zig is the native Linux 0.17.0, HellForge's pinned version (Wine cannot run zig.exe: its cache locking calls NtLockFile
 # in a way Wine does not implement). The mod is built against the SDK vendored in hellforge/sdk (SDK 15; SOURCE.md names
 # its source and each file's SHA-256), so a HellForge update changes nothing here until the copy is replaced on purpose.
+# Packaging: DBF_NEST_ZIP selects the NEST 0.8.2 distribution embedded beside the DBF DLL.
+# Defaults to the sibling overlay-host-mcm-geometry/dist/NEST-0.8.2.zip. Native DLL builds do not need it.
 # Settings: HF_INSTALL (the HellForge installation the Zig toolchain comes from; default HellForge 0.4's Linux install,
 # ~/.local/share/hellforge-prefix/pfx/drive_c/users/steamuser/Documents/HellForge), HF_ZIG (default the installation's
 # tools/zig-linux Zig), HF_SDK (the mod SDK headers; default hellforge/sdk. The vendored copy is checked whatever HF_SDK

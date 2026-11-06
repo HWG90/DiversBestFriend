@@ -103,6 +103,9 @@ def stage(package, install, previous):
             dll = Path(rows[0][3]).resolve()
             if not dll.is_relative_to(work) or dll.read_bytes() != release.read(DLL):
                 raise ValueError("launcher-planned DLL differs from the release")
+            for name in hud_pack.NEST_FILES:
+                if (dll.parent / name).read_bytes() != release.read(name):
+                    raise ValueError("launcher lost or altered bundled NEST file: " + name)
         print(f'{old["version"]} -> {added["version"]}: one DBF code mod, zero staged patches')
         run_game_vm(work, install, dll)
 
