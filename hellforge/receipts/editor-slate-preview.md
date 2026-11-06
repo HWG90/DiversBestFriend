@@ -15,8 +15,20 @@ and configurations without a theme select HellForge.
 Validation: 24 C test groups passed, Windows-target DLL builds with import checks,
 wide and narrow real D3D11 headless Proton rendering passed with balanced ImGui.
 Final heading-font preview also passed. This is not live in-game acceptance or a
-new native-Windows visual test. No active game files or public release changed.
+new native-Windows visual test. At the initial visual check, no installed files or public release had changed.
 
 Preview images: /tmp/dbf-layout11.LfWA2r/shots/slate-final.png and slate-narrow.png.
 One-import review package: /tmp/DBF-Reforged-slate-preview.zip (unreleased build;
 not a replacement for the published .11 archive).
+
+## Next-launch staging
+
+After adding transition-only blur diagnostics in af5e5da, rebuilt and verified the
+single-import archive. SHA-256:
+`0fd7299c3dc0fc3020ede9ca9b7dde654b5b17c999a871939e74321756c95962`.
+Replaced the existing imported ZIP atomically for next launch. Previous public
+.11 digest30d80413 was verified before replacement and preserved under the
+active installation's `backport-backups/dbf-slate-preview-20261106T014918Z`,
+with a receipt. Running DLLs were not modified. Public releases are unchanged.
+Visible wheel blur is not fixed or validated by these diagnostics; relaunch and
+opening the wheel is needed to identify the failing rendering stage.
