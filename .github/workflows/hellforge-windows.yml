@@ -1,0 +1,42 @@
+name: HellForge Windows smoke test
+on:
+  push:
+    branches: [hellforge]
+    paths:
+      - 'hellforge/**'
+      - '.github/workflows/hellforge-windows.yml'
+permissions:
+  contents: read
+jobs:
+  native-windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+        working-directory: hellforge
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build DBF and the HellForge test host
+        run: |
+          set -euo pipefail
+          mkdir -p build/windows-smoke
+          cd build/windows-smoke
+          src=../../divers-best-friend/src
+          tests=../../tests
+          includes=(-I../../sdk -I"$src" -I"$tests")
+          gcc -std=c11 -O2 -shared "${includes[@]}" "$src"/*.c -o divers_best_friend.dll
+          gcc -std=c11 -O1 "${includes[@]}" "$tests/wine_host.c" "$tests/synthetic.c" -o host.exe
+          gcc -std=c11 -O1 -shared -DSTUB_API=5 "${includes[@]}" "$tests/wine_overlay_stub.c" "$tests/fake_ov.c" -o goose_overlay.dll
+          gcc -std=c11 -O1 -shared '-DHF_LUA_API=__declspec(dllexport)' "${includes[@]}" "$tests/wine_modloader_stub.c" -o hellforge_modloader.dll
+      - name: Exercise mod initialization and the overlay tick on Windows
+        run: |
+          set -euo pipefail
+          cd build/windows-smoke
+          for scenario in no-host host-api5; do
+            stubs=()
+            if [[ "$scenario" == host-api5 ]]; then
+              stubs=("$PWD/goose_overlay.dll" "$PWD/hellforge_modloader.dll")
+            fi
+            ./host.exe "$PWD/divers_best_friend.dll" "$scenario" "${stubs[@]}" | tr -d '\r' | tee "$scenario.log"
+            grep -Fx "== $scenario: 0 failure(s)" "$scenario.log"
+          done
