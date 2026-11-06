@@ -86,7 +86,7 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.9 (game 25480438)"
+#define VERSION_LINE "Diver's Best Friend R50-hellforge.10 (game 25480438)"
 #define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"

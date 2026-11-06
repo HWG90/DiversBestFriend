@@ -63,8 +63,8 @@ def stage(bundle, packages, install, work):
                 if item["id"] != mod_id or item["version"] != m["version"]:
                     raise ValueError(f"launcher imported unexpected mod for {name}")
                 expected[mod_id] = (m, archive.read(DLL[mod_id]))
-                if mod_id == DBF:
-                    patch = {p: archive.read(p) for p in archive.namelist() if p.startswith("data/")}
+                if mod_id == DBF and any(p.startswith("data/") for p in archive.namelist()):
+                    raise ValueError("standalone DBF package unexpectedly contains a game patch")
     plan = root / "plan.txt"
     result = run("mods-stage", "--logs", root / "logs", "--plan", plan, "--sandbox", "no")
     mods = result["mods"]
@@ -77,13 +77,13 @@ def stage(bundle, packages, install, work):
         paths = [Path(row[3]).resolve() for row in rows if row[1] == mod_id]
         if (len(paths) != 1 or not paths[0].is_relative_to(root) or paths[0].read_bytes() != dll
                 or m["code"] != DLL[mod_id] or m["version"] != authored["version"] or m["source"]
-                or m["dataFiles"] != (len(patch) if mod_id == DBF else 0)):
+                or m["dataFiles"] != 0):
             raise ValueError(f"incorrect staged version, data or DLL for {mod_id}")
         print(f'{mod_id} {m["version"]} {DLL[mod_id]} sha256={hashlib.sha256(dll).hexdigest()}')
-    if len(patch) != 3 or any((root / "game" / name).read_bytes() != body for name, body in patch.items()):
-        raise ValueError("staged HUD patch differs from DBF release")
+    if result["staged"] or any("Shared Loader" in problem for problem in result["problems"]):
+        raise ValueError(f"unexpected patch or Lua loader dependency: {result}")
     app = json.loads((root / "app/app-build.json").read_bytes())
-    print(f'Launcher {app["version"]} {app["commit"]} staged both DLLs and the DBF HUD patch.')
+    print(f'Launcher {app["version"]} {app["commit"]} staged both DLLs with zero data patches.')
 
 
 def build(dbf, nest, install, output):

@@ -1,4 +1,4 @@
-"""Exercise the installed launcher's real ZIP import and session staging in an empty temp root."""
+"""Verify a launcher upgrade and exercise the staged private HUD in the pinned game VM."""
 import argparse
 import hashlib
 import json
@@ -11,24 +11,28 @@ from zipfile import ZipFile
 
 import hud_pack
 
-
 VM_SHA256 = "2c8720c9f446c848436ad993b1a88099d76f0b0b09df53689719b797c3039ce7"
+DBF = "goose.divers-best-friend"
+DLL = "divers_best_friend.dll"
 
 
-def run_game_vm(work, install, loader, dll, staged):
+def run_game_vm(work, install, dll, prelude=None):
     vm = work / "lua51.dll"
     shutil.copyfile(install / "game/bin/lua51.dll", vm)
     if hashlib.sha256(vm.read_bytes()).hexdigest() != VM_SHA256:
         raise ValueError("unexpected game VM for build 25480438")
-    shutil.copyfile(dll, work / dll.name)
-    shutil.copyfile(hud_pack.HF / "tests/staged_hud_vm.lua", work / "smoke.lua")
-    body = hud_pack.verify_archive(staged.read_bytes())
-    (work / "staged.lua").write_bytes(body)
-    cc = "x86_64-w64-mingw32-gcc"
-    runner = work / "hf_lua.exe"
-    subprocess.run([cc, "-O2", loader / "tools/hf_lua.c", vm, "-o", runner], check=True)
-    subprocess.run([cc, "-shared", "-DHF_LUA_API=__declspec(dllexport)", "-I", hud_pack.HF / "sdk",
+    shutil.copyfile(dll, work / DLL)
+    runner = work / "stage_vm.exe"
+    cc = ["x86_64-w64-mingw32-gcc", "-O2", "-Wall", "-Werror", "-I", hud_pack.HF / "sdk"]
+    subprocess.run([*cc, hud_pack.HF / "tests/wine_staged_hud_vm.c", vm, "-o", runner], check=True)
+    subprocess.run([*cc, "-shared", "-DHF_LUA_API=__declspec(dllexport)",
                     hud_pack.HF / "tests/wine_modloader_stub.c", "-o", work / "hellforge_modloader.dll"], check=True)
+    args = []
+    if prelude is not None:
+        target = work / "prelude.lua"
+        if prelude.resolve() != target.resolve():
+            shutil.copyfile(prelude, target)
+        args.append(target.name)
     steam = Path.home() / ".local/share/Steam"
     proton = os.environ.get("PROTON", str(steam / "steamapps/common/Proton - Experimental/proton"))
     prefix = hud_pack.HF / "build/stage-proton"
@@ -37,20 +41,21 @@ def run_game_vm(work, install, loader, dll, staged):
            "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steam), "WINEDEBUG": "-all"}
     for key in ("SteamAppId", "SteamGameId", "WINEPREFIX"):
         env.pop(key, None)
-    subprocess.run([proton, "run", runner, "smoke.lua"], env=env, cwd=work, timeout=180, check=True)
-    receipt = (work / "vm-passed.txt").read_text(encoding="ascii")
-    if receipt != "PASS staged HUD VM: 3 enable/frame/shutdown cycles (LuaJIT 2.1.0-alpha)":
-        raise ValueError("game VM did not acknowledge the final shutdown")
-    print(receipt)
+    log = work / "vm-stage.log"
+    errors = work / "vm-error.log"
+    for path in (log, errors):
+        path.unlink(missing_ok=True)
+    result = subprocess.run([proton, "run", runner, *args], env=env, cwd=work, timeout=180)
+    output = log.read_text(errors="replace") if log.exists() else ""
+    print(output, end="")
+    receipt = "PASS staged HUD VM: one production attachment per VM, 2 VM lifetimes, 6 chained updates"
+    if result.returncode or not output.splitlines() or output.splitlines()[-1] != receipt:
+        detail = errors.read_text(errors="replace") if errors.exists() else "runner did not start"
+        raise ValueError(f"missing successful VM receipt (Proton exit {result.returncode}): {detail}")
 
 
-def stage(package, install, loader):
+def stage(package, install, previous):
     cli = install / "app/cli-linux/HellForge.Cli"
-    app = json.loads((install / "app/app-build.json").read_bytes())
-    loader_name = "HF-LLL-0.1.0-25480438.zip"
-    loader_zip = install / "mods" / loader_name
-    if not loader_zip.is_file():
-        loader_zip = loader / "dist" / loader_name
     with tempfile.TemporaryDirectory(prefix="dbf-hud-stage-") as temp:
         work = Path(temp)
         for folder in ("mods", "app", "game/data", "game/bin", "logs"):
@@ -62,44 +67,45 @@ def stage(package, install, loader):
             stdout = subprocess.check_output([cli, command, "--install", work, *options], cwd=work)
             return json.loads(stdout)
 
-        run("mod-add", "--file", loader_zip.resolve())
-        run("mod-add", "--file", package.resolve())
         plan = work / "plan.txt"
-        result = run("mods-stage", "--logs", work / "logs", "--plan", plan, "--sandbox", "no")
+
+        def stage_mods():
+            return run("mods-stage", "--logs", work / "logs", "--plan", plan, "--sandbox", "no")
+
+        old = run("mod-add", "--file", previous.resolve())
+        prior = stage_mods()
+        if (old["id"] != DBF or old["version"] != "R50-hellforge.9" or
+                len(prior["mods"]) != 1 or prior["mods"][0]["dataFiles"] != 3 or len(prior["staged"]) != 3):
+            raise ValueError("upgrade baseline must be the previous DBF release with its archive")
+        added = run("mod-add", "--file", package.resolve())
+        if added["id"] != DBF or added["replaced"] != old["installed"]:
+            raise ValueError("launcher failed to replace the original DBF mod")
+        result = stage_mods()
         with ZipFile(package) as release:
             manifest = json.loads(release.read("hellforge-mod.json"))
-            identifier, dll = manifest["id"], manifest["code"]["dll"]
-            selected = [m for m in result["mods"] if m["id"] == identifier]
-            if (len(selected) != 1 or selected[0]["code"] != dll or selected[0]["dataFiles"] != 3
-                    or selected[0]["version"] != manifest["version"] or selected[0]["source"]):
-                raise ValueError("launcher did not stage expected mixed mod: " + str(result["mods"]))
+            mods = result["mods"]
+            if (len(mods) != 1 or mods[0]["id"] != DBF or mods[0]["code"] != DLL or
+                    mods[0]["version"] != manifest["version"] or mods[0]["dataFiles"] or mods[0]["source"]
+                    or result["codeMods"] != 1 or result["staged"]
+                    or any("Shared Loader" in msg for msg in result["problems"])):
+                raise ValueError(f"unexpected standalone plan: {result}")
+            leftovers = list((work / "game/data").glob("*.patch_*"))
+            if leftovers:
+                raise ValueError(f"stale DBF addon survived the launcher upgrade: {leftovers}")
             rows = [line.split("\t") for line in plan.read_text().splitlines() if line.startswith("mod\t")]
-            paths = [Path(row[3]) for row in rows if row[1] == identifier]
-            if len(paths) != 1 or not paths[0].resolve().is_relative_to(work) or paths[0].read_bytes() != release.read(dll):
-                raise ValueError("DLL in launcher plan differs from package")
-            data = work / "game/data"
-            patch = release.read(hud_pack.PATCH)
-            matches = [p for p in data.glob("9ba626afa44a3aa3.patch_*") if p.suffix.removeprefix(".patch_").isdigit() and p.read_bytes() == patch]
-            if len(matches) != 1:
-                raise ValueError("expected one byte-identical staged patch")
-            staged = matches[0]
-            for suffix in (".stream", ".gpu_resources"):
-                if Path(str(staged) + suffix).read_bytes() != release.read(hud_pack.PATCH + suffix):
-                    raise ValueError("staged companion differs: " + suffix)
-        subprocess.run(["luajit", hud_pack.HF / "tests/check_hud_discovery.lua", loader.resolve(),
-                        staged.name, hud_pack.ADDON, data, *sorted(p.name for p in data.iterdir())], input=staged.read_bytes(), check=True)
-        run_game_vm(work, install, loader, paths[0], staged)
-        print(json.dumps({"hf_lll_sha256": hashlib.sha256(loader_zip.read_bytes()).hexdigest(), "game_vm_sha256": VM_SHA256, "launcher": app["version"], "commit": app["commit"], "version": manifest["version"],
-                          "planned_dll": paths[0].name, "dll_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest(),
-                          "staged_patch": staged.name, "patch_sha256": hashlib.sha256(staged.read_bytes()).hexdigest(),
-                          "package_sha256": hashlib.sha256(package.read_bytes()).hexdigest(),
-                          "data_files": selected[0]["dataFiles"], "stage_notes": result["problems"]}, indent=2))
+            if len(rows) != 1 or rows[0][1] != DBF:
+                raise ValueError("expected just DBF in the code plan")
+            dll = Path(rows[0][3]).resolve()
+            if not dll.is_relative_to(work) or dll.read_bytes() != release.read(DLL):
+                raise ValueError("launcher-planned DLL differs from the release")
+        print(f'{old["version"]} -> {added["version"]}: one DBF code mod, zero staged patches')
+        run_game_vm(work, install, dll)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("package", type=Path)
     parser.add_argument("install", type=Path)
-    parser.add_argument("loader", type=Path)
+    parser.add_argument("--previous", type=Path, required=True)
     args = parser.parse_args()
-    stage(args.package, args.install, args.loader)
+    stage(args.package, args.install, args.previous)

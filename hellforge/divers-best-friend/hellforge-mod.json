@@ -2,8 +2,8 @@
   "format": 1,
   "id": "goose.divers-best-friend",
   "name": "Diver's Best Friend",
-  "version": "R50-hellforge.9",
-  "description": "Select stratagems with the native HUD wheel, wedges or list. Show cooldowns and weapon settings on the game HUD. Requires HF-LLL for the HUD and NEST for the F7 settings and diagnostics menu. Supports DBF-MCM as an optional settings menu.",
+  "version": "R50-hellforge.10",
+  "description": "Select stratagems with the native HUD wheel, wedges or list. Show cooldowns and weapon settings on the game HUD. Runs the HUD directly and uses NEST for the F7 settings and diagnostics menu. Supports DBF-MCM as an optional settings menu.",
   "url": "https://github.com/HWG90/DiversBestFriend/tree/hellforge",
   "gameplay": false,
   "code": { "dll": "divers_best_friend.dll", "sdk": 15, "prebuilt": true, "game": "25480438" }
