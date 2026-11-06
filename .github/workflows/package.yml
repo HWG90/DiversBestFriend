@@ -10,4 +10,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install the LuaJIT test runtime
+        run: sudo apt-get update && sudo apt-get install -y libluajit-5.1-2
       - run: python scripts/test.py --package-only
+        env:
+          HD2_LUA51_DLL: libluajit-5.1.so.2
