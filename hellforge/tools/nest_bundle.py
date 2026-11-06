@@ -45,6 +45,14 @@ def stage(package, install, work, standalone=None):
             or any("Shared Loader" in p for p in result["problems"])):
         raise ValueError(f"unexpected single-ZIP staging: {result}")
     rows = [line.split("\t") for line in plan.read_text().splitlines() if line.startswith("mod\t")]
+    if standalone:
+        host_rows = [row for row in rows if row[1] == NEST]
+        if len(host_rows) != 1:
+            raise ValueError("expected one preserved standalone host")
+        with ZipFile(standalone) as archive:
+            path = Path(host_rows[0][3]).resolve()
+            if not path.is_relative_to(root) or path.read_bytes() != archive.read(DLL[NEST]):
+                raise ValueError("DBF import altered the standalone host")
     dbf_rows = [row for row in rows if row[1] == DBF]
     if len(dbf_rows) != 1:
         raise ValueError("expected exactly one DBF entry point")
