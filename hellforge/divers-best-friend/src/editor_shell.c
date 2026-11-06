@@ -82,6 +82,8 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     bool search = false;
     bool editing = ov->want_text_input() != 0 || editor_capturing();
     bool focused = !ov->is_focused || ov->is_focused();
+    if (panel && ov->size >= offsetof(OvApi, panel_focused) + sizeof ov->panel_focused && ov->panel_focused)
+        focused = focused && ov->panel_focused(panel);
     bool escape = focused && !editor_capturing() && ov->key_pressed(0x1b);
     if (escape && view==BROWSE && editor_browse_escape()) escape=false;
     if (!editing && focused) {
@@ -105,9 +107,9 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     if (view != CONTROLS && view != BLACKLIST) editor_page(ov,NULL,false);
     if (!s) ov->text_disabled("Waiting for the first game update");
     else switch (view) {
-        case BROWSE: editor_browse(ov,s,search); break;
+        case BROWSE: editor_browse_focused(ov,s,search,focused); break;
         case CHANGES: editor_changes(ov,s); break;
-        case CONTROLS: case BLACKLIST: editor_page(ov,s,view==BLACKLIST); break;
+        case CONTROLS: case BLACKLIST: editor_page_focused(ov,s,view==BLACKLIST,focused); break;
         case STATUS: ui_status_draw(ov,s); break;
         default: break;
     }
@@ -151,7 +153,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
             } else if (ov->button("REVIEW CHANGES")) view = CHANGES;
             ov->same_line();
             ov->begin_disabled(!pending);
-            if (ov->button_primary("APPLY  TAB")) editor_apply_changes(ov,s);
+            if (ov->button_primary("APPLY  TAB") && focused) editor_apply_changes(ov,s);
             ov->end_disabled();
         }
     }

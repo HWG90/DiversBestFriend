@@ -38,9 +38,9 @@ bool editor_apply(DbfSettings* s, const UiEvent* e)
     return true;
 }
 
-static int apply_button(const OvApi* ov, const char* label)
+static int apply_button(const OvApi* ov, const char* label, bool focused)
 {
-    bool tab = !editor.capturing && ov->key_pressed && ov->key_down &&
+    bool tab = focused && !editor.capturing && ov->key_pressed && ov->key_down &&
         (!ov->is_focused || ov->is_focused()) &&
         (!ov->want_text_input || !ov->want_text_input()) &&
         !ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12) &&
@@ -50,7 +50,7 @@ static int apply_button(const OvApi* ov, const char* label)
         clicked = ov->button_primary(label);
     else clicked = ov->button(label);
     if (ov->same_line && ov->text_disabled) { ov->same_line(); ov->text_disabled("Tab to apply"); }
-    return clicked || tab;
+    return focused && (clicked || tab);
 }
 
 static void capture(const OvApi* ov, uint16_t pad)
@@ -87,8 +87,9 @@ static void capture(const OvApi* ov, uint16_t pad)
     editor.capturing = false;
 }
 
-static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const char* apply_label)
+static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const char* apply_label, bool focused)
 {
+    if (!focused) editor.capturing = false;
     if (editor.capturing) {
         ov->text_disabled(editor.armed ? "Press a key, mouse button or controller button, or scroll. Esc cancels."
                                       : "Release held inputs to start capture.");
@@ -107,14 +108,14 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const
     ov->text(label);
     ov->input_text("New binding", editor.text, sizeof editor.text);
     ov->text_disabled("Examples: key:f8, mouse4, wheel_up, pad:lb");
-    if (ov->button("CAPTURE")) { editor.capturing = true; editor.armed = false; }
+    if (ov->button("CAPTURE") && focused) { editor.capturing = true; editor.armed = false; }
     ov->same_line();
     if (ov->button("CLEAR")) strcpy(editor.text, "none");
     Binding b = {0};
     bool valid = settings_parse_binding(editor.text, &b);
     if (!valid) ov->text_disabled("Enter a valid binding or use Capture.");
     ov->begin_disabled(!valid || (b.kind == current.kind && b.code == current.code));
-    if (apply_button(ov, apply_label) && valid && (b.kind != current.kind || b.code != current.code)) {
+    if (apply_button(ov, apply_label, focused) && valid && (b.kind != current.kind || b.code != current.code)) {
         UiEvent e = {.kind = UI_BINDING, .a = editor.action, .b = b.kind * 65536 + b.code};
         if (!ui_post(&e)) ov->text("Input queue full. Apply again.");
     }
@@ -122,10 +123,10 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const
 }
 
 /* The Editor browser at d8a8b46 keeps object selection beside its fields. */
-static void binding_page(const OvApi* ov, const DbfSnapshot* s)
+static void binding_page(const OvApi* ov, const DbfSnapshot* s, bool focused)
 {
     if (!ov->selectable || !ov->begin_table || !ov->end_table || !ov->table_next_column) {
-        if (ov->combo) bindings(ov, s, true, "APPLY BINDING");
+        if (ov->combo) bindings(ov, s, true, "APPLY BINDING", focused);
         return;
     }
     if (!ov->begin_table("dbf-binding-editor", 2)) return;
@@ -146,7 +147,7 @@ static void binding_page(const OvApi* ov, const DbfSnapshot* s)
     }
     ov->table_next_column();
     ov->text(actions[editor.action]);
-    bindings(ov, s, false, "APPLY BINDING");
+    bindings(ov, s, false, "APPLY BINDING", focused);
     ov->end_table();
 }
 
@@ -165,13 +166,13 @@ static bool matches(const char* label, unsigned kind, const char* search)
     return false;
 }
 
-static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searchable)
+static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searchable, bool focused)
 {
     if (dbf_blacklist_kind_count > 64) { ov->text("Blacklist table exceeds editor capacity."); return; }
     static char search[48];
     bool visible = false;
     if (searchable && ov->input_text) {
-        if (ov->set_keyboard_focus_here && ov->key_down && ov->key_pressed &&
+        if (focused && ov->set_keyboard_focus_here && ov->key_down && ov->key_pressed &&
             ov->key_down(0x11) && ov->key_pressed('F')) ov->set_keyboard_focus_here();
         ov->input_text("Search by name or kind", search, sizeof search);
     }
@@ -213,7 +214,7 @@ static void blacklist(const OvApi* ov, const DbfSettings* settings, bool searcha
     if (!visible) ov->text_disabled("No matching stratagems.");
     if (scroll_rows) ov->end_child();
     ov->begin_disabled(!changed_rows);
-    if (apply_button(ov, searchable ? "APPLY BLACKLIST" : "APPLY") && changed_rows) {
+    if (apply_button(ov, searchable ? "APPLY BLACKLIST" : "APPLY", focused) && changed_rows) {
         UiEvent e = {.kind = UI_BLACKLIST, .changed_rows = changed_rows, .hidden_rows = hidden_rows};
         if (!ui_post(&e)) ov->text("Input queue full. Apply again.");
     }
@@ -229,22 +230,28 @@ bool editor_capturing(void)
 
 void editor_page(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page)
 {
-    if (!s || blacklist_page) editor.capturing = false;
+    editor_page_focused(ov, s, blacklist_page, true);
+}
+
+void editor_page_focused(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page, bool focused)
+{
+    focused = focused && ov && (!ov->is_focused || ov->is_focused());
+    if (!s || blacklist_page || !focused) editor.capturing = false;
     if (!ov || !s || !ov->button || !ov->same_line || !ov->begin_disabled || !ov->end_disabled) return;
     if (blacklist_page) {
-        if (ov->checkbox && ov->push_id_int && ov->pop_id) blacklist(ov, &s->options, true);
-    } else if (ov->input_text && ov->key_down) binding_page(ov, s);
+        if (ov->checkbox && ov->push_id_int && ov->pop_id) blacklist(ov, &s->options, true, focused);
+    } else if (ov->input_text && ov->key_down) binding_page(ov, s, focused);
 }
 
 void editor_tabs(const OvApi* ov, const DbfSnapshot* s)
 {
     if (!s || !ov->button || !ov->begin_disabled || !ov->end_disabled) return;
     if (ov->combo && ov->input_text && ov->key_down && ov->same_line && ov->begin_tab_item("CONTROLS")) {
-        bindings(ov, s, true, "APPLY");
+        bindings(ov, s, true, "APPLY", !ov->is_focused || ov->is_focused());
         ov->end_tab_item();
     } else editor.capturing = false;
     if (ov->checkbox && ov->push_id_int && ov->pop_id && ov->same_line && ov->begin_tab_item("BLACKLIST")) {
-        blacklist(ov, &s->options, false);
+        blacklist(ov, &s->options, false, !ov->is_focused || ov->is_focused());
         ov->end_tab_item();
     }
 }

@@ -1,4 +1,4 @@
-/* Goose Overlay Host, API version 7: a shared in-game UI for HellForge code mods.
+/* NEST, API version 10: a shared in-game UI for HellForge code mods.
  *
  * The host (mods/overlay-host, goose_overlay.dll) draws over the game with Dear ImGui, on the game's own Direct3D 12
  * queue (or Direct3D 11 with --use-d3d11), and owns the game window's input while one of its windows is open. Other
@@ -21,7 +21,7 @@
  *   }
  *
  * Panels:
- *   - OV_PANEL_WINDOW: a window, shown and hidden by its hotkey or from the host's panel list (F7 by default). While any
+ *   - OV_PANEL_WINDOW: a window, shown and hidden by its hotkey or from the host's panel list (Page Down by default). While any
  *     window is open the host takes the keyboard and mouse from the game and draws a cursor.
  *   - OV_PANEL_HUD: drawn every frame, never takes input: draw_* calls in screen pixels, for HUD elements.
  * Draw callbacks run on the game's render thread, one at a time, inside the host's frame: the widget and draw calls are
@@ -46,7 +46,7 @@
 extern "C" {
 #endif
 
-#define OV_API_VERSION 8
+#define OV_API_VERSION 10
 #define OV_HOST_DLL "goose_overlay.dll"
 
 #define OV_RGBA(r, g, b, a) ((uint32_t)(r) | ((uint32_t)(g) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(a) << 24))
@@ -308,6 +308,27 @@ typedef struct OvApi
     int64_t (*passive_wheel_total)(void);
     /* API 8 (host 0.6.0): a window or look capture owns game input. Any thread, even with every HUD hidden. */
     int (*input_captured)(void);
+
+    /* ======== API version 9 (host 0.7.0): check ov->version >= 9 (or size) before using this ======== */
+
+    /* Queue a window's position and size in 1080p logical pixels, scaled like OvPanelDef's dimensions.
+     * Any thread, including draw callbacks; applies once before the window's next Begin (even after reopening),
+     * overriding saved placement. The latest request wins. Does not open the window or change its flags;
+     * OV_WINDOW_AUTO_SIZE can fit the contents again on later frames. A call from this window's draw applies next
+     * frame. Returns 1 when queued, 0 for an unknown/NULL/HUD panel or unsupported geometry: all values must be
+     * finite, |x|/|y| <= 1,000,000 and 0 < width/height <= 1,000,000. Negative positions are allowed. A request whose
+     * scaled values exceed those same bounds (or a non-finite/non-positive scale) is dropped safely at render time. */
+    int (*set_panel_rect)(OvPanel* panel, float x, float y, float width, float height);
+
+    /* ======== API version 10 (host 0.8.0): check ov->version >= 10 (or size) before using these ======== */
+
+    /* Any thread. Cached ImGui focus of this window or its children, sampled just after its latest Begin and before
+     * its draw callback. Returns 0 for NULL/unknown/HUD/closed panels. The host lock protects the sample and query. */
+    int (*panel_focused)(OvPanel* panel);
+    /* Draw callbacks only, on the active render thread; calls from other threads or outside the frame are ignored.
+     * Scroll the current window/child to the last item: 0 top, 0.5 centre, 1 bottom.
+     * Clamps ratio to [0,1] (including infinities); NaN is ignored. */
+    void (*scroll_here_y)(float ratio);
 } OvApi;
 
 enum OvLayer { OV_LAYER_BACKGROUND = 0, OV_LAYER_WINDOW = 1, OV_LAYER_FOREGROUND = 2 };
@@ -354,11 +375,16 @@ enum OvInputFlags { OV_INPUT_ENTER_RETURNS = 1, OV_INPUT_AUTO_SELECT = 2, OV_INP
  * OV_CAPTURE_WITH_WINDOWS (host 0.4.0; older hosts ignore it and hide them). */
 enum OvCaptureFlags { OV_CAPTURE_NO_OVERLAY = 1, OV_CAPTURE_WITH_WINDOWS = 2 };
 
-/* The host's export: its API for this version, or NULL when it is older than `version`. */
+/* The host's export: the active process-wide API, or NULL before initialization
+ * or when older than `version`. Legacy hosts may expose a table before init. */
 typedef const OvApi* (*OvApiFn)(uint32_t version);
+/* Optional export, NEST 0.8.2: 1 = shared runtime arbitration and Editor fonts.
+ * No side effects. Detect this capability instead of inferring from OvApi.version. */
+typedef uint32_t (*OvRuntimeAbiFn)(void);
 
 #ifdef Goose_OVERLAY_HOST
 __declspec(dllexport) const OvApi* ov_api(uint32_t version);
+__declspec(dllexport) uint32_t ov_runtime_abi(void);
 #endif
 
 #ifdef __cplusplus

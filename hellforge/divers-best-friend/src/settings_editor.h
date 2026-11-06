@@ -8,6 +8,9 @@
 /* Content only: false for Controls, true for Blacklist. Pass NULL for s when
  * navigating away from both pages to stop capture without discarding drafts. */
 void editor_page(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page);
+/* Shell supplies panel focus; game focus is also required. Legacy entry points
+ * retain game-focus-only behavior when panel focus is unavailable. */
+void editor_page_focused(const OvApi* ov, const DbfSnapshot* s, bool blacklist_page, bool focused);
 /* Render thread: true from Capture until an input is chosen or capture is cancelled. */
 bool editor_capturing(void);
 /* Legacy navigation inside the caller's tab bar. */

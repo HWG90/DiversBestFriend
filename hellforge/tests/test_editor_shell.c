@@ -13,7 +13,13 @@ static struct OvPanel { int open; } panel;
 static int pressed, control, children, child_calls, layer, layers, focus, closes;
 static int colors, disabled, blocked, ids, id_stack[16], click_view = -1, edit_id = -1;
 static bool disable_flags[16];
-static int text_input, focused = 1;
+static int text_input, focused = 1, panel_focus = 1, focus_queries;
+static int panel_focused(OvPanel* p)
+{
+    CHECK(p == &panel, "focus query targets the DBF panel");
+    ++focus_queries;
+    return panel_focus;
+}
 static float region_width=1000;
 static bool invalid, focus_next;
 static char focused_field[128];
@@ -134,6 +140,7 @@ static void setup(void)
     host.slider_int=slider_int;
     host.want_text_input=editing;
     host.is_focused=is_focused;
+    host.panel_focused=panel_focused;
     host.key_down=key_down;
     host.key_pressed=key_pressed;
     host.begin_child=begin_child;
@@ -257,6 +264,20 @@ int main(void)
     expect_tab(4);
     keyboard('E',false);
     expect_tab(0);
+    panel_focus=0;
+    keyboard('Q',false); expect_tab(0);
+    keyboard('E',false); expect_tab(0);
+    keyboard('E',true); expect_tab(0);
+    panel_focus=1;
+    int queries=focus_queries;
+    host.size=offsetof(OvApi,panel_focused);
+    panel_focus=0;
+    keyboard('E',false); expect_tab(1);
+    CHECK(focus_queries==queries,"short old-host table is not read beyond its size");
+    host.size=sizeof host; host.panel_focused=NULL;
+    keyboard('Q',false); expect_tab(0);
+    CHECK(focus_queries==queries,"absent panel callback preserves old-host navigation");
+    host.panel_focused=panel_focused; panel_focus=1;
     keyboard(0x75,false);
     expect_tab(0); /* F6 no longer navigates. */
     for (int i=1; i<=5; ++i) {
@@ -350,7 +371,12 @@ int main(void)
     focused=0;
     keyboard(0x09,false);
     CHECK(ui_drain(event,2)==0,"Tab does not apply an unfocused editor");
-    focused=1;
+    focused=1; panel_focus=0;
+    keyboard(0x09,false);
+    CHECK(ui_drain(event,2)==0,"another panel blocks shell Tab despite game foreground");
+    click="APPLY  TAB"; draw(&snapshot);
+    CHECK(ui_drain(event,2)==0,"another panel blocks shell Apply button");
+    panel_focus=1;
     keyboard(0x09,false);
     int count=ui_drain(event,2);
     CHECK(count==1 && event[0].kind==UI_HUD_OPTION && event[0].a>=0 &&

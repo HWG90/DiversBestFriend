@@ -10,6 +10,7 @@ static OvApi ov;
 static const char *tab = "CONTROLS", *button, *typed, *row;
 static int pressed_vk;
 static bool text_entry;
+static bool panel_focus = true;
 static int vk, action, pushed_id, edited_kind, mouse = -1;
 static float wheel;
 static bool focused = true, disabled, direct;
@@ -76,7 +77,7 @@ static void frame(const char* clicked)
     button = clicked;
     visible_rows = icon_slots = scrolling_rows = 0;
     footer_outside = false;
-    if (direct) editor_page(&ov, &snap, !strcmp(tab, "BLACKLIST"));
+    if (direct) editor_page_focused(&ov, &snap, !strcmp(tab, "BLACKLIST"), panel_focus);
     else editor_tabs(&ov, &snap);
     typed = row = NULL;
 }
@@ -272,5 +273,25 @@ int main(void)
     CHECK(!scrolling_rows && !icon_slots && visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
     check_tab_apply(true);
     check_tab_apply(false);
+    direct = true; tab = "CONTROLS";
+    typed = "key:r"; frame(NULL);
+    panel_focus = false; pressed_vk = 0x09;
+    frame("APPLY BINDING");
+    CHECK(!ui_drain(&e, 1), "another panel blocks binding click and Tab even with game foreground");
+    pressed_vk = 0; frame("CAPTURE");
+    CHECK(!editor_capturing(), "another panel prevents starting binding capture");
+    panel_focus = true; capture_start();
+    panel_focus = false; vk = 'S'; frame(NULL); vk = 0;
+    CHECK(!editor_capturing() && !ui_drain(&e, 1), "losing panel focus cancels capture without accepting another panel's key");
+    panel_focus = true; frame("APPLY BINDING");
+    CHECK(commit_one() && snap.options.bind[action].code == 'R', "focus loss retains the pre-capture binding draft");
+    tab = "BLACKLIST";
+    bool old_hidden = snap.options.blacklist_kind[138];
+    row = "Cargo container (138)"; edited_kind = 138; frame(NULL);
+    panel_focus = false; pressed_vk = 0x09; frame("APPLY BLACKLIST");
+    CHECK(!ui_drain(&e, 1) && snap.options.blacklist_kind[138] == old_hidden,
+          "another panel blocks exclusion click and Tab without discarding drafts");
+    panel_focus = true; frame(NULL); pressed_vk = 0;
+    CHECK(commit_one() && snap.options.blacklist_kind[138] != old_hidden, "returning panel focus allows applying exclusions");
     TEST_MAIN_END
 }

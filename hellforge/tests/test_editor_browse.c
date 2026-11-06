@@ -142,6 +142,7 @@ static void formatted(const char* fmt, ...)
     vsnprintf(result_count, sizeof result_count, fmt, args);
     va_end(args);
 }
+static bool panel_focus = true;
 static void frame(int vk)
 {
     key = vk;
@@ -150,7 +151,7 @@ static void frame(int vk)
     submitted_extents = 0;
     result_count[0] = 0;
     fake_ov_reset();
-    editor_browse(&ov, &s, false);
+    editor_browse_focused(&ov, &s, false, panel_focus);
     key = 0;
 }
 
@@ -253,6 +254,10 @@ int main(void)
     frame(0x27); /* enter the selected category with Right */
     frame(0x28);
     CHECK(controls == 3 && focused_id == 1, "Tab/Q/E leave Browse untouched; arrows enter and navigate the selected category");
+    panel_focus = false;
+    frame(0x28); frame(0x0d);
+    CHECK(focused_id == 1 && editor_change_count(&s) == 0, "another panel blocks Browse arrows and Enter");
+    panel_focus = true;
     frame(0x0d);
     CHECK(editor_change_count(&s) == 1, "Enter stages the selected toggle");
     editing = 1; frame(0x2e); editing = 0;
@@ -262,7 +267,9 @@ int main(void)
     CHECK(editor_change_count(&s) == 0, "Delete reverts only the selected draft");
     query = "DoCk_GaP"; frame(0);
     CHECK(controls == 1 && fake_ov_find("text_wrapped:Dock gap above stamina", 0) >= 0, "search finds a settings key across categories");
-    frame(0x27);
+    panel_focus = false; frame(0x27);
+    CHECK(editor_change_count(&s) == 0, "another panel cannot adjust a Browse slider with Right");
+    panel_focus = true; frame(0x27);
     CHECK(editor_change_count(&s) == 1, "right arrow adjusts a slider by its descriptor step");
     CHECK(editor_browse_escape() && !editor_browse_escape(), "first Escape clears the query, next can close");
     UiEvent events[UI_QUEUE_SLOTS] = {0};

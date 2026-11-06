@@ -379,6 +379,12 @@ static void setting_row(const OvApi* ov, const DbfSnapshot* s, DbfSettings* effe
 
 void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
 {
+    editor_browse_focused(ov, s, focus_search, true);
+}
+
+void editor_browse_focused(const OvApi* ov, const DbfSnapshot* s, bool focus_search, bool focused)
+{
+    focus_search = focus_search && focused && (!ov || !ov->is_focused || ov->is_focused());
     if (!ov || !s) return;
     editor_change_count(s);
     if (feedback) ov->text_wrapped(feedback);
@@ -441,7 +447,7 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
         ov->draw_text(x0 + 2 * padding, y0 + padding, ov->theme(OV_THEME_TEXT_DIM),
                       0, y1 - y0 - 2 * padding, "Search   Ctrl+F");
     }
-    bool keys = !focus_search && navigation_allowed(ov);
+    bool keys = focused && !focus_search && navigation_allowed(ov);
     int prior_selection = selected;
     enum Pane before = pane;
     if (keys) navigate(ov, groups, n, current);
