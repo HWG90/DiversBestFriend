@@ -243,9 +243,10 @@ local function wheel_blur(log)
         stages[name]=value
         if log then log('Wheel blur '..name..': '..tostring(value)) end
     end
-    -- Stock archive 007e093ca718ca1a, resource IDs 2391483ABBDA5A58
-    -- and 3C6484761C78B9A0. Neither material exposes a wedge mask.
-    local materials={'content/ui/shared/material/gui_blur','content/ui/shared/material/blur_background'}
+    -- Screen-Gui material pipeline setup requests 'transparent' (EXE +2649c7).
+    -- gui_blur is 'transparent_pre', for the native HUD path. Both variants
+    -- sample hdr0_div4_fullres; neither computes blur or uses triangle UVs.
+    local materials={'content/ui/shared/material/blur_background'}
     local self={}
     local function clear()
         if lease then lease.release();lease=nil end
@@ -257,7 +258,7 @@ local function wheel_blur(log)
     end
     local function reject_material(now)
         unavailable_until[material]=now+5000
-        material,probe_after=nil,now
+        material,probe_after=nil,now+5000
         self.hide()
     end
     function self.draw(source,count,expanded,alpha,now)
@@ -271,6 +272,7 @@ local function wheel_blur(log)
         for _,name in ipairs({'triangle','destroy_triangle','material'}) do
             if not sr or not sr.Gui or not sr.Gui[name] then missing='Gui.'..name;break end
         end
+        if not missing and (not sr.Material or not sr.Material.set_scalar) then missing='Material.set_scalar' end
         stage('api',missing and ('invalid: '..missing) or 'ready')
         if missing then self.hide();return end
         local app=sr.Application
@@ -353,6 +355,14 @@ local function wheel_blur(log)
             reject_material(now);return
         end
         stage('binding','bound: '..material)
+        -- This material defaults to desaturate=1. Match the native backing's
+        -- setter at game.dll +18167ce, without changing tint/opacity/brightness.
+        local configured,why=pcall(sr.Material.set_scalar,handle,'desaturate',0)
+        if not configured or why==false then
+            stage('parameters','desaturate setup failed')
+            reject_material(now);return
+        end
+        stage('parameters','desaturate=0')
         lease.show();signature=key
         stage('activation','active (submission only; visual blur unverified)')
     end

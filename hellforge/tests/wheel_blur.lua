@@ -6,24 +6,39 @@ for _,name in ipairs({'cooldown_gui','wheel_expanded'}) do
 end
 scope.radial={wheel_scale=1,vertical_offset=0}
 scope.style=dofile('hellforge/hud/hd2_ui_style.lua')
-local preferred='content/ui/shared/material/gui_blur'
-local fallback='content/ui/shared/material/blur_background'
+local prepass='content/ui/shared/material/gui_blur'
+local preferred='content/ui/shared/material/blur_background'
+local fallback=preferred
 local available,world,probes,creates,next_id=nil,{},0,0,0
 local triangles,vertices={},{}
-local fail_at,visible,reject,return_nil,last_material
+local fail_at,visible,reject,return_nil,last_material,scalar_fail,configured
+local scalar_calls=0
 local function available_material(name) return available=="both" or available==name end
-local sr={Gui={},Application={},World={}}
+local sr={Gui={},Application={},World={},Material={}}
 scope._G.stingray=sr
 sr.Application.worlds=function() return {world} end
 sr.Application.main_world=function() return world end
 sr.Application.can_get=function(kind,name)
-    assert(kind=='material' and (name==preferred or name==fallback))
+    assert(kind=='material' and name==preferred,'never probe the incompatible transparent_pre material')
     probes=probes+1
     return available_material(name)
 end
 sr.World.create_screen_gui=function(w) assert(w==world);creates=creates+1;return {} end
-sr.Gui.set_visible=function(_,v) visible=v end
-sr.Gui.material=function(_,name) assert(available_material(name) and next(triangles));last_material=name;return name~=reject end
+sr.Gui.set_visible=function(_,v)
+    if v then assert(configured,'never show a grayscale or unconfigured blur material') end
+    visible=v
+end
+sr.Gui.material=function(_,name)
+    assert(available_material(name) and next(triangles))
+    last_material=name;configured=false
+    return name~=reject and {name=name} or false
+end
+sr.Material.set_scalar=function(handle,name,value)
+    assert(handle.name==preferred and name=='desaturate' and value==0 and not visible)
+    scalar_calls=scalar_calls+1
+    if scalar_fail then error('parameter unavailable') end
+    configured=true
+end
 sr.Gui.resolution=function() return 1920,1080 end
 sr.Gui.reset=function() assert(next(triangles)==nil) end
 sr.Vector2=function(x,y) return {x,y} end
@@ -56,12 +71,12 @@ end
 draw(1,false,0,0)
 assert(probes==0 and creates==0)
 draw(3,false,0.4,1);draw(3,false,0.4,200)
-assert(probes==2 and creates==0,'negative probe cached')
+assert(probes==1 and creates==0,'negative probe cached')
 available=fallback
 draw(3,false,0.4,5001)
-assert(probes==4 and creates==1 and visible and #vertices==96)
+assert(probes==2 and creates==1 and visible and #vertices==96)
 for _,tri in ipairs(vertices) do assert(tri[4]==102,'native opacity applies once to the entire plate') end
-draw(3,false,0.4,5002);assert(#vertices==96 and probes==4,'static HUD retains its mesh')
+draw(3,false,0.4,5002);assert(#vertices==96 and probes==2,'static HUD retains its mesh')
 
 -- Recover wedge-local geometry from an inherited nonuniform transform,
 -- vertical offset and tangential squeeze. Test the chords as well as vertices.
@@ -99,18 +114,30 @@ for _,missing_id in ipairs({false,true}) do
     world={};return_nil=missing_id;fail_at=next_id+5
     local before=probes
     assert(not pcall(draw,8,false,1,5100))
-    assert(not visible and next(triangles)==nil,'partial preferred mesh must be removed')
+    assert(not visible and next(triangles)==nil,'partial mesh must be removed')
     draw(8,false,1,6100)
-    assert(visible and probes==before+2 and last_material==fallback,'retry must use the secondary material')
+    assert(not visible and probes==before+1,'failure retry waits five seconds')
+    draw(8,false,1,10100)
+    assert(visible and probes==before+2 and last_material==preferred,'retry stays on transparent material')
     blur.hide();blur.hide();assert(not visible and next(triangles)==nil)
 end
 local before=probes
 world={};reject=preferred
-draw(8,false,1,5200);assert(not visible and next(triangles)==nil,'unbound triangles must stay hidden')
-available=fallback
-draw(8,false,1,5201);assert(visible and probes==before+2,'alternate material after GUI binding failure')
+draw(8,false,1,11000);assert(not visible and next(triangles)==nil,'unbound triangles must stay hidden')
+reject=nil
+draw(8,false,1,16000);assert(visible and probes==before+2,'binding failure recovers after delay')
 blur.hide()
-print('Retained textured wedge blur, material fallback, transformed clipping, opacity and teardown passed')
+scalar_fail=true;world={}
+draw(8,false,1,17000)
+assert(not visible and next(triangles)==nil,'parameter failure must clean every retained primitive')
+scalar_fail=false
+draw(8,false,1,22000);assert(visible,'parameter setup retries without losing cleanup')
+blur.hide()
+-- Having only the native prepass material cannot silently select it again.
+world={};available=prepass
+before=creates;draw(8,false,1,23000)
+assert(creates==before and not visible,'unavailable transparent pass stays hidden')
+print('Transparent-pass wedge material, color parity, clipping, opacity and teardown passed')
 
 -- Stage diagnostics must remain quiet across retained and rebuilt geometry.
 local logs={}
@@ -138,7 +165,7 @@ assert(#logs==n,'negative material retries must not repeat diagnostics')
 available=fallback
 draw(8,true,0.5,20003)
 for _,fragment in ipairs({'api: ready','world:','material: selected:',
-    'triangles: submitted: 96','binding: bound:','activation: active'}) do
+    'triangles: submitted: 96','binding: bound:','parameters: desaturate=0','activation: active'}) do
     assert(contains(fragment),fragment)
 end
 n=#logs
