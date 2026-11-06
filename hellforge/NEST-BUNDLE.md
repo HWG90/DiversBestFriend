@@ -9,6 +9,8 @@ The current DBF release in this bundle is **R50-hellforge.11**.
 
 NEST (Native Extension and Settings Toolkit) provides shared panel rendering, input capture and hotkeys, and game-thread scheduling. DBF uses it for its settings and diagnostics. DBF draws its wheel, cooldown display and weapon strip on the native game HUD. Future HellForge mods can register their own panels and reuse the same installed copy of NEST.
 
+NEST 0.8.2 reads FS Sinclair Regular for body text and Medium for headings from your installed game data. The extractor is included in NEST’s DLL; the bundle does not redistribute game font files or require an installed Editor mod.
+
 | HellForge mod ID | Binary |
 | --- | --- |
 | `goose.divers-best-friend` | `divers_best_friend.dll` |
