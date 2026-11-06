@@ -8,6 +8,8 @@
 static DbfSnapshot snap;
 static OvApi ov;
 static const char *tab = "CONTROLS", *button, *typed, *row;
+static int pressed_vk;
+static bool text_entry;
 static int vk, action, pushed_id, edited_kind, mouse = -1;
 static float wheel;
 static bool focused = true, disabled, direct;
@@ -56,6 +58,8 @@ static int click(const char* label)
     return button && !disabled && !strcmp(button,label);
 }
 static int down(int key) { return vk == key; }
+static int pressed(int key) { return pressed_vk == key; }
+static int wants_text(void) { return text_entry; }
 static int mouse_down(int key) { return mouse == key; }
 static float scroll(void) { return wheel; }
 static int focus(void) { return focused; }
@@ -99,6 +103,70 @@ static void check_capture(int key, int mouse_button, float delta, uint16_t pad, 
     CHECK(commit_one() && snap.options.bind[action].kind == kind && snap.options.bind[action].code == code,
           "capture submits the intended physical input after release");
 }
+/* Exercise both the direct pages and the retained legacy tab host. Key edges
+ * are independent of held keys so capture and modifier guards remain visible. */
+static void check_tab_apply(bool modern)
+{
+    UiEvent e;
+    direct = modern;
+    tab = "CONTROLS";
+    selected_action = NULL;
+    action = BIND_SLOT4;
+    typed = "key:v"; frame(NULL);
+    pressed_vk = 0x09;
+    text_entry = true; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "Tab in binding text entry does not submit a valid draft");
+    text_entry = false; focused = false; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "unfocused Tab does not submit a binding draft");
+    focused = true;
+    const int modifiers[] = {0x10, 0x11, 0x12};
+    for (unsigned i = 0; i < sizeof modifiers / sizeof *modifiers; ++i) {
+        vk = modifiers[i]; frame(NULL);
+        CHECK(!ui_drain(&e, 1), "modified Tab leaves the binding draft local");
+    }
+    vk = 0; frame(NULL);
+    CHECK(commit_one() && snap.options.bind[action].kind == BIND_KEY && snap.options.bind[action].code == 'V',
+          "plain Tab applies a valid binding after suppressed shortcuts");
+    frame(NULL);
+    CHECK(!ui_drain(&e, 1), "Tab on an unchanged binding is a no-op");
+    typed = "pad:no_such_button"; frame(NULL);
+    CHECK(!ui_drain(&e, 1) && snap.options.bind[action].code == 'V', "Tab cannot apply an invalid binding");
+    pressed_vk = 0;
+    typed = "key:w"; frame(NULL);
+    capture_start();
+    pressed_vk = vk = 0x09; frame(NULL);
+    CHECK(!editor_capturing() && !ui_drain(&e, 1) && snap.options.bind[action].code == 'V',
+          "capturing Tab edits the draft without applying it on the capture-completion frame");
+    pressed_vk = vk = 0; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "releasing captured Tab does not apply the binding");
+    pressed_vk = 0x09; frame(NULL);
+    CHECK(commit_one() && snap.options.bind[action].kind == BIND_KEY && snap.options.bind[action].code == 0x09,
+          "a separate Tab press applies the captured Tab binding");
+    pressed_vk = 0;
+
+    tab = "BLACKLIST";
+    if (modern) { typed = ""; frame(NULL); } /* Clear the earlier search. */
+    bool was_hidden = snap.options.blacklist_kind[138];
+    row = "Cargo container (138)"; edited_kind = 138; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "exclusion toggle remains a local draft");
+    pressed_vk = 0x09;
+    text_entry = true; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "Tab in exclusion search does not apply hidden-state edits");
+    text_entry = false; focused = false; frame(NULL);
+    CHECK(!ui_drain(&e, 1), "unfocused Tab does not apply exclusions");
+    focused = true;
+    for (unsigned i = 0; i < sizeof modifiers / sizeof *modifiers; ++i) {
+        vk = modifiers[i]; frame(NULL);
+        CHECK(!ui_drain(&e, 1), "modified Tab leaves exclusion edits local");
+    }
+    vk = 0; frame(NULL);
+    CHECK(commit_one() && snap.options.blacklist_kind[138] != was_hidden,
+          "plain Tab applies the valid exclusion draft after suppressed shortcuts");
+    frame(NULL);
+    CHECK(!ui_drain(&e, 1), "Tab on unchanged exclusions is a no-op");
+    pressed_vk = 0;
+}
+
 int main(void)
 {
     snap_init();
@@ -106,7 +174,7 @@ int main(void)
     ov = *fake_ov_api();
     ov.begin_tab_item = tab_item; ov.end_tab_item = nothing;
     ov.button = click; ov.input_text = edit_text; ov.combo = action_combo;
-    ov.key_down = down; ov.mouse_down = mouse_down; ov.mouse_wheel = scroll; ov.is_focused = focus;
+    ov.key_down = down; ov.key_pressed = pressed; ov.want_text_input = wants_text; ov.mouse_down = mouse_down; ov.mouse_wheel = scroll; ov.is_focused = focus;
     ov.push_id_int = push; ov.pop_id = nothing; ov.begin_disabled = disable; ov.end_disabled = enable;
     ov.checkbox = toggle; ov.same_line = nothing;
     UiEvent e;
@@ -168,7 +236,7 @@ int main(void)
     selected_action = NULL;
     action = BIND_SLOT4;
     check_capture(0x75, -1, 0, 0, BIND_KEY, 0x75); /* F6 normally cycles shell pages. */
-    check_capture(0x78, -1, 0, 0, BIND_KEY, 0x78); /* F9 normally applies shell settings. */
+    check_capture(0x78, -1, 0, 0, BIND_KEY, 0x78); /* F9 remains a capturable binding. */
     typed = "key:t"; frame(NULL);
     capture_start();
     CHECK(editor_capturing(), "shell shortcuts yield to capture");
@@ -202,5 +270,7 @@ int main(void)
     CHECK(tabs_opened == prior_tabs, "direct pages leave navigation to the caller");
     direct = false; tab = "BLACKLIST"; frame(NULL);
     CHECK(!scrolling_rows && !icon_slots && visible_rows == dbf_blacklist_kind_count, "legacy tab still lists every kind after editor search");
+    check_tab_apply(true);
+    check_tab_apply(false);
     TEST_MAIN_END
 }
