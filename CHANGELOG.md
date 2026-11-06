@@ -1,3 +1,11 @@
+# R50 — DBF Reforged — 2026-11-05
+
+- Native game HUD wheels, wedge blur, cooldowns and weapon strip, with settings and diagnostics in NEST.
+- A bundle containing DBF and NEST, with the HUD starting directly from DBF. Existing BSL can run other addons without a DBF-imposed loader version requirement.
+- F7 opens DBF settings and Page Down opens NEST. New terminal configurations use arrow entry. Optional MCM integration shares settings and bindings.
+- HellForge revision .11 matches HF Editor’s font faces and fixes setting labels clipped by column dividers.
+- See the [installation guide](hellforge/NEST-BUNDLE.md).
+
 # R46 — The Homecoming Update — 2026-10-19
 
 - Add cooldown dock/overview, native timers, separated statuses and charge displays.

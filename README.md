@@ -1,14 +1,14 @@
 ![Diver's Best Friend — DBF / Automated Stratagem System (ASS)](assets/banner-dbf.png)
 
-# Diver's Best Friend
+# DBF Reforged
 
 **Your stratagems. In the game. No OCR. No Python. No AutoHotkey. Just a nice ASS.**
 
 *Automated Stratagem System*
 
-## HellForge edition
+## R50 — DBF Reforged for HellForge
 
-For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Extract it, import the two inner ZIPs in HellForge, and enable **NEST** and **Diver’s Best Friend**. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md) · [HellForge download on Ayaka](https://ayakamods.com/mods/divers-best-friend-automated-stratagem-system-ass.5899/) · [GitHub HellForge release](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.10)
+For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Extract it, import the two inner ZIPs in HellForge, and enable **NEST** and **DBF Reforged**. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md) · [HellForge download on Ayaka](https://ayakamods.com/mods/divers-best-friend-automated-stratagem-system-ass.5899/) · [GitHub HellForge release](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11)
 
 DBF draws its wheel, cooldowns and weapon strip on the game HUD. NEST (Native Extension and Settings Toolkit) provides the settings window, shared hotkeys and input handling. Other HellForge mods can register panels with the same installed framework.
 
@@ -16,7 +16,7 @@ DBF draws its wheel, cooldowns and weapon strip on the game HUD. NEST (Native Ex
 
 Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
 
-[Homecoming release notes](docs/RELEASE-r46.md) | [Stable download](https://github.com/HWG90/DiversBestFriend/releases/latest) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+[Homecoming release notes](docs/RELEASE-r46.md) | [Original R46 download](https://github.com/HWG90/DiversBestFriend/releases/tag/r46) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
 
 ### R46 — The Homecoming Update
 
