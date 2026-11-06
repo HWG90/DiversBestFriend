@@ -12,7 +12,14 @@ static const char* child_id;
 static bool input_in_options, hint_in_options;
 static const char *query, *clicked, *headings[8];
 static int heading_count, category_pick = -1, category_combos, controls, focused_id, id;
-static float region_width = 900;
+static float region_width = 900, rows_width = 900;
+static int column_setups;
+static float column_weights[2];
+static void setup_column(const char* label, int stretch, float weight)
+{
+    CHECK(stretch && weight >= .35f && weight <= .65f, "settings columns have bounded stretch weights");
+    column_weights[column_setups++ % 2] = weight;
+}
 static bool disabled, row_focus_requested;
 static int combo_edit = -1;
 static bool slider_disabled;
@@ -21,12 +28,25 @@ static int pressed(int k) { return key == k; }
 static int held(int k) { return modifier == k; }
 static int text_active(void) { return editing; }
 static int active;
-static int item_active(void) { return active; }
+static const char* dragged;
+static bool splitter_active;
+static float drag_x;
+static int hit_splitter(const char* label, float w, float h)
+{
+    splitter_active = dragged && !strcmp(dragged, label);
+    CHECK(w > 0 && h >= 0, "divider hit target has positive width and bounded height");
+    return 0;
+}
+static void mouse(float* x, float* y) { *x = drag_x; *y = 0; }
+static int hovered(void) { return 0; }
+static void line(float x0, float y0, float x1, float y1, uint32_t color, float thickness) {}
+
+static int item_active(void) { return splitter_active || active; }
 static void nothing(void) {}
 static void number(int n) { (void)n; }
 static void color(int slot, uint32_t c) { (void)slot; (void)c; }
 static void focus(void) { ++focuses; row_focus_requested = true; }
-static void size(float* w, float* h) { *w = region_width; *h = 500; }
+static void size(float* w, float* h) { *w = child_id && !strcmp(child_id, "##settings-rows") ? rows_width : region_width; *h = 500; }
 static void child(const char* id, float w, float h, int border) { ++children; child_id = id; }
 static void end_child(void) { child_id = NULL; }
 static void width(float w) {}
@@ -54,6 +74,7 @@ static int select_row(const char* label, int selected) { return click(label); }
 static int input(const char* label, char* buffer, size_t n)
 {
     row_focus_requested = false;
+    splitter_active = false;
     input_in_options = child_id && !strcmp(child_id, "##options");
     if (!query) return 0;
     snprintf(buffer, n, "%s", query);
@@ -89,7 +110,7 @@ static void formatted(const char* fmt, ...)
 static void frame(int vk)
 {
     key = vk;
-    heading_count = controls = children = 0;
+    heading_count = controls = children = column_setups = 0;
     result_count[0] = 0;
     fake_ov_reset();
     editor_browse(&ov, &s, false);
@@ -109,7 +130,9 @@ int main(void)
     ov.push_color = color; ov.pop_color = number; ov.selectable = select_row; ov.same_line = nothing;
     ov.begin_disabled = begin_disabled; ov.end_disabled = nothing; ov.push_id_int = push_id; ov.pop_id = nothing;
     ov.checkbox = toggle; ov.combo = combo; ov.slider_int = slider; ov.textf = formatted;
-    ov.small_button = click;
+    ov.small_button = click; ov.table_setup_column_ex = setup_column;
+    ov.invisible_button = hit_splitter; ov.mouse_pos = mouse;
+    ov.is_item_hovered = hovered; ov.draw_line = line;
     ov.cursor_screen_pos = size; ov.set_cursor_screen_pos = cursor; ov.selectable_ex = row;
 
     CHECK(editor_browse_available(&ov) && !editor_browse_available(fake_ov_api()),
@@ -119,6 +142,18 @@ int main(void)
     CHECK(controls == HUD_OPTION_COUNT && heading_count == 8, "sidebar and all seven groups show inline controls");
     CHECK(fake_ov_find("text_wrapped:Wheel size (%)", 0) >= 0, "numeric control has a visible label");
     CHECK(fake_ov_find("text_wrapped:Choose Native wheel mode.", 0) >= 0, "disabled row shows its exact prerequisite");
+    CHECK(column_setups == 14 && column_weights[0] + column_weights[1] == 1,
+          "all seven groups explicitly size label and control columns");
+    dragged = "##setting-divider"; drag_x = -1000; frame(0);
+    dragged = NULL; splitter_active = false; frame(0);
+    CHECK(column_weights[0] == .35f, "dragging the divider clamps the label column minimum");
+    dragged = "##setting-divider"; drag_x = 10000; frame(0);
+    dragged = NULL; splitter_active = false; frame(0);
+    CHECK(column_weights[0] == .65f, "dragging the divider preserves the control column minimum");
+    rows_width = 300; frame(0);
+    CHECK(column_setups == 0 && controls == HUD_OPTION_COUNT,
+          "actual settings pane width stacks every normal option even in a wide outer window");
+    rows_width = 900;
     region_width = 360; category_pick = 6; frame(0);
     CHECK(category_combos == 1 && controls == 2 && heading_count == 1 && !strcmp(headings[0], "TERMINALS"),
           "narrow layout replaces the sidebar with a category selector and stacks its controls");

@@ -8,7 +8,7 @@ bool editor_browse_available(const OvApi* ov)
     return ov && ov->size >= offsetof(OvApi, heading) + sizeof ov->heading &&
            ov->heading && ov->begin_child && ov->end_child && ov->same_line && ov->content_region_avail &&
            ov->push_color && ov->pop_color && ov->theme && ov->selectable && ov->input_text &&
-           ov->set_cursor_screen_pos && ov->selectable_ex &&
+           ov->cursor_screen_pos && ov->set_cursor_screen_pos && ov->selectable_ex &&
            ov->text_size && ov->item_rect && ov->draw_text && ov->set_next_item_width && ov->set_keyboard_focus_here && ov->want_text_input && ov->is_item_active && ov->key_pressed && ov->key_down &&
            ov->text && ov->textf && ov->text_disabled && ov->text_wrapped && ov->separator &&
            ov->checkbox && ov->combo && ov->slider_int && ov->small_button && ov->begin_disabled &&
@@ -31,6 +31,32 @@ static char search[96];
 static bool search_active, search_id;
 enum Pane { CATEGORIES, OPTIONS };
 static enum Pane pane;
+static float sidebar_em, label_share = .5f;
+
+/* The host's basic tables have fixed dividers. Keep resizing local to DBF,
+ * using an ordinary ImGui hit target and the host's themed drawing API. */
+static void resize_split(const OvApi* ov, const char* id, float x, float y,
+                         float height, float em, float origin, float span,
+                         float minimum, float maximum, float* value)
+{
+    if (!ov->invisible_button || !ov->mouse_pos || !ov->is_item_hovered || !ov->draw_line) return;
+    float saved_x, saved_y;
+    ov->cursor_screen_pos(&saved_x, &saved_y);
+    ov->set_cursor_screen_pos(x - em * .2f, y);
+    ov->invisible_button(id, em * .4f, height);
+    bool active = ov->is_item_active() != 0;
+    bool hover = ov->is_item_hovered() != 0;
+    if (active) {
+        float mouse_x, mouse_y;
+        ov->mouse_pos(&mouse_x, &mouse_y);
+        *value = (mouse_x - origin) / span;
+        if (*value < minimum) *value = minimum;
+        if (*value > maximum) *value = maximum;
+    }
+    ov->draw_line(x, y, x, y + height,
+                  ov->theme(active ? OV_THEME_ACCENT : hover ? OV_THEME_LINE_STRONG : OV_THEME_LINE), 1);
+    ov->set_cursor_screen_pos(saved_x, saved_y);
+}
 
 bool editor_browse_escape(void)
 {
@@ -277,7 +303,18 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     ov->content_region_avail(&width, &height);
     float ignored;
     ov->text_size(0, 0, "M", &ignored, &em);
-    bool narrow = width < 32 * em;
+    float sidebar = 9 * em;
+    for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i) {
+        float measured, line;
+        ov->text_size(0, 0, hud_option_descriptor(i)->group, &measured, &line);
+        if (measured + 3 * em > sidebar) sidebar = measured + 3 * em;
+    }
+    float sidebar_min = sidebar / em;
+    bool narrow = width < sidebar + 30 * em;
+    if (sidebar_em < sidebar_min) sidebar_em = sidebar_min;
+    if (!narrow && sidebar_em > width / em - 30) sidebar_em = width / em - 30;
+    float pane_x, pane_y;
+    ov->cursor_screen_pos(&pane_x, &pane_y);
     const char* groups[HUD_OPTION_COUNT + 1];
     int current;
     int n = category_list(groups, &current);
@@ -290,7 +327,7 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
             choose_category(groups, current);
         }
     } else {
-        begin_pane(ov, CATEGORIES, "##categories", em * 9, height);
+        begin_pane(ov, CATEGORIES, "##categories", sidebar_em * em, height);
         ov->heading("Categories");
         for (int j = 0; j < n; ++j) {
             if (ov->selectable(groups[j], (search[0] ? 0 : current) == j)) {
@@ -299,6 +336,8 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
             }
         }
         ov->end_child();
+        resize_split(ov, "##category-divider", pane_x + sidebar_em * em + em * .25f,
+                     pane_y, height, em, pane_x, em, sidebar_min, width / em - 30, &sidebar_em);
         ov->same_line();
     }
     begin_pane(ov, OPTIONS, "##options", 0, 0);
@@ -335,12 +374,43 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
         const char* group = hud_option_descriptor(first)->group;
         ov->heading(group);
         ov->push_id_int((int)first);
-        bool columns = !narrow && ov->begin_table("##inline", 2);
+        float available, remaining, table_x, table_y;
+        ov->content_region_avail(&available, &remaining);
+        ov->cursor_screen_pos(&table_x, &table_y);
+        float control_min = 12 * em;
+        for (int scan = row; scan < count; ++scan) {
+            const HudOption* option = hud_option_descriptor((unsigned)results[scan]);
+            if (strcmp(option->group, group)) break;
+            if (option->widget != HUD_CHOICE) continue;
+            for (int choice = 0; choice <= option->max - option->min; ++choice) {
+                float measured, line;
+                ov->text_size(0, 0, option->choices[choice], &measured, &line);
+                if (measured + 3 * em > control_min) control_min = measured + 3 * em;
+            }
+        }
+        bool columns = available >= control_min + 12 * em && ov->table_setup_column_ex &&
+                       ov->begin_table("##inline", 2);
+        float share = label_share, minimum = .35f, maximum = .65f;
+        if (columns) {
+            if (12 * em / available > minimum) minimum = 12 * em / available;
+            if (1 - control_min / available < maximum) maximum = 1 - control_min / available;
+            if (share < minimum) share = minimum;
+            if (share > maximum) share = maximum;
+            ov->table_setup_column_ex("Setting", 1, share);
+            ov->table_setup_column_ex("Value", 1, 1 - share);
+        }
         do {
             setting_row(ov, s, &effective, (unsigned)results[row++], columns, keys && before == pane,
                         keys && (selected != prior_selection || pane != before));
         } while (row < count && !strcmp(group, hud_option_descriptor((unsigned)results[row])->group));
-        if (columns) ov->end_table();
+        if (columns) {
+            ov->end_table();
+            float end_x, end_y;
+            ov->cursor_screen_pos(&end_x, &end_y);
+            resize_split(ov, "##setting-divider", table_x + available * share,
+                         table_y, end_y - table_y, em, table_x, available,
+                         minimum, maximum, &label_share);
+        }
         ov->pop_id();
     }
     ov->end_child();

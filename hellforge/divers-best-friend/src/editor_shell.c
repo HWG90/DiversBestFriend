@@ -41,11 +41,11 @@ static void header(const OvApi* ov, OvPanel* panel, float x, float y, float w, f
     ov->draw_line(x, y+height, x+w, y+height, ov->theme(OV_THEME_LINE_STRONG), k);
     editor_icon(ov, "logo", x+12*k, y+8*k, 38*k);
     float title_x = x + 60*k;
-    ov->draw_text(title_x, y+14*k, ov->theme(OV_THEME_TEXT), bold, 22*k, "DIVER'S");
-    title_x += width_of(ov, bold, 22*k, "DIVER'S") + 7*k;
-    ov->draw_text(title_x, y+14*k, ov->theme(OV_THEME_ACCENT), bold, 22*k, "BEST FRIEND");
+    ov->draw_text(title_x, y+14*k, ov->theme(OV_THEME_TEXT), bold, 22*k, "DBF");
+    title_x += width_of(ov, bold, 22*k, "DBF") + 7*k;
+    ov->draw_text(title_x, y+14*k, ov->theme(OV_THEME_ACCENT), bold, 22*k, "REFORGED");
 
-    float tx = stacked ? x+4*k : title_x+width_of(ov,bold,22*k,"BEST FRIEND")+20*k;
+    float tx = stacked ? x+4*k : title_x+width_of(ov,bold,22*k,"REFORGED")+20*k;
     float top = y + (stacked ? 53 : 7)*k;
     float bottom = y+height;
     float available = x+w-tx-(stacked ? 4 : 54)*k;

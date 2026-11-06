@@ -182,6 +182,9 @@ static void draw(const DbfSnapshot* data)
 static void expect_tab(int selected)
 {
     CHECK(child_calls>0 && layers>=2,"drew window contents in a child and restored draw layer");
+    char title[96];
+    snprintf(title, sizeof title, "dtext:%08X:REFORGED", (unsigned)fake_ov_theme_color(OV_THEME_ACCENT));
+    CHECK(fake_ov_find(title, 0) >= 0, "menu displays the approved DBF Reforged title");
     for (int i=0;i<5;i++) {
         char line[96];
         int token = i==selected ? OV_THEME_ACCENT : OV_THEME_TEXT_DIM;

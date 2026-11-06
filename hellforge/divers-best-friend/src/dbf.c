@@ -63,10 +63,10 @@
 #include "hud_prefs.h"
 #include "migration.h"
 
-#define DBF_VERSION "R50-hellforge.10"
+#define DBF_VERSION "R50-hellforge.11"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
-#define DBF_TITLE "Diver's Best Friend"
+#define DBF_TITLE "DBF Reforged"
 /* The Overlay Host API the window needs (Overlay Host 0.2.0). DBF asks the host for this version, not for
  * OV_API_VERSION as ov_connect does: a 0.2.x host serves 4 and refuses 5. A newer host serves 4 as well. */
 #define DBF_OV_API_MIN 4u
