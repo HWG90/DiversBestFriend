@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include "editor_browse.h"
+#include "editor_icons.h"
 #include "fake_ov.h"
 #include "hud_options.h"
 #include "test.h"
@@ -11,9 +12,10 @@ static int key, modifier, editing, focuses, children;
 static const char* child_id;
 static bool input_in_options, hint_in_options;
 static const char *query, *clicked, *headings[8];
+static int clicked_category = -1, clicked_section = -1, section_rows, category_rows;
 static int heading_count, category_pick = -1, category_combos, controls, focused_id, id;
 static float region_width = 900, rows_width = 900;
-static int column_setups;
+static int column_setups, submitted_extents, glyph_parts;
 static float column_weights[2];
 static void setup_column(const char* label, int stretch, float weight)
 {
@@ -50,21 +52,54 @@ static void size(float* w, float* h) { *w = child_id && !strcmp(child_id, "##set
 static void child(const char* id, float w, float h, int border) { ++children; child_id = id; }
 static void end_child(void) { child_id = NULL; }
 static void width(float w) {}
+static void extent(float width, float height) { ++submitted_extents; }
+static void glyph_rect(float x0, float y0, float x1, float y1, uint32_t color, float rounding)
+{
+    CHECK(x0 >= 10 && y0 >= 20 && x1 <= 34 && y1 <= 44 && x1 > x0 && y1 > y0,
+          "navigation glyph stays inside its icon slot");
+    CHECK(color == fake_ov_theme_color(OV_THEME_GOLD), "navigation glyph uses the host gold token");
+    ++glyph_parts;
+}
+static void glyph_circle(float x, float y, float radius, uint32_t color, float thickness)
+{
+    CHECK(x-radius >= 10 && y-radius >= 20 && x+radius <= 34 && y+radius <= 44,
+          "round glyph stays inside its icon slot");
+    CHECK(color == fake_ov_theme_color(OV_THEME_GOLD), "round glyph uses the host gold token");
+    ++glyph_parts;
+}
 static void rect(float* x, float* y, float* right, float* bottom)
 { *x = 4; *y = 4; *right = 200; *bottom = 32; }
 static void draw_hint(float x, float y, uint32_t color, int font, float size, const char* text)
 {
-    hint_in_options = child_id && !strcmp(child_id, "##options") && !strcmp(text, "Search   Ctrl+F");
+    if (child_id && !strcmp(child_id, "##options") && !strcmp(text, "Search   Ctrl+F")) hint_in_options = true;
 }
 static void title(const char* label)
 {
     if (heading_count < 8) headings[heading_count++] = label;
+}
+static void wrapped(const char* text)
+{
+    fake_ov_api()->text_wrapped(text);
+    if (!child_id || strcmp(child_id, "##settings-rows")) return;
+    for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i) {
+        const char* group = hud_option_descriptor(i)->group;
+        if (!strcmp(text, group)) {
+            if (!heading_count || strcmp(headings[heading_count - 1], group)) title(group);
+            break;
+        }
+    }
 }
 static void push_id(int value) { id = value; }
 static void begin_disabled(int flag) { disabled = flag != 0; }
 static void cursor(float x, float y) {}
 static int row(const char* label, int selected, float w, float h, int span)
 {
+    if (!strcmp(label, "##group")) {
+        bool navigation = child_id && !strcmp(child_id, "##categories");
+        if (navigation) ++category_rows; else ++section_rows;
+        int* target = navigation ? &clicked_category : &clicked_section;
+        if (*target == id) { *target = -1; return 1; }
+    }
     if (row_focus_requested) focused_id = id;
     row_focus_requested = false;
     return 0;
@@ -110,7 +145,9 @@ static void formatted(const char* fmt, ...)
 static void frame(int vk)
 {
     key = vk;
-    heading_count = controls = children = column_setups = 0;
+    heading_count = controls = children = column_setups = section_rows = category_rows = 0;
+    hint_in_options = false;
+    submitted_extents = 0;
     result_count[0] = 0;
     fake_ov_reset();
     editor_browse(&ov, &s, false);
@@ -130,7 +167,7 @@ int main(void)
     ov.push_color = color; ov.pop_color = number; ov.selectable = select_row; ov.same_line = nothing;
     ov.begin_disabled = begin_disabled; ov.end_disabled = nothing; ov.push_id_int = push_id; ov.pop_id = nothing;
     ov.checkbox = toggle; ov.combo = combo; ov.slider_int = slider; ov.textf = formatted;
-    ov.small_button = click; ov.table_setup_column_ex = setup_column;
+    ov.dummy = extent; ov.text_wrapped = wrapped; ov.small_button = click; ov.table_setup_column_ex = setup_column;
     ov.invisible_button = hit_splitter; ov.mouse_pos = mouse;
     ov.is_item_hovered = hovered; ov.draw_line = line;
     ov.cursor_screen_pos = size; ov.set_cursor_screen_pos = cursor; ov.selectable_ex = row;
@@ -139,11 +176,41 @@ int main(void)
           "legacy fake stays on the original path");
     frame(0);
     CHECK(input_in_options && hint_in_options, "empty Search field shows Ctrl+F inside Options");
-    CHECK(controls == HUD_OPTION_COUNT && heading_count == 8, "sidebar and all seven groups show inline controls");
-    CHECK(fake_ov_find("text_wrapped:Wheel size (%)", 0) >= 0, "numeric control has a visible label");
-    CHECK(fake_ov_find("text_wrapped:Choose Native wheel mode.", 0) >= 0, "disabled row shows its exact prerequisite");
+    CHECK(controls == 3 && section_rows == 7 && category_rows == 8,
+          "overview shows seven collapsible groups with only Selection initially expanded");
+    CHECK(submitted_extents == section_rows + category_rows,
+          "every group row submits its final cursor extent, including the last collapsed section");
+    OvApi glyph = ov;
+    glyph.draw_rect_filled = glyph_rect;
+    glyph.draw_circle = glyph_circle;
+    const char* names[] = {"All settings", "SELECTION", "APPEARANCE", "LIST SELECT",
+                          "HUD LAYOUT", "COOLDOWN DISPLAY", "TERMINALS", "ADVANCED"};
+    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
+        glyph_parts = 0;
+        editor_icon(&glyph, names[i], 10, 20, 24);
+        CHECK(glyph_parts > 0, "each settings group has a navigation glyph");
+    }
+    glyph_parts = 0;
+    editor_icon(&glyph, "unknown", 10, 20, 24);
+    editor_icon(NULL, "SELECTION", 10, 20, 24);
+    glyph.draw_rect_filled = NULL;
+    editor_icon(&glyph, "SELECTION", 10, 20, 24);
+    CHECK(glyph_parts == 0, "unknown icons and absent drawing callbacks are harmless");
+    CHECK(fake_ov_find("text_disabled:STRATAGEMS", 0) >= 0 &&
+          fake_ov_find("text_disabled:HUD", 0) >= 0 &&
+          fake_ov_find("text_disabled:AUTOMATION", 0) >= 0, "navigation groups related categories");
+    clicked_section = 3; frame(0);
+    CHECK(controls == 12 && fake_ov_find("text_wrapped:Wheel size (%)", 0) >= 0,
+          "expanding Appearance reveals its nine settings");
+    clicked_section = 3; frame(0);
+    CHECK(controls == 3, "collapsing Appearance hides its fields");
+    query = " "; frame(0);
+    CHECK(controls == HUD_OPTION_COUNT && heading_count == 7,
+          "global search opens all matching groups");
+    CHECK(fake_ov_find("text_wrapped:Choose Native wheel mode.", 0) >= 0,
+          "search retains exact prerequisites beside unavailable controls");
     CHECK(column_setups == 14 && column_weights[0] + column_weights[1] == 1,
-          "all seven groups explicitly size label and control columns");
+          "all visible groups explicitly size label and control columns");
     dragged = "##setting-divider"; drag_x = -1000; frame(0);
     dragged = NULL; splitter_active = false; frame(0);
     CHECK(column_weights[0] == .35f, "dragging the divider clamps the label column minimum");
@@ -154,6 +221,7 @@ int main(void)
     CHECK(column_setups == 0 && controls == HUD_OPTION_COUNT,
           "actual settings pane width stacks every normal option even in a wide outer window");
     rows_width = 900;
+    editor_browse_escape();
     region_width = 360; category_pick = 6; frame(0);
     CHECK(category_combos == 1 && controls == 2 && heading_count == 1 && !strcmp(headings[0], "TERMINALS"),
           "narrow layout replaces the sidebar with a category selector and stacks its controls");
@@ -180,11 +248,11 @@ int main(void)
     active = 0;
     CHECK(children == 3 && focuses == 1 && input_in_options && !hint_in_options, "Ctrl+F focuses the pinned search in the settings pane");
     CHECK(editor_browse_escape(), "Escape consumes even an empty active search");
-    frame(0x09); /* options -> categories */
-    frame(0x28); /* All -> SELECTION */
-    frame(0x09); /* options */
+    clicked_category = 1; frame(0);
+    frame(0x09); frame('Q'); frame('E');
+    frame(0x27); /* enter the selected category with Right */
     frame(0x28);
-    CHECK(controls == 3 && focused_id == 1, "arrows reveal the next inline control within the category");
+    CHECK(controls == 3 && focused_id == 1, "Tab/Q/E leave Browse untouched; arrows enter and navigate the selected category");
     frame(0x0d);
     CHECK(editor_change_count(&s) == 1, "Enter stages the selected toggle");
     editing = 1; frame(0x2e); editing = 0;

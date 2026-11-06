@@ -5,6 +5,7 @@
 
 /* Render thread only. A queued change remains staged until published by the game. */
 bool editor_browse_available(const OvApi* ov);
+/* Tab belongs to the shell. Browse uses arrows within the chosen navigation pane. */
 void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search);
 bool editor_browse_escape(void); /* consumes Escape when clearing search */
 void editor_changes(const OvApi* ov, const DbfSnapshot* s);

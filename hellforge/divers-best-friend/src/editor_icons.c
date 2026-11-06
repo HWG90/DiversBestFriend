@@ -108,15 +108,53 @@ static bool installed_logo(const Pen* p)
 
 void editor_icon(const OvApi* ov, const char* section, float x, float y, float size)
 {
-    if (!ov || !section || !named(section, "logo") || !(size > 0) || !isfinite(size) || !isfinite(x) || !isfinite(y) ||
+    if (!ov || !section || !(size > 0) || !isfinite(size) || !isfinite(x) || !isfinite(y) ||
         ov->version < 2 || ov->size < offsetof(OvApi, theme) + sizeof ov->theme || !ov->theme) return;
     Pen p = {ov, x, y, size/24, ov->theme(OV_THEME_TEXT)};
+    if (!named(section, "logo")) {
+        if (!ov->draw_rect_filled) return;
+        p.ink = ov->theme(OV_THEME_GOLD);
+        if (named(section, "all settings")) {
+            for (int row = 0; row < 2; ++row)
+                for (int col = 0; col < 2; ++col) block(&p, 3 + col * 10, 3 + row * 10, 7, 7);
+        } else if (named(section, "selection")) {
+            block(&p, 10, 2, 4, 20);
+            block(&p, 2, 10, 20, 4);
+        } else if (named(section, "appearance")) {
+            if (ov->draw_circle) ov->draw_circle(x + size/2, y + size/2, size*.36f, p.ink, size/12);
+            block(&p, 10, 10, 4, 4);
+        } else if (named(section, "list select")) {
+            for (int row = 0; row < 3; ++row) {
+                block(&p, 2, 4 + row * 6, 3, 3);
+                block(&p, 8, 4 + row * 6, 14, 3);
+            }
+        } else if (named(section, "hud layout")) {
+            block(&p, 2, 3, 20, 3);
+            block(&p, 2, 9, 7, 12);
+            block(&p, 12, 9, 10, 5);
+            block(&p, 12, 17, 10, 4);
+        } else if (named(section, "cooldown display")) {
+            if (ov->draw_circle) ov->draw_circle(x + size/2, y + size/2, size*.4f, p.ink, size/12);
+            block(&p, 11, 5, 2, 8);
+            block(&p, 11, 11, 7, 2);
+        } else if (named(section, "terminals")) {
+            block(&p, 2, 3, 20, 2);
+            block(&p, 2, 3, 2, 15);
+            block(&p, 20, 3, 2, 15);
+            block(&p, 2, 16, 20, 2);
+            block(&p, 7, 21, 10, 2);
+            block(&p, 11, 18, 2, 3);
+            block(&p, 6, 8, 3, 3);
+            block(&p, 11, 12, 6, 2);
+        } else if (named(section, "advanced")) sliders(&p);
+        return;
+    }
 #ifdef _WIN32
     if (installed_logo(&p)) return;
 #endif
     if (!ov->draw_rect_filled) return;
     /* Editor's built-in fallback: four corner brackets around three faders. */
-    p.ink = ov->theme(OV_THEME_ACCENT);
+    p.ink = ov->theme(OV_THEME_GOLD);
     for (int i = 0; i < 4; ++i) {
         bool right = i & 1, bottom = i & 2;
         block(&p, right ? 15.36f : 0, bottom ? 20.88f : 0, 8.64f, 3.12f);

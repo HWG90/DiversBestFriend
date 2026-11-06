@@ -1,4 +1,6 @@
 #include "editor_browse.h"
+#include "editor_icons.h"
+#include <stdio.h>
 #include "hud_options.h"
 #include "settings_editor.h"
 #include <string.h>
@@ -32,6 +34,85 @@ static bool search_active, search_id;
 enum Pane { CATEGORIES, OPTIONS };
 static enum Pane pane;
 static float sidebar_em, label_share = .5f;
+static bool expanded[HUD_OPTION_COUNT] = {[0] = true};
+
+static unsigned section_first(unsigned i)
+{
+    const char* group = hud_option_descriptor(i)->group;
+    while (i && !strcmp(group, hud_option_descriptor(i - 1)->group)) --i;
+    return i;
+}
+
+static bool section_visible(unsigned i)
+{
+    return search[0] || expanded[section_first(i)];
+}
+
+/* Descriptor groups retain their canonical names and order. The sidebar places
+ * related groups together without changing setting IDs or staged values. */
+static const char* navigation_heading(const char* group)
+{
+    if (!strcmp(group, "SELECTION")) return "STRATAGEMS";
+    if (!strcmp(group, "HUD LAYOUT")) return "HUD";
+    if (!strcmp(group, "TERMINALS")) return "AUTOMATION";
+    return NULL;
+}
+
+static unsigned group_count(const char* group)
+{
+    unsigned count = 0;
+    for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i)
+        if (!group || !strcmp(group, hud_option_descriptor(i)->group)) ++count;
+    return count;
+}
+
+/* Layout text as a real wrapped item, then overlay its hit target. Counts stay
+ * on the right on wide rows and move above the label on small ones. */
+static bool group_row(const OvApi* ov, const char* label, unsigned count,
+                      float em, bool selected_row, bool section, bool open)
+{
+    float x, y, width, height;
+    ov->cursor_screen_pos(&x, &y);
+    ov->content_region_avail(&width, &height);
+    char number[24];
+    snprintf(number, sizeof number, "%u", count);
+    float count_width, ignored, label_width;
+    ov->text_size(0, 0, number, &count_width, &ignored);
+    ov->text_size(0, 0, label, &label_width, &ignored);
+    float gutter = section ? 3 * em : 2 * em;
+    bool stacked = label_width + gutter + count_width + em > width;
+    float text_y = y + (stacked ? 1.5f : .45f) * em;
+    ov->set_cursor_screen_pos(x + gutter, text_y);
+    bool clipped = ov->push_clip_rect && ov->pop_clip_rect;
+    if (clipped) ov->push_clip_rect(x, y, x, y);
+    ov->text_wrapped(label);
+    if (clipped) ov->pop_clip_rect();
+    float x0, y0, x1, y1;
+    ov->item_rect(&x0, &y0, &x1, &y1);
+    float bottom = y1 + .45f * em;
+    /* Background precedes the text redraw; the text item establishes wrapping
+     * and row height while the selectable supplies focus and pointer ownership. */
+    ov->set_cursor_screen_pos(x, y);
+    bool clicked = ov->selectable_ex("##group", selected_row, width, bottom - y, 0) != 0;
+    if (ov->draw_rect_filled && section)
+        ov->draw_rect_filled(x, y, x + width, bottom, ov->theme(OV_THEME_PANEL_ALT), 0);
+    if (ov->draw_rect_filled && selected_row)
+        ov->draw_rect_filled(x, y, x + em / 6, bottom, ov->theme(OV_THEME_GOLD), 0);
+    if (section) {
+        ov->draw_text(x + .35f * em, y + .45f * em, ov->theme(OV_THEME_GOLD), 0, 0, open ? "v" : ">");
+    }
+    editor_icon(ov, label, x + (section ? 1.25f : .25f) * em, y + .35f * em, em);
+    ov->draw_text(x + width - count_width - .4f * em, y + .45f * em,
+                  ov->theme(OV_THEME_TEXT_DIM), 0, 0, number);
+    ov->set_cursor_screen_pos(x + gutter, text_y);
+    ov->push_color(OV_COL_TEXT, ov->theme(selected_row || section ? OV_THEME_GOLD : OV_THEME_TEXT));
+    ov->text_wrapped(label);
+    ov->pop_color(1);
+    ov->set_cursor_screen_pos(x, bottom);
+    if (ov->dummy) ov->dummy(0, 0);
+    else ov->text(""); /* Older test/host adapters still submit the row extent. */
+    return clicked;
+}
 
 /* The host's basic tables have fixed dividers. Keep resizing local to DBF,
  * using an ordinary ImGui hit target and the host's themed drawing API. */
@@ -54,7 +135,7 @@ static void resize_split(const OvApi* ov, const char* id, float x, float y,
         if (*value > maximum) *value = maximum;
     }
     ov->draw_line(x, y, x, y + height,
-                  ov->theme(active ? OV_THEME_ACCENT : hover ? OV_THEME_LINE_STRONG : OV_THEME_LINE), 1);
+                  ov->theme(active ? OV_THEME_GOLD : hover ? OV_THEME_LINE_STRONG : OV_THEME_LINE), 1);
     ov->set_cursor_screen_pos(saved_x, saved_y);
 }
 
@@ -184,6 +265,13 @@ static void choose_category(const char** names, int index)
     category = index ? names[index] : NULL;
     search[0] = 0;
     selected = -1;
+    if (category) {
+        for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i)
+            if (!strcmp(category, hud_option_descriptor(i)->group)) {
+                expanded[section_first(i)] = true;
+                break;
+            }
+    }
     pane = CATEGORIES;
 }
 
@@ -195,10 +283,6 @@ static bool navigation_allowed(const OvApi* ov)
 
 static void navigate(const OvApi* ov, const char** names, int count, int current)
 {
-    if (ov->key_pressed(0x09)) {
-        pane = pane == OPTIONS ? CATEGORIES : OPTIONS;
-        return;
-    }
     int delta = ov->key_pressed(0x28) - ov->key_pressed(0x26);
     if (pane == CATEGORIES) {
         int next = current + delta;
@@ -206,14 +290,14 @@ static void navigate(const OvApi* ov, const char** names, int count, int current
         if (ov->key_pressed(0x0d) || ov->key_pressed(0x27)) pane = OPTIONS;
     } else if (delta) {
         for (int i = selected + delta; i >= 0 && i < HUD_OPTION_COUNT; i += delta) {
-            if (matches(hud_option_descriptor((unsigned)i))) { selected = i; break; }
+            if (matches(hud_option_descriptor((unsigned)i)) && section_visible((unsigned)i)) { selected = i; break; }
         }
     }
 }
 
 static void begin_pane(const OvApi* ov, enum Pane which, const char* id, float width, float height)
 {
-    ov->push_color(OV_COL_BORDER, ov->theme(which == pane ? OV_THEME_ACCENT : OV_THEME_LINE));
+    ov->push_color(OV_COL_BORDER, ov->theme(which == pane ? OV_THEME_GOLD : OV_THEME_LINE));
     ov->begin_child(id, width, height, 1);
     ov->pop_color(1);
 }
@@ -232,7 +316,7 @@ static void setting_row(const OvApi* ov, const DbfSnapshot* s, DbfSettings* effe
     }
     /* Give the wrapped label a navigation target. Focusing it scrolls the row into
      * view without opening its combo or putting its slider into text-entry mode. */
-    if (focused) ov->push_color(OV_COL_TEXT, ov->theme(OV_THEME_ACCENT));
+    if (focused) ov->push_color(OV_COL_TEXT, ov->theme(OV_THEME_GOLD));
     ov->text_wrapped(d->label);
     if (focused) ov->pop_color(1);
     float x0, y0, x1, y1;
@@ -307,7 +391,7 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i) {
         float measured, line;
         ov->text_size(0, 0, hud_option_descriptor(i)->group, &measured, &line);
-        if (measured + 3 * em > sidebar) sidebar = measured + 3 * em;
+        if (measured + 6 * em > sidebar) sidebar = measured + 6 * em;
     }
     float sidebar_min = sidebar / em;
     bool narrow = width < sidebar + 30 * em;
@@ -328,12 +412,16 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
         }
     } else {
         begin_pane(ov, CATEGORIES, "##categories", sidebar_em * em, height);
-        ov->heading("Categories");
         for (int j = 0; j < n; ++j) {
-            if (ov->selectable(groups[j], (search[0] ? 0 : current) == j)) {
+            const char* heading = j ? navigation_heading(groups[j]) : NULL;
+            if (heading) ov->text_disabled(heading);
+            ov->push_id_int(j);
+            if (group_row(ov, groups[j], group_count(j ? groups[j] : NULL), em,
+                          (search[0] ? 0 : current) == j, false, false)) {
                 current = j;
                 choose_category(groups, current);
             }
+            ov->pop_id();
         }
         ov->end_child();
         resize_split(ov, "##category-divider", pane_x + sidebar_em * em + em * .25f,
@@ -364,7 +452,11 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     if (!count) {
         selected = -1;
         ov->text_wrapped("No matching options.");
-    } else if (selected < 0 || !matches(hud_option_descriptor((unsigned)selected))) selected = results[0];
+    } else if (selected < 0 || !matches(hud_option_descriptor((unsigned)selected)) || !section_visible((unsigned)selected)) {
+        selected = -1;
+        for (int i = 0; i < count; ++i)
+            if (section_visible((unsigned)results[i])) { selected = results[i]; break; }
+    }
     DbfSettings effective = s->options;
     for (unsigned i = 0; i < HUD_OPTION_COUNT; ++i)
         if (edits[i].dirty) hud_option_set(&effective, i, edits[i].value);
@@ -372,8 +464,21 @@ void editor_browse(const OvApi* ov, const DbfSnapshot* s, bool focus_search)
     for (int row = 0; row < count;) {
         unsigned first = (unsigned)results[row];
         const char* group = hud_option_descriptor(first)->group;
-        ov->heading(group);
-        ov->push_id_int((int)first);
+        unsigned section = section_first(first);
+        int end = row + 1;
+        while (end < count && !strcmp(group, hud_option_descriptor((unsigned)results[end])->group)) ++end;
+        ov->push_id_int((int)section);
+        bool open = section_visible(first);
+        if (group_row(ov, group, (unsigned)(end - row), em, false, true, open) && !search[0]) {
+            expanded[section] = !expanded[section];
+            open = expanded[section];
+            if (open) { selected = (int)first; pane = OPTIONS; }
+        }
+        if (!open) {
+            row = end;
+            ov->pop_id();
+            continue;
+        }
         float available, remaining, table_x, table_y;
         ov->content_region_avail(&available, &remaining);
         ov->cursor_screen_pos(&table_x, &table_y);
