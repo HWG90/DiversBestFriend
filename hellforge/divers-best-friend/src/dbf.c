@@ -59,6 +59,7 @@
 #include "dbf_mcm.h"
 #include "hud_bridge.h"
 #include "dbf_vm_win.h"
+#include "nest_bootstrap_win.h"
 #include "settings_editor.h"
 #include "hud_prefs.h"
 #include "migration.h"
@@ -69,7 +70,6 @@
 #define DBF_TITLE "DBF Reforged"
 /* The Overlay Host API the window needs (Overlay Host 0.2.0). DBF asks the host for this version, not for
  * OV_API_VERSION as ov_connect does: a 0.2.x host serves 4 and refuses 5. A newer host serves 4 as well. */
-#define DBF_OV_API_MIN 4u
 #define DBF_NO_GAME_DLL "game.dll not loaded yet" /* the reason the first snapshots carry */
 #define DBF_LOADER_DLL "hellforge_modloader.dll"
 /* The settings file (Plan 2's Global Constraints: %LOCALAPPDATA%\DBF\HellForge\settings.ini, HellForge's prefix). */
@@ -160,14 +160,7 @@ static uint32_t next_random(void)
     return x;
 }
 
-/* The Overlay Host's API, when it is loaded and serves version DBF_OV_API_MIN or later; else NULL. */
-static const OvApi* connect_overlay(void)
-{
-    HMODULE host = GetModuleHandleA(OV_HOST_DLL);
-    OvApiFn get = host != NULL ? (OvApiFn)(void*)GetProcAddress(host, "ov_api") : NULL;
-    const OvApi* ov = get != NULL ? get(DBF_OV_API_MIN) : NULL;
-    return ov != NULL && ov->version >= DBF_OV_API_MIN ? ov : NULL;
-}
+static bool g_nest_migration;
 
 /* HellForge's list of the game code it rewrites, from its loader, or NULL. */
 static RewritesFn find_rewrites(void)
@@ -715,7 +708,7 @@ static void Tick(HfMod* mod, float dt, void* user)
     snap_publish(&s); /* every tick: a publish skipped while the window holds a buffer is made good by the next */
 }
 
-/* The tick, through the host's shared game-thread slot when the table connect_overlay got has one (Overlay Host 0.3.0 and
+/* The tick, through the host's shared game-thread slot when the connected API table has one (Overlay Host 0.3.0 and
  * later), else through HellForge's own. Not the header's ov_on_game_thread: that asks the host for OV_API_VERSION (7 since
  * the wheel total) and so uses HellForge's slot on every host older than 0.5.0, which DBF runs on as well. 1 registered,
  * 0 refused by both. */
@@ -731,7 +724,10 @@ static int register_tick(void)
 static void Draw(const OvFrame* frame, void* user)
 {
     const DbfSnapshot* s = snap_acquire();
-    if (s == NULL)
+    if (g_nest_migration) {
+        g_ov->text_wrapped("DBF Reforged includes NEST with corrected Editor fonts.");
+        g_ov->text_wrapped("Disable the older standalone NEST in HellForge and restart, or update standalone NEST to 0.8.2 or later.");
+    } else if (s == NULL)
         g_ov->text(DBF_TITLE " is starting..."); /* ASCII dots: the host's font has no ellipsis */
     else if (editor_shell_available(g_ov))
         editor_shell_draw(g_ov, s, frame, g_panel);
@@ -750,7 +746,7 @@ static void OnGameLoaded(HfMod* mod, HfEvent event, void* user)
     }
     g_loaded = true;
     load_settings();
-    ov = connect_overlay();
+    ov = dbf_nest_connect(g_hf, g_mod, &g_nest_migration);
     if (ov == NULL)
         g_hf->log(g_mod, "No Overlay Host 0.2.0 or later: running without a settings window; key and controller "
                          "bindings still work, wheel bindings do nothing");
