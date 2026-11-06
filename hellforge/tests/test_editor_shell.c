@@ -253,8 +253,14 @@ int main(void)
     availability();
     draw(&snapshot);
     expect_tab(0);
+    keyboard('Q',false);
+    expect_tab(4);
+    keyboard('E',false);
+    expect_tab(0);
+    keyboard(0x75,false);
+    expect_tab(0); /* F6 no longer navigates. */
     for (int i=1; i<=5; ++i) {
-        keyboard(0x75,false);
+        keyboard('E',false);
         expect_tab(i%5);
         if (i==1) {
             CHECK(fake_ov_count_prefix("text:Current binding:")>0,"Key Bindings shows the binding editor");
@@ -306,7 +312,9 @@ int main(void)
     expect_tab(0);
     CHECK(focus==1 && !strncmp(focused_field,"##Search",8),"Ctrl+F focuses Settings search in the same frame");
     text_input=1;
-    keyboard(0x75,false);
+    keyboard('E',false);
+    expect_tab(0);
+    keyboard('Q',false);
     expect_tab(0);
     text_input=0;
     focused=0;

@@ -36,6 +36,7 @@ When upgrading from an earlier bundle, disable the older standalone NEST 0.8.1 e
 | Ctrl+F | Search settings |
 | Ctrl+E | Review pending changes |
 | Tab | Apply settings changes |
+| Q / E | Previous / next settings view |
 | Wheel Down / Wheel Up | Next / previous stratagem with default bindings |
 | Left mouse button | Confirm with the default binding |
 

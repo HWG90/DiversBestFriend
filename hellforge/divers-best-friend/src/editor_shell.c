@@ -85,7 +85,10 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     bool escape = focused && !editor_capturing() && ov->key_pressed(0x1b);
     if (escape && view==BROWSE && editor_browse_escape()) escape=false;
     if (!editing && focused) {
-        if (ov->key_pressed(0x75)) view = (enum View)((view+1)%VIEW_COUNT);
+        if (!ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12)) {
+            if (ov->key_pressed('Q')) view = (enum View)((view+VIEW_COUNT-1)%VIEW_COUNT);
+            else if (ov->key_pressed('E')) view = (enum View)((view+1)%VIEW_COUNT);
+        }
         if (view != BLACKLIST && ov->key_down(0x11) && ov->key_pressed('F')) { view=BROWSE; search=true; }
         if (ov->key_down(0x11) && ov->key_pressed('E')) view=CHANGES;
         if (s && (view==BROWSE || view==CHANGES) && ov->key_pressed(0x09) && !ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12)) editor_apply_changes(ov,s);
@@ -131,7 +134,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
         if (view == BROWSE || view == BLACKLIST) {
             ov->key_cap("Ctrl+F"); ov->same_line(); ov->text_disabled("Search");
         } else {
-            ov->key_cap("F6"); ov->same_line(); ov->text_disabled("Next view");
+            ov->key_cap("Q / E"); ov->same_line(); ov->text_disabled("Previous / next view");
         }
         if (s && preferences) {
             if (w >= 710*k) {
