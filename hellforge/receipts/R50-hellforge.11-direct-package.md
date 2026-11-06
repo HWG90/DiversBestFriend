@@ -1,6 +1,6 @@
 # DBF Reforged R50-hellforge.11 direct-import candidate
 
-Built 2026-11-05 from the current DBF bootstrap source, including
+Built 2026-11-05 from the DBF bootstrap commit `8f7f8fe`, including
 `src/nest_bootstrap_win.c`, with NEST commit `4cd4bd0` (0.8.2).
 Packaging commits: `96c33fa`, `e7cbd3c`.
 
@@ -9,8 +9,8 @@ Immutable copy lives under `build/exports/<ZIP SHA256>/`.
 
 | Component | SHA256 |
 | --- | --- |
-| Direct ZIP | `73640d764eca072748e08631ab941f25615a413bcacf8a8d9cdccae7ff540891` |
-| DBF DLL | `881d0899f33e177f2f8c95b494cc36e79cd4a939b4ba4f94a5bec32e691e80a3` |
+| Direct ZIP | `30d8041303939e3f37fea64658aafd3a980f50145cf484eb6e944d28fca87af4` |
+| DBF DLL | `beefb554831633b2d96843a5f2aa0b01c16f4ce1fc0cb08dc6a64adaac9fa6ec` |
 | Included NEST DLL | `ec20c2c31f9f803cb53f92517a5e177c1f2c48272cd8eb389810eb1243da47e8` |
 | NEST input ZIP | `564f658308283a8f08fda6e8bf20908ddffb70903d5ce2afa29d5f2252afa20a` |
 
@@ -43,12 +43,15 @@ DLL contains its bundled-host connection message. Full package/source comparison
   Regular body/Medium headings come from installed game data; no Editor folder
   or font redistribution is needed.
 
-Pasteur reports five production bootstrap cases passing against the exact DLL
-digests above: bundled alone, active 0.8.2 reuse without loading the bundle,
-later distinct-path 0.8.2 sharing, 0.8.1 migration without loading the bundle, and
-deferral for an unresolved planned standalone host. Logs: `/tmp/dbf-nest-production11/*.log`.
-The original Wine API4 compatibility suite is still running; earlier pre-bootstrap
-Wine results are not substituted for that final regression.
+Six production bootstrap cases passed against these exact DLL digests: bundled
+alone, active 0.8.2 reuse without loading the bundle, later distinct-path 0.8.2
+sharing, 0.8.1 migration without loading the bundle, and deferral for both pending
+and listed-but-inactive standalone hosts. Logs: `/tmp/dbf-nest-production11-final/*.log`.
+The runtime owner reports the prior Wine suite passed 29/30 with a foreground-loss
+scramble failure; scramble and API4 compatibility were rerun successfully against
+the final DLL in an isolated headless session. Those final logs were read and
+confirmed to report zero failures. No blanket claim of a clean single-run 30/30
+final Wine suite is made.
 Native Windows CI and publication belong to Main. No live game installation,
 mission acceptance or native Windows visual acceptance was performed here.
-All earlier nested-bundle artifacts and hashes are superseded.
+All earlier nested-bundle artifacts and pre-guard direct ZIP hash 73640d76 are superseded.
