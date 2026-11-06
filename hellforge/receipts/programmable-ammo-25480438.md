@@ -134,3 +134,19 @@ the kind-4 selector, stride, definition offsets and fallback against the target
 image, reran the weapon fixture and target-byte checks, and reported no remaining
 blocking finding. In-game appearance and actual weapon-mode transitions remain
 for the user's next-launch acceptance check.
+
+## Local preview installation
+
+Commit `6b85c0b` passed independent re-review (including the stale override
+regression failing before the fix). The combined ZIP was built with the
+existing slate NEST preview and verified against source and the embedded HUD.
+Installed for next launch at `HellForge/mods/divers-best-friend-R50-hellforge.11.zip`.
+
+- Bundle SHA-256: `7736e05e33fde41aff660613aaf7a0bbb4b84029867272b8c1dda042a8553c41`
+- DLL SHA-256: `546f77b17866491464cade94466472ea6442926e0cd8f86af9ceefd30e2316b5`
+- Previous bundle: `0fd7299c3dc0fc3020ede9ca9b7dde654b5b17c999a871939e74321756c95962`
+- Verified rollback copy and receipt: `HellForge/backport-backups/dbf-programmable-20261106T022818Z/`
+
+This remains a local preview with the existing `.11` manifest. No public
+release was replaced. Restart and live programmable weapon transitions remain
+unverified; offline tests and installation hashes do not establish appearance.
