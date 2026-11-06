@@ -17,3 +17,18 @@ Verified previous bundle and receipt:
 
 Activation requires a new game launch. Visible wedge blur remains unverified;
 source pipeline evidence and offline tests do not establish live appearance.
+
+## Live rejection of .13-preview
+
+User reported no visible blur after loading .13-preview. Session
+`3ec6c7fcec5d4bb4a2fe292221036ba1` confirms that version loaded and that expanded
+and native wheel routes both submitted 96 triangles, bound blur_background,
+set desaturate=0 and activated. The pass change did not resolve the visible
+issue. Do not describe .13 as a visually accepted blur fix.
+
+A read-only process inspection checked the mapped game's timestamp before
+reading the HUD fields. At 3840x2160, the native viewport is 1920x1080 with
+scale 2; the list matrix has scale 1.8 and translation (-639,1162.8).
+The native transforms therefore already include physical pixel scaling.
+The separate retained screen-Gui projection/context and its sampled scene
+texture still need direct raster comparison with the working native backing.
