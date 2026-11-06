@@ -1,100 +1,54 @@
-![Diver's Best Friend — DBF / Automated Stratagem System (ASS)](assets/banner-dbf.png)
+![Diver's Best Friend — Automated Stratagem System](assets/banner-dbf.png)
 
 # DBF Reforged
 
-**Your stratagems. In the game. No OCR. No Python. No AutoHotkey. Just a nice ASS.**
+**R50 for HellForge · revision .11**
 
-*Automated Stratagem System*
+DBF Reforged brings Diver’s Best Friend’s stratagem selection, cooldown displays and weapon strip to HellForge. Choose stratagems with the native wheel, expanded wedges or list, enter their codes automatically, then throw the beacon. The game draws the HUD, while the settings menu follows HF Editor’s typography and layout.
 
-## R50 — DBF Reforged for HellForge
+[Download R50 .11](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11) · [Ayaka](https://ayakamods.com/mods/dbf-reforged-automated-stratagem-system-ass.5899/) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564)
 
-For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Import the ZIP directly into HellForge and enable **DBF Reforged**. Its included NEST runtime starts automatically. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md) · [HellForge download on Ayaka](https://ayakamods.com/mods/divers-best-friend-automated-stratagem-system-ass.5899/) · [GitHub HellForge release](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11)
+## Features
 
-DBF draws its wheel, cooldowns and weapon strip on the game HUD. NEST (Native Extension and Settings Toolkit) provides the settings window, shared hotkeys and input handling. Other HellForge mods can register panels with the same installed framework.
+- Native wheel, wedge and list selection, with mouse, keyboard and controller bindings.
+- Cooldown icons, timers, charges and adjustable dock layouts.
+- A native weapon strip showing the equipped weapon’s available settings.
+- Optional terminal completion, with arrow entry as the default for new configurations.
+- Searchable settings, configurable shortcuts and stratagem exclusions.
+- Optional MCM integration using the same saved preferences.
 
-## Original Lua releases
+## Install
 
-Select stratagems through a native in-game wheel or list, then throw the beacon normally. Diver's Best Friend runs inside HELLDIVERS 2 through a compatible shared/startup loader, using the game's UI and live stratagem data. No external application needs to run while you play.
+1. Close the game and import **divers-best-friend-R50-hellforge.11.zip** into HellForge. Keep the ZIP intact.
+2. Enable **DBF Reforged** and launch the game.
+3. Press **F7** to open settings.
 
-[Homecoming release notes](docs/RELEASE-r46.md) | [Original R46 download](https://github.com/HWG90/DiversBestFriend/releases/tag/r46) | [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564) | [Installation and controls](docs/INSTALLATION.md) | [Changelog](CHANGELOG.md)
+The ZIP includes NEST 0.8.2, which starts automatically. DBF runs its HUD directly. This release targets HellForge 0.4 and Helldivers 2 game build **25480438**.
 
-### R46 — The Homecoming Update
+When upgrading from an earlier bundle, disable the older standalone NEST 0.8.1 entry and restart. DBF will use the included runtime. An active compatible NEST 0.8.2 installation is shared automatically. [Installation and upgrade guide](hellforge/NEST-BUNDLE.md)
 
-Cooldown dock and compact overview, native game-font timers, Wedge Wheel customization, four unbound gameplay hotkeys, and optional randomized input pacing. Existing saved preferences and bindings are retained.
+## Controls
 
-See [R46 release notes](docs/RELEASE-r46.md). Build all three loader packages with `py -3 scripts/build_release.py`; outputs and checksums are in `dist/releases/r46`. Choose one loader variant from the R46 release.
+| Control | Action |
+| --- | --- |
+| F7 | Open DBF settings |
+| Page Down | Open NEST’s panel list |
+| Ctrl+F | Search settings |
+| Ctrl+E | Review pending changes |
+| F9 | Apply settings changes |
+| Wheel Down / Wheel Up | Next / previous stratagem with default bindings |
+| Left mouse button | Confirm with the default binding |
 
-## Selection modes
+Set bindings and exclusions from the DBF menu. Select on Release uses a Hold binding for the game’s stratagem menu. Slot shortcuts begin unbound.
 
-| Mode | Controls | Layout |
-| --- | --- | --- |
-| Native wheel | Mouse/stick pointing + Confirm | Eight slots, with Next/Previous to change pages |
-| Keybindings list | Next/Previous + Confirm | Scrolls in list order and wraps around; camera control remains available |
-| Experimental: Cards | Mouse/stick pointing + Confirm | Up to 16 native stratagem rows arranged in a circle |
-| Experimental: Expanded wedges | Mouse/stick pointing + Confirm | Up to 16 entries on one wheel |
+## NEST and other mods
 
-Radial layouts retain the original stratagem list at the top left. Mouse/stick pointing takes camera control while the menu is open and restores it when closed.
+NEST means **Native Extension and Settings Toolkit**. It provides the shared settings panels, hotkeys, input handling and game-thread callbacks used by DBF. Future HellForge mods can register panels with the same running framework. NEST is included so DBF’s settings work after one import.
 
-- **Select on Release:** optional and off by default. With a Hold menu binding, point at an entry and release to select. Return the pointer to the center before releasing to cancel. List mode uses Confirm.
-- **Input interval:** adjustable from 0 to 250 ms, default 70 ms, for both Confirm and Select on Release.
-- **Cooldown indicators:** native and expanded wheels dim unavailable icons during cooldown or delivery and show the selected entry's remaining time. List and Cards retain their native timer displays.
-- **Appearance:** optional full-color icons, adjustable expanded-wedge darkness and opacity, and automatic centering. Leave the vertical offset at 0 unless you want a custom position.
-- **Scrambled codes:** selection follows the current required sequence. If it changes during entry, reopen the menu and retry.
+Bingus Shared Loader can stay enabled for other addons. DBF imposes no BSL version check. MCM is optional; when installed, its DBF controls share the same preferences as the F7 menu. DBF stores preferences in `%LOCALAPPDATA%\DBF\HellForge\settings.ini`.
 
-The mod enters the selected code through the normal game input path. Availability restrictions still apply, and you throw the beacon yourself.
+## Credits
 
-## Requirements for the original Bingus edition
+Created by **HWG90 / David**, with AI-assisted development. CowboyBingus’s loader, bindings and options infrastructure provided the foundation for the original DBF. Arrowhead created the game and its native HUD assets. NEST reads the Editor font faces from the player’s installed game.
 
-This project would not exist without **[CowboyBingus](https://github.com/CowboyBingus)** and their shared modding infrastructure.
-
-| Dependency | Version | Purpose |
-| --- | --- | --- |
-| [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest) | v18 / API 1 | Loads the addon |
-| [Mod Bindings Menu](https://github.com/CowboyBingus/ModBindingsMenu/releases/latest) | v2.0 or newer / API 1 | Configurable selection controls |
-| [Mod Options Menu](https://github.com/CowboyBingus/ModOptionsMenu) | v1.0.1 / API 1 | In-game settings |
-| HELLDIVERS 2 on Windows/Steam | Build 25480438 | Supported game build |
-| Arsenal or a compatible mod manager | Installation only | Deploys the addon and dependencies |
-
-Install dependencies separately; they are not bundled. The original external Stratagem Wheel app, Equipped Stratagems exporter, and CowboyBingus' gameplay megapack are not required. See [Credits](CREDITS.md) for the contributions and earlier work behind the project.
-
-## Live Lua Loader (LLL)
-
-[LLL R30+](https://github.com/HWG90/LLL/releases) can load the dedicated R45 loose package. Extract `DiversBestFriend-R45-LLL.zip` into LLL's Mods directory and remove the previous ASS archive provider. Keep Mod Bindings Menu and Mod Options Menu available through LLL's shared-addon route. Use one winning startup loader. ASS remains restart-only; installing a loose package does not make its native UI owners safe to hot-reload. See [installation](docs/INSTALLATION.md).
-
-## Bingus quick start
-
-1. Close the game and install the three dependencies above.
-2. Import the release ZIP into Arsenal, enable it, and deploy. Follow Shared Loader's installation and priority instructions.
-3. Restart the game. Open **MODS > Diver's Best Friend**, choose a selection mode, and Apply.
-4. Check **Next stratagem**, **Previous stratagem**, and **Confirm stratagem** in the native bindings menu's **MODS** tab. Mouse defaults are Wheel Down, Wheel Up, and Mouse 1 respectively.
-5. Open the normal stratagem menu in a mission, select an available entry, and Confirm. Keep the menu open until the code finishes, then throw normally. Alternatively, enable **Select on Release** for a radial layout.
-
-Arsenal lists the mod as **Diver's Best Friend - Automated Stratagem System (ASS)**, with the revision in its description.
-
-For detailed setup and troubleshooting, see [Installation and controls](docs/INSTALLATION.md). Game updates may require a new mod release because this implementation depends on build-specific native functions and UI layouts.
-
-## About the project
-
-I created this because I was getting frustrated with inconsistent OCR in my original Stratagem Wheel helper. Reading live game data and putting the menu inside the game made more sense than continuing to read the screen.
-
-**This was vibe-coded with GPT-6 Astra**, with me directing development, testing in-game, and iterating on feedback. It's a personal project, but I'm happy to share it.
-
-Community modding tools make this native implementation possible. This is an independent fan project with no official support or endorsement from Arrowhead or Sony. HELLDIVERS 2 and its assets belong to their respective owners.
-
-## Feedback and license
-
-[Report an issue](https://github.com/HWG90/DiversBestFriend/issues) with your mod revision, game build, selection mode/layout, and steps to reproduce the problem. Relevant entries from `DiversBestFriend.log` and `DiversBestFriend-native.log` can help. Please report this mod's bugs here, rather than to the dependency maintainers.
-
-The project code is [MIT licensed](LICENSE). The game and separately installed dependencies retain their own licenses and ownership.
-
-[Credits](CREDITS.md) | [Development guide](docs/DEVELOPMENT.md)
-
-## Project branding
-
-<p align="center">
-  <img src="assets/dbf-logo-4x3.png" width="320" alt="DBF — Diver's Best Friend, Automated Stratagem System (ASS)">
-</p>
-
-[Compact logo](assets/dbf-logo-4x3.png) | [Wide banner](assets/banner-dbf.png) | [Branding guide](assets/BRANDING.md)
-
-The Bingus menu exposes two blacklist toggles: SOS Beacon and Eagle Rearm. Additional entries require the optional MCM blacklist page. Settings persist and filtering applies only to entries present in your mission.
+[Full credits](CREDITS.md) · [License](LICENSE) · [Changelog](CHANGELOG.md)
