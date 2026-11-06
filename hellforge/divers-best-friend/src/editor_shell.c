@@ -85,10 +85,10 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
     bool escape = focused && !editor_capturing() && ov->key_pressed(0x1b);
     if (escape && view==BROWSE && editor_browse_escape()) escape=false;
     if (!editing && focused) {
-        if (ov->key_pressed(0x75) || (ov->key_down(0x10) && ov->key_pressed(0x09))) view = (enum View)((view+1)%VIEW_COUNT);
+        if (ov->key_pressed(0x75)) view = (enum View)((view+1)%VIEW_COUNT);
         if (view != BLACKLIST && ov->key_down(0x11) && ov->key_pressed('F')) { view=BROWSE; search=true; }
         if (ov->key_down(0x11) && ov->key_pressed('E')) view=CHANGES;
-        if (s && (view==BROWSE || view==CHANGES) && ov->key_pressed(0x78)) editor_apply_changes(ov,s);
+        if (s && (view==BROWSE || view==CHANGES) && ov->key_pressed(0x09) && !ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12)) editor_apply_changes(ov,s);
         if (panel && escape) { ov->set_open(panel,0); return; }
     }
     ov->draw_layer(OV_LAYER_WINDOW);
@@ -136,7 +136,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
         if (s && preferences) {
             if (w >= 710*k) {
                 float reserve = width_of(ov,ov->bold_font(),16*k,
-                    view == CHANGES ? "RESTORE DEFAULTSDISCARDAPPLY  F9" : "REVIEW CHANGESAPPLY  F9") + 132*k;
+                    view == CHANGES ? "RESTORE DEFAULTSDISCARDAPPLY  TAB" : "REVIEW CHANGESAPPLY  TAB") + 132*k;
                 ov->set_cursor_screen_pos(x+w-reserve,status_y+39*k);
             }
             if (view == CHANGES) {
@@ -148,7 +148,7 @@ void editor_shell_draw(const OvApi* ov, const DbfSnapshot* s, const OvFrame* fra
             } else if (ov->button("REVIEW CHANGES")) view = CHANGES;
             ov->same_line();
             ov->begin_disabled(!pending);
-            if (ov->button_primary("APPLY  F9")) editor_apply_changes(ov,s);
+            if (ov->button_primary("APPLY  TAB")) editor_apply_changes(ov,s);
             ov->end_disabled();
         }
     }

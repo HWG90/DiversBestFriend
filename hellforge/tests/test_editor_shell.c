@@ -297,11 +297,11 @@ int main(void)
           "Review separates the inline Enable Mod edit from the saved cooldown override");
     click="DISCARD";
     draw(&snapshot);
-    keyboard(0x78,false);
+    keyboard(0x09,false);
     CHECK(fake_ov_find("table:##pending",0)<0 && fake_ov_count_prefix("row")==1 &&
           fake_ov_find("text_wrapped:Cooldown display style",0)>=0 && ui_drain(&staged,1)==0 &&
           snapshot.options.enabled && snapshot.options.cooldown_display==3,
-          "Discard removes only the draft and F9 posts no event");
+          "Discard removes only the draft and Tab posts no event");
     keyboard('F',true);
     expect_tab(0);
     CHECK(focus==1 && !strncmp(focused_field,"##Search",8),"Ctrl+F focuses Settings search in the same frame");
@@ -334,11 +334,21 @@ int main(void)
     CHECK(ui_drain(event,2)==0,"reset stages a draft without changing live settings");
     keyboard('E',true);
     keyboard(0x78,false);
+    CHECK(ui_drain(event,2)==0,"F9 no longer applies staged settings");
+    text_input=1;
+    keyboard(0x09,false);
+    CHECK(ui_drain(event,2)==0,"Tab does not apply while entering text");
+    text_input=0;
+    focused=0;
+    keyboard(0x09,false);
+    CHECK(ui_drain(event,2)==0,"Tab does not apply an unfocused editor");
+    focused=1;
+    keyboard(0x09,false);
     int count=ui_drain(event,2);
     CHECK(count==1 && event[0].kind==UI_HUD_OPTION && event[0].a>=0 &&
           hud_option_key((unsigned)event[0].a) &&
           !strcmp(hud_option_key((unsigned)event[0].a),"cooldown_display") && event[0].b==1,
-          "F9 applies staged cooldown style to the game-thread event queue");
+          "Tab applies staged cooldown style to the game-thread event queue");
 
     keyboard(0x1b,false);
     CHECK(closes==1 && !panel.open,"Escape closes the supplied panel");

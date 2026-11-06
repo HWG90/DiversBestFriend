@@ -40,9 +40,17 @@ bool editor_apply(DbfSettings* s, const UiEvent* e)
 
 static int apply_button(const OvApi* ov, const char* label)
 {
+    bool tab = !editor.capturing && ov->key_pressed && ov->key_down &&
+        (!ov->is_focused || ov->is_focused()) &&
+        (!ov->want_text_input || !ov->want_text_input()) &&
+        !ov->key_down(0x10) && !ov->key_down(0x11) && !ov->key_down(0x12) &&
+        ov->key_pressed(0x09);
+    int clicked;
     if (ov->version >= 6 && ov->size >= offsetof(OvApi, button_primary) + sizeof ov->button_primary && ov->button_primary)
-        return ov->button_primary(label);
-    return ov->button(label);
+        clicked = ov->button_primary(label);
+    else clicked = ov->button(label);
+    if (ov->same_line && ov->text_disabled) { ov->same_line(); ov->text_disabled("Tab to apply"); }
+    return clicked || tab;
 }
 
 static void capture(const OvApi* ov, uint16_t pad)
@@ -106,7 +114,7 @@ static void bindings(const OvApi* ov, const DbfSnapshot* snap, bool combo, const
     bool valid = settings_parse_binding(editor.text, &b);
     if (!valid) ov->text_disabled("Enter a valid binding or use Capture.");
     ov->begin_disabled(!valid || (b.kind == current.kind && b.code == current.code));
-    if (apply_button(ov, apply_label) && valid) {
+    if (apply_button(ov, apply_label) && valid && (b.kind != current.kind || b.code != current.code)) {
         UiEvent e = {.kind = UI_BINDING, .a = editor.action, .b = b.kind * 65536 + b.code};
         if (!ui_post(&e)) ov->text("Input queue full. Apply again.");
     }
