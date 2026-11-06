@@ -1,6 +1,6 @@
-# Diver's Best Friend for HellForge
+# DBF Reforged — R50 for HellForge
 
-This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF and NEST 0.8.1 or later. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
+The current release is **R50-hellforge.11**. This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the entire DBF ZIP in HellForge and enable DBF and NEST 0.8.2 or later. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
 
 Press **F7** to open the DBF menu directly. **Page Down** opens the NEST panel list. If a custom NEST configuration assigns F7 to that list, change its launcher shortcut to free F7 for DBF.
 

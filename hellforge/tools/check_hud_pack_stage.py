@@ -72,11 +72,16 @@ def stage(package, install, previous):
         def stage_mods():
             return run("mods-stage", "--logs", work / "logs", "--plan", plan, "--sandbox", "no")
 
+        with ZipFile(previous) as baseline:
+            baseline_manifest = json.loads(baseline.read("hellforge-mod.json"))
+            baseline_data = [name for name in baseline.namelist()
+                             if name.startswith("data/") and not name.endswith("/")]
         old = run("mod-add", "--file", previous.resolve())
         prior = stage_mods()
-        if (old["id"] != DBF or old["version"] != "R50-hellforge.9" or
-                len(prior["mods"]) != 1 or prior["mods"][0]["dataFiles"] != 3 or len(prior["staged"]) != 3):
-            raise ValueError("upgrade baseline must be the previous DBF release with its archive")
+        if (old["id"] != DBF or old["version"] != baseline_manifest["version"] or
+                len(prior["mods"]) != 1 or prior["mods"][0]["dataFiles"] != len(baseline_data) or
+                len(prior["staged"]) != len(baseline_data)):
+            raise ValueError("launcher upgrade baseline differs from the previous DBF package")
         added = run("mod-add", "--file", package.resolve())
         if added["id"] != DBF or added["replaced"] != old["installed"]:
             raise ValueError("launcher failed to replace the original DBF mod")

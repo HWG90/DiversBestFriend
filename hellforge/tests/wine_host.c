@@ -86,20 +86,20 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "Diver's Best Friend R50-hellforge.10 (game 25480438)"
+#define VERSION_LINE "DBF Reforged R50-hellforge.11 (game 25480438)"
 #define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
-#define NO_TICK_LINE "Diver's Best Friend could not get a game-thread tick"
-#define NO_PANEL_LINE "The Overlay Host did not take the Diver's Best Friend window (its log says why)"
-#define LISTEN_FAILED_LINE "Diver's Best Friend could not listen for the game loading"
-#define REPEATED_LINE "Diver's Best Friend ignored a repeated game-loaded event"
+#define NO_TICK_LINE "DBF Reforged could not get a game-thread tick"
+#define NO_PANEL_LINE "The Overlay Host did not take the DBF Reforged window (its log says why)"
+#define LISTEN_FAILED_LINE "DBF Reforged could not listen for the game loading"
+#define REPEATED_LINE "DBF Reforged ignored a repeated game-loaded event"
 #define ADMISSION_LINE "game.dll found; admission starts"
 #define REWRITES_FOUND_LINE "Admission skips the code HellForge rewrites (hellforge_lua_rewrites found)"
 #define REWRITES_MISSING_LINE "No hellforge_lua_rewrites in hellforge_modloader.dll: admission compares every witness byte"
 #define MASKED_TAIL " bytes rewritten by HellForge" /* every masked-witness line ends like this */
-#define STARTING_TEXT "text:Diver's Best Friend is starting..."
+#define STARTING_TEXT "text:DBF Reforged is starting..."
 #define PANEL_ID "goose.divers-best-friend"
-#define PANEL_TITLE "Diver's Best Friend"
+#define PANEL_TITLE "DBF Reforged"
 #define TICKS 3
 #define MENU_OPEN_AT 0x38769u /* the menu-open byte in the stratagem panel (R46 native.lua:214), as tests/synthetic.c */
 #define RETRY_WAIT_MS 1100u   /* admission retries what is pending once a second */
@@ -668,7 +668,7 @@ static void run_standard(void)
             CHECK(s_game_thread_count() == 0 && g_ticker_count == 1 && g_tickers[0].mod == &g_mod,
                   "an API 4 host has no shared slot: the tick goes through HellForge's on_game_thread");
         CHECK(s_draw(0) && s_line_count() == 1 && strcmp(s_line(0), STARTING_TEXT) == 0,
-              "before the first tick the window says \"Diver's Best Friend is starting...\"");
+              "before the first tick the window says \"DBF Reforged is starting...\"");
     } else {
         CHECK(logged(NO_HOST_LINE) == 1, "the \"" NO_HOST_LINE "\" line");
         CHECK(g_ticker_count == 1 && g_tickers[0].mod == &g_mod, "the tick goes through HellForge's on_game_thread");
@@ -789,7 +789,7 @@ static void run_on_at_once(void)
           "and the tick, through HellForge's on_game_thread (the API 4 host has no slot)");
     CHECK(logged(NO_HOST_LINE) == 0 && logged(NO_TICK_LINE) == 0 && logged(NO_PANEL_LINE) == 0, "with nothing refused");
     CHECK(s_draw(0) && s_line_count() == 1 && strcmp(s_line(0), STARTING_TEXT) == 0,
-          "before the first tick the window says \"Diver's Best Friend is starting...\"");
+          "before the first tick the window says \"DBF Reforged is starting...\"");
 
     for (int i = 0; i < TICKS; i++) do_tick();
     CHECK(logged(VERSION_LINE) == 1 && s_panel_count() == 1 && s_register_calls() == 1 && g_ticker_count == 1,
@@ -965,7 +965,7 @@ static void run_masked_log(void)
 
 /* R46's settings for these cases (the [dbf] keys of each case follow; a later line wins). */
 static const char BASE_SETTINGS[] =
-    "; Diver's Best Friend for HellForge, written by wine_host.exe\n"
+    "; DBF Reforged for HellForge, written by wine_host.exe\n"
     "[dbf]\n"
     "input_interval_ms = 60 ; between directions\n"
     "[bindings]\n"
