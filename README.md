@@ -8,7 +8,7 @@
 
 ## R50 — DBF Reforged for HellForge
 
-For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Extract it, import the two inner ZIPs in HellForge, and enable **NEST** and **DBF Reforged**. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md) · [HellForge download on Ayaka](https://ayakamods.com/mods/divers-best-friend-automated-stratagem-system-ass.5899/) · [GitHub HellForge release](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11)
+For HellForge 0.4 and game build **25480438**, use the HellForge bundle. Import the ZIP directly into HellForge and enable **DBF Reforged**. Its included NEST runtime starts automatically. Press **F7** for DBF settings or **Page Down** for NEST’s panel list. See the release-specific guide for upgrades and loader requirements. [Bundle and installation guide](hellforge/NEST-BUNDLE.md) · [HellForge download on Ayaka](https://ayakamods.com/mods/divers-best-friend-automated-stratagem-system-ass.5899/) · [GitHub HellForge release](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11)
 
 DBF draws its wheel, cooldowns and weapon strip on the game HUD. NEST (Native Extension and Settings Toolkit) provides the settings window, shared hotkeys and input handling. Other HellForge mods can register panels with the same installed framework.
 
