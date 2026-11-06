@@ -43,9 +43,12 @@ DLL contains its bundled-host connection message. Full package/source comparison
   Regular body/Medium headings come from installed game data; no Editor folder
   or font redistribution is needed.
 
-DBF bootstrap/legacy migration runtime tests remain owned by Pasteur and must
-pass against the DLL digest above before publication. Earlier Wine results from
-the pre-bootstrap .11 DLL do not establish this candidate's bootstrap behavior.
+Pasteur reports five production bootstrap cases passing against the exact DLL
+digests above: bundled alone, active 0.8.2 reuse without loading the bundle,
+later distinct-path 0.8.2 sharing, 0.8.1 migration without loading the bundle, and
+deferral for an unresolved planned standalone host. Logs: `/tmp/dbf-nest-production11/*.log`.
+The original Wine API4 compatibility suite is still running; earlier pre-bootstrap
+Wine results are not substituted for that final regression.
 Native Windows CI and publication belong to Main. No live game installation,
 mission acceptance or native Windows visual acceptance was performed here.
 All earlier nested-bundle artifacts and hashes are superseded.
