@@ -78,10 +78,11 @@ env.require=function(name) assert(name=='ffi');return ffi end
 local function vector(...) return {...} end
 local G={}
 for _,kind in ipairs({'text','bitmap','rect'}) do
-    G[kind]=function(_,value)
+    G[kind]=function(_,value,_,_,_,position)
         draws=draws+1
         primitives[draws]=kind
-        if kind=='text' then text[value]=true end
+        -- The label, not its shadow (layer 950): where each text was last drawn.
+        if kind=='text' and position[3]~=950 then text[value]=position end
         return draws
     end
     G['destroy_'..kind]=function(_,id) assert(primitives[id]==kind);primitives[id]=nil end
@@ -90,12 +91,13 @@ G.resolution=function() return 1920,1080 end
 G.material=function() return 1 end
 G.set_visible=function() end
 G.reset=function() assert(not next(primitives)) end
-G.text_extents=function() return {0},{30} end
+-- 30 wide; 4 under its origin and 20 over it, so placement must use both.
+G.text_extents=function() return {0,-4},{30,20} end
 env.stingray={Gui=G, Application={main_world=function() return 1 end,worlds=function()return {1,2} end,
     can_get=function(_,material) return material=='content/ui/shared/material/gui_blur' end},
     World={create_screen_gui=function(world)assert(world==2);return 1 end},
     Material={set_texture=function()return true end}, IdString64={from_hex=function(h)return h end},
-    Vector2=vector, Vector3=setmetatable({x=function(v)return v[1] end},{__call=function(_,...)return vector(...)end}),
+    Vector2=vector, Vector3=setmetatable({x=function(v)return v[1] end,y=function(v)return v[2] end},{__call=function(_,...)return vector(...)end}),
     Color=vector}
 local b={base=0,valid=function(id)return id==root end,
     pointer=function(at) if at==dock_root+0xf8 then return 111 end;return pointer(at) end,
@@ -106,7 +108,8 @@ local b={base=0,valid=function(id)return id==root end,
     dock_text_position=function(_,x,y)return x+960,y end,
     alloc_widget=function(n)return ffi.new('uint8_t[?]',n)end,
     release_owned_ui=function(_,at,id,p)assert(id==root and parent[at]==p);cleanup=cleanup+1;return true end}
-local d=module.cooldown_dock(b,{context_scope=function(_,fn)return fn(111)end},{})
+local logged={}
+local d=module.cooldown_dock(b,{context_scope=function(_,fn)return fn(111)end},{},function(m)logged[#logged+1]=m end)
 local s={identity=root,dock_y=144,dock_parent=root+0x258,health_bounds=hp,stamina_bounds=bar,
     rows={{entry=1,kind=2,timer_seconds=122,timer_kind='cooldown',dock_source=7001,dock_payload=8001},
           {entry=2,kind=3,timer_seconds=5,timer_kind='incoming',dock_source=7002,dock_payload=8002}}}
@@ -124,8 +127,28 @@ step(1,400)
 assert(widget(tile).scale[1]==48/64 and widget(tile).position[1]==-30)
 assert(widget(tile).state==4 and widget(tile+0x1500).state==3)
 assert(widget(tile+0xa30).opacity==0 and text['2:02'] and text['5'] and text['2'])
+-- No measured tile: R46's point, 30 above the dock point (144), centred on x -30.
+assert(text['2:02'][1]==960-30-15 and text['2:02'][2]==144+30)
 local previous=ticks
 step(1,450);assert(ticks==previous)
+-- The tile really drawn 20 higher and 4 to the right of the dock point (the in-game report): the
+-- timer's glyphs sit 6 above its top (188). The incoming "5" is centred in its own
+-- measured tile (centre 124, glyphs -4..20 around their origin).
+local measured={[tile]={left=910,right=958,bottom=140,top=188},[tile+0x1500]={left=970,right=1018,bottom=100,top=148}}
+b.dock_tile_bounds=function(at) return measured[at] end
+step(1,660)
+assert(text['2:02'][1]==934-15 and text['2:02'][2]==188+6+4,'timer clears the measured tile')
+assert(text['5'][1]==994-15 and text['5'][2]==124-8,'inside text centres in its measured tile')
+assert(#logged==2 and logged[1]:find('Dock timer above: tile x 910..958 y 140..188',1,true)
+    and logged[2]:find('Dock timer inside:',1,true),table.concat(logged,'\n'))
+-- A rectangle that is not the 48 we set is not trusted, and says so once; a tile
+-- with no layout yet keeps the dock point too.
+measured[tile]={left=830,right=1030,bottom=140,top=188};measured[tile+0x1500]=nil
+step(1,920)
+assert(text['2:02'][2]==144+30,'an implausible tile falls back to the dock point')
+assert(text['5'][2]==144-36*.35,'an unmeasured tile keeps the dock point')
+assert(#logged==3 and logged[3]:find('Dock tile measured 200 x 48 px where 48 x 48 was set',1,true),logged[3])
+b.dock_tile_bounds=nil
 step(2,700);step(2,1100)
 assert(text['Cooldowns'] and text['In Progress'] and widget(tile+0xce0).opacity==1)
 assert(widget(tile+0x920).position[1]==5 and widget(tile).scale[1]==32/64)

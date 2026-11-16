@@ -166,9 +166,23 @@ local function cooldown_bounds(root, pointer, geometry, viewport)
     end
     return stamina_bounds, health_bounds
 end
+-- One log line per distinct key, at most `limit` per owner: placement facts for live checks.
+local function log_once(log,limit)
+    local seen,count={},0
+    return function(key,message)
+        if not log or seen[key] or count>=limit then return end
+        seen[key]=true;count=count+1;pcall(log,message)
+    end
+end
+-- DBF's own: the space R46's fixed offsets left between a tile and its timer
+-- (30 above a 24 half-tile; 42 below, less about 12 of text), in dock units.
+local TIMER_GAP=6
 -- Retained screen-GUI labels. No timer subscription exists; consume the dock's
 -- existing timer updates and change retained text only when its value changes.
-local function cooldown_dock_text(b)
+-- An item's `tile` (cooldown_dock's measurement, screen pixels) places its
+-- labels; without one they fall back to the dock point and R46's offsets.
+local function cooldown_dock_text(b,log)
+    local note=log_once(log,8)
     local self={};local gui,world,sr,font,identity,attempted,lease,ui;local labels={}
     local owner={}
     local separator,separator_key
@@ -291,14 +305,28 @@ local function cooldown_dock_text(b)
                 local above=position==2 and not item.below_stamina
                 -- Compact row: below the 32 px tile (16 px half, 2 px gap, 15 px text).
                 local x,y=b.dock_text_position(s,item.x,item.y+(inside and 0 or above and 30 or item.compact_row and -33 or -42))
+                local tile=not overview and item.tile
                 if overview then
                     local left=b.dock_text_position(s,(item.overview_offset or 0)-46,item.y)
                     local right=b.dock_text_position(s,(item.overview_offset or 0)+4,item.y)
                     size=16*math.abs(right-left)/50
                     text=item.phase=='unavailable' and 'Unavailable' or text
                     x,y=b.dock_text_position(s,(item.overview_offset or 0)+4,item.y-5)
+                elseif tile then
+                    -- The tile's measured rectangle and the text's own height: the
+                    -- label clears the icon whatever the engine's pivot and text origin.
+                    local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
+                    local low,high=sr.Vector3.y(min),sr.Vector3.y(max)
+                    local gap=TIMER_GAP*math.abs(unit_y-origin_y)
+                    local point_x,point_y=x,y
+                    x=(tile.left+tile.right)/2
+                    y=inside and (tile.bottom+tile.top)/2-(low+high)/2 or above and tile.top+gap-low or tile.bottom-gap-high
+                    local place=inside and 'inside' or above and 'above' or 'below'
+                    note(place..tostring(item.compact_row or item.below_stamina),string.format(
+                        'Dock timer %s: tile x %.0f..%.0f y %.0f..%.0f, R46 point %.0f,%.0f, text y %.1f..%.1f at %.0f px, drawn at %.0f,%.0f',
+                        place,tile.left,tile.right,tile.bottom,tile.top,point_x,point_y,low,high,size,x,y))
                 end
-                if inside then y=y-size*.35 end
+                if inside and not tile then y=y-size*.35 end
                 local key=text..':'..x..':'..y..':'..item.alpha..':'..size..':'..tostring(overview)
                 if not old or old.key~=key then
                     destroy_label(old)
@@ -314,6 +342,7 @@ local function cooldown_dock_text(b)
                         local half=(item.below_stamina or item.compact_row) and 16 or 24
                         local left,bottom=b.dock_text_position(s,item.x-half,item.y-half)
                         local right,top=b.dock_text_position(s,item.x+half,item.y+half)
+                        if tile then left,bottom,right,top=tile.left,tile.bottom,tile.right,tile.top end
                         backdrop=G.rect(gui,sr.Vector3(math.min(left,right),math.min(bottom,top),949),sr.Vector2(math.abs(right-left),math.abs(top-bottom)),color('hud_plate',item.alpha*150/204))
                     end
                     local text_x=overview and x-extent or x-extent/2
@@ -326,8 +355,15 @@ local function cooldown_dock_text(b)
                 local text=tostring(item.charge_count);local size=18*scale
                 if position==5 then size=12*math.abs(unit_x-origin_x)end
                 local side=item.charge_side
-                local x,y=b.dock_text_position(s,item.x+(position==5 and 20 or side=='left'and -36 or 0),item.y+(side=='above'and 37 or side=='left'and 0 or -37))
-                y=y-size*.35
+                local dx,dy=position==5 and 20 or side=='left'and -36 or 0,side=='above'and 37 or side=='left'and 0 or -37
+                local x,y=b.dock_text_position(s,item.x+dx,item.y+dy)
+                local tile=position~=5 and item.tile
+                if tile then
+                    -- Same offsets, from the tile's measured centre and the text's own height.
+                    local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
+                    x=(tile.left+tile.right)/2+dx*math.abs(unit_x-origin_x)
+                    y=(tile.bottom+tile.top)/2+dy*math.abs(unit_y-origin_y)-(sr.Vector3.y(min)+sr.Vector3.y(max))/2
+                else y=y-size*.35 end
                 local key=text..':'..x..':'..y..':'..item.alpha..':'..size
                 if not old_charge or old_charge.key~=key then
                     destroy_label(old_charge)
@@ -376,7 +412,7 @@ local function cooldown_closed_notices(b)
     end
     return self
 end
-local function cooldown_dock(b,scope,input)
+local function cooldown_dock(b,scope,input,log)
     local ffi=require('ffi')
     local init=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x1446840)
     local create=ffi.cast('void (*)(uintptr_t, uint64_t, uint64_t, uint64_t, int32_t, uint32_t)',b.base+0x1839520)
@@ -387,7 +423,8 @@ local function cooldown_dock(b,scope,input)
     local order=ffi.cast('void (*)(uintptr_t, uint32_t)',b.base+0x14491f0)
     local opacity=ffi.cast('void (*)(uintptr_t, float)',b.base+0x1448ad0)
     local model=cooldown_dock_model()
-    local timer_text=cooldown_dock_text(b)
+    local timer_text=cooldown_dock_text(b,log)
+    local note=log_once(log,4)
     local storage,address,identity,parent,snapshot
     local retired,drawn={},{}
     -- Constructor placement of each tile's count badge, so the overview can keep
@@ -396,6 +433,29 @@ local function cooldown_dock(b,scope,input)
     local self={}
     local sampled_signature,timer_text_key
     local function owned() return address and b.valid(identity) and b.pointer(address+0xf0)==parent end
+    -- Where each tile really is on screen, from its own transform, for the timer
+    -- labels. No tile (labels fall back to the dock point) before the first
+    -- layout, or when the rectangle is not the size the dock set (48 or 32 units).
+    local function measure_tiles(s,items,overview)
+        local ready=address and owned() and b.dock_tile_bounds
+        local ox,oy,ux,uy
+        if ready then
+            ox,oy=b.dock_text_position(s,0,0)
+            ux=math.abs(b.dock_text_position(s,1,0)-ox)
+            local _,y=b.dock_text_position(s,0,1);uy=math.abs(y-oy)
+        end
+        for i,item in ipairs(items)do
+            item.tile=nil
+            local t=ready and b.dock_tile_bounds(address+0x110+(i-1)*0x1500)
+            if t then
+                local pixels=(overview or item.below_stamina or item.compact_row)and 32 or 48
+                local w,h=(t.right-t.left)/(pixels*ux),(t.top-t.bottom)/(pixels*uy)
+                if w>=0.75 and w<=1.33 and h>=0.75 and h<=1.33 then item.tile=t
+                else note('size '..pixels,string.format('Dock tile measured %.0f x %.0f px where %.0f x %.0f was set; its timer uses the dock point',
+                    t.right-t.left,t.top-t.bottom,pixels*ux,pixels*uy)) end
+            end
+        end
+    end
     function self.hide()
         timer_text.hide()
         if not snapshot and not self.shown and #model.order==0 then return end
@@ -468,6 +528,7 @@ local function cooldown_dock(b,scope,input)
         if timer_text_key~=label_key then timer_text_key=label_key;self.timer_error=nil end
         local function draw_labels()
         if not self.timer_error then
+            measure_tiles(s,items,overview)
             local ok,why=pcall(timer_text.draw,s,items,now,timer_position,timer_style,radial.brief_timer_limit,divider,panels)
             if not ok then timer_text.hide();self.timer_error=tostring(why)end
         end

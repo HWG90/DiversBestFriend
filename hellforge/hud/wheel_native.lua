@@ -212,6 +212,24 @@ local function native_backend(bridge,token)
         x=x+size[1]/2
         return tonumber(m[0])*x+tonumber(m[8])*y+tonumber(m[12]),tonumber(m[2])*x+tonumber(m[10])*y+tonumber(m[14])
     end
+    -- A dock tile's rectangle in the same screen space as dock_text_position: its
+    -- own size and world transform, corner by corner. nil while it has no layout
+    -- (no area) or when a value is unreadable or not finite.
+    local tile_transform=ffi.new('float[16]')
+    function backend.dock_tile_bounds(address)
+        local size,bytes=pair(read(address+0x24,8)),read(address+0x64,64)
+        if not size or not bytes or not(size[1]>0 and size[2]>0) then return nil end
+        ffi.copy(tile_transform,bytes,64);local m=tile_transform
+        local left,right,bottom,top=math.huge,-math.huge,math.huge,-math.huge
+        for _,c in ipairs({{0,0},{size[1],0},{0,size[2]},{size[1],size[2]}})do
+            local x=tonumber(m[0])*c[1]+tonumber(m[8])*c[2]+tonumber(m[12])
+            local y=tonumber(m[2])*c[1]+tonumber(m[10])*c[2]+tonumber(m[14])
+            if not(math.abs(x)<=100000 and math.abs(y)<=100000)then return nil end
+            left,right,bottom,top=math.min(left,x),math.max(right,x),math.min(bottom,y),math.max(top,y)
+        end
+        if right-left<=0 or top-bottom<=0 then return nil end
+        return {left=left,right=right,bottom=bottom,top=top}
+    end
     function backend.get(address,property)
         return pair(read(address+specs[property].offset,8))
     end
