@@ -106,6 +106,7 @@ local b={base=0,valid=function(id)return id==root end,
     set=function(at,key,v)widget(at)[key]=v end,
     dock_font=function()return {font='a',material='b',atlas='c'} end,
     dock_text_position=function(_,x,y)return x+960,y end,
+    dock_viewport_report=function(state)assert(state.identity==root);return 'viewport test' end,
     alloc_widget=function(n)return ffi.new('uint8_t[?]',n)end,
     release_owned_ui=function(_,at,id,p)assert(id==root and parent[at]==p);cleanup=cleanup+1;return true end}
 local logged={}
@@ -129,25 +130,32 @@ assert(widget(tile).state==4 and widget(tile+0x1500).state==3)
 assert(widget(tile+0xa30).opacity==0 and text['2:02'] and text['5'] and text['2'])
 -- No measured tile: R46's point, 30 above the dock point (144), centred on x -30.
 assert(text['2:02'][1]==960-30-15 and text['2:02'][2]==144+30)
+-- The geometry for tracing the GUI lift is logged once, with the GUI resolution.
+assert(#logged==1 and logged[1]=='Dock geometry: GUI 1920x1080, viewport test',logged[1])
 local previous=ticks
 step(1,450);assert(ticks==previous)
 -- The tile really drawn 20 higher and 4 to the right of the dock point (the in-game report): the
--- timer's glyphs sit 6 above its top (188). The incoming "5" is centred in its own
--- measured tile (centre 124, glyphs -4..20 around their origin).
+-- timer's baseline sits 6 above its top (188); timers are digits, so their glyphs
+-- start there. The incoming "5" (glyphs 0..20 over its baseline) is centred in its
+-- own measured tile (centre 124).
 local measured={[tile]={left=910,right=958,bottom=140,top=188},[tile+0x1500]={left=970,right=1018,bottom=100,top=148}}
-b.dock_tile_bounds=function(at) return measured[at] end
+b.dock_tile_bounds=function(state,at) assert(state==s);return measured[at] end
 step(1,660)
-assert(text['2:02'][1]==934-15 and text['2:02'][2]==188+6+4,'timer clears the measured tile')
-assert(text['5'][1]==994-15 and text['5'][2]==124-8,'inside text centres in its measured tile')
-assert(#logged==2 and logged[1]:find('Dock timer above: tile x 910..958 y 140..188',1,true)
-    and logged[2]:find('Dock timer inside:',1,true),table.concat(logged,'\n'))
--- A rectangle that is not the 48 we set is not trusted, and says so once; a tile
--- with no layout yet keeps the dock point too.
-measured[tile]={left=830,right=1030,bottom=140,top=188};measured[tile+0x1500]=nil
+assert(text['2:02'][1]==934-15 and text['2:02'][2]==188+6,'timer clears the measured tile')
+assert(text['5'][1]==994-15 and text['5'][2]==124-10,'inside text centres in its measured tile')
+assert(#logged==3 and logged[2]:find('Dock timer above: tile x 910..958 y 140..188',1,true)
+    and logged[3]:find('Dock timer inside:',1,true),table.concat(logged,'\n'))
+-- A first-frame tile without layout (1 x 1 live) falls back without a line; an
+-- unmeasured tile keeps the dock point too.
+measured[tile]={left=930,right=931,bottom=164,top=165};measured[tile+0x1500]=nil
 step(1,920)
-assert(text['2:02'][2]==144+30,'an implausible tile falls back to the dock point')
+assert(text['2:02'][2]==144+30 and #logged==3,'an unlaid tile is quiet')
 assert(text['5'][2]==144-36*.35,'an unmeasured tile keeps the dock point')
-assert(#logged==3 and logged[3]:find('Dock tile measured 200 x 48 px where 48 x 48 was set',1,true),logged[3])
+-- A rectangle that is not the 48 we set is not trusted, and says so once.
+measured[tile]={left=830,right=1030,bottom=140,top=188}
+step(1,1180)
+assert(text['2:02'][2]==144+30,'an implausible tile falls back to the dock point')
+assert(#logged==4 and logged[4]:find('Dock tile measured 200 x 48 px where 48 x 48 was set',1,true),logged[4])
 b.dock_tile_bounds=nil
 step(2,700);step(2,1100)
 assert(text['Cooldowns'] and text['In Progress'] and widget(tile+0xce0).opacity==1)

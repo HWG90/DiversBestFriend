@@ -152,3 +152,27 @@ word(card,16);put(card+0x3728,'\0');b.finish_removed(hud);assert(writes==0,'rese
 put(card+0x3728,'\1');put(card+0x36f0,'\1');b.finish_removed(hud);assert(writes==0,'active card')
 put(card+0x36f0,'\0');b.finish_removed(hud);assert(writes==1,'cancelled leave tween collapsed')
 print('Row withdrawal, malformed definitions and stock-card leave tween checks passed')
+
+-- Dock screen positions: the viewport's transform plus the 18-unit lift measured
+-- live; a tile's rectangle is lifted the same way and reported for the log.
+local dock_parent=hud+0x258
+local function transform(sx,sy,tx,ty)
+    local t=ffi.new('float[16]');t[0],t[10],t[12],t[14],t[15]=sx,sy,tx,ty,1
+    return ffi.string(t,64)
+end
+put(dock_parent+0x24,ffi.string(ffi.new('float[2]',{1920,1080}),8))
+put(dock_parent+0x64,transform(2,2,0,0))
+local dock={dock_parent=dock_parent}
+local dx,dy=b.dock_text_position(dock,-30,100)
+assert(dx==(960-30)*2 and dy==(100+18)*2,'dock point lifted 18 units')
+local dock_tile=0x36000000
+put(dock_tile+0x24,ffi.string(ffi.new('float[2]',{64,64}),8))
+put(dock_tile+0x64,transform(1.5,1.5,1812,152))
+local rect=b.dock_tile_bounds(dock,dock_tile)
+assert(rect.left==1812 and rect.right==1908 and rect.bottom==152+36 and rect.top==248+36,'tile lifted like the dock point')
+put(dock_tile+0x64,transform(0,0,0,0))
+assert(b.dock_tile_bounds(dock,dock_tile)==nil,'a tile without layout has no rectangle')
+assert(b.dock_tile_bounds(dock,0x37000000)==nil,'an unreadable tile has no rectangle')
+local report=b.dock_viewport_report(dock)
+assert(report:find('viewport 1920x1080 matrix 2 0 0 2 0 0; parent',1,true),report)
+print('Dock lift, tile rectangles and the geometry report passed')

@@ -243,7 +243,11 @@ local function cooldown_dock_text(b,log)
             if not ok or not material then material=G.create_material(gui,sr.IdString64.from_hex(font.material))end
             if not material or sr.Material.set_texture(material,sr.IdString64.from_hex('88BAC99B00000000'),sr.IdString64.from_hex(font.atlas))==false then self.hide();attempted=true;return end
         end
-        local G=ui;lease.show();local width=G.resolution();local scale=(width or 1920)/1920
+        local G=ui;lease.show();local width,height=G.resolution();local scale=(width or 1920)/1920
+        if b.dock_viewport_report then
+            local ok,report=pcall(b.dock_viewport_report,s)
+            note('geometry','Dock geometry: GUI '..tostring(width)..'x'..tostring(height)..', '..(ok and report or 'unreadable: '..tostring(report)))
+        end
         -- Panel geometry is retained separately from ticking labels. Only a
         -- membership/layout change rebuilds backgrounds and headings.
         local panel_parts={}
@@ -313,14 +317,15 @@ local function cooldown_dock_text(b,log)
                     text=item.phase=='unavailable' and 'Unavailable' or text
                     x,y=b.dock_text_position(s,(item.overview_offset or 0)+4,item.y-5)
                 elseif tile then
-                    -- The tile's measured rectangle and the text's own height: the
-                    -- label clears the icon whatever the engine's pivot and text origin.
+                    -- The tile's measured rectangle and the text's own height. The
+                    -- position is the baseline and timers are digits, so the glyphs
+                    -- span 0..high: above sits on the gap, below hangs under it.
                     local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
                     local low,high=sr.Vector3.y(min),sr.Vector3.y(max)
                     local gap=TIMER_GAP*math.abs(unit_y-origin_y)
                     local point_x,point_y=x,y
                     x=(tile.left+tile.right)/2
-                    y=inside and (tile.bottom+tile.top)/2-(low+high)/2 or above and tile.top+gap-low or tile.bottom-gap-high
+                    y=inside and (tile.bottom+tile.top)/2-high/2 or above and tile.top+gap or tile.bottom-gap-high
                     local place=inside and 'inside' or above and 'above' or 'below'
                     note(place..tostring(item.compact_row or item.below_stamina),string.format(
                         'Dock timer %s: tile x %.0f..%.0f y %.0f..%.0f, R46 point %.0f,%.0f, text y %.1f..%.1f at %.0f px, drawn at %.0f,%.0f',
@@ -359,10 +364,10 @@ local function cooldown_dock_text(b,log)
                 local x,y=b.dock_text_position(s,item.x+dx,item.y+dy)
                 local tile=position~=5 and item.tile
                 if tile then
-                    -- Same offsets, from the tile's measured centre and the text's own height.
-                    local min,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
+                    -- Same offsets, from the tile's measured centre; the digits centred.
+                    local _,max=G.text_extents(gui,text,sr.IdString64.from_hex(font.font),size)
                     x=(tile.left+tile.right)/2+dx*math.abs(unit_x-origin_x)
-                    y=(tile.bottom+tile.top)/2+dy*math.abs(unit_y-origin_y)-(sr.Vector3.y(min)+sr.Vector3.y(max))/2
+                    y=(tile.bottom+tile.top)/2+dy*math.abs(unit_y-origin_y)-sr.Vector3.y(max)/2
                 else y=y-size*.35 end
                 local key=text..':'..x..':'..y..':'..item.alpha..':'..size
                 if not old_charge or old_charge.key~=key then
@@ -446,12 +451,13 @@ local function cooldown_dock(b,scope,input,log)
         end
         for i,item in ipairs(items)do
             item.tile=nil
-            local t=ready and b.dock_tile_bounds(address+0x110+(i-1)*0x1500)
+            local t=ready and b.dock_tile_bounds(s,address+0x110+(i-1)*0x1500)
             if t then
                 local pixels=(overview or item.below_stamina or item.compact_row)and 32 or 48
                 local w,h=(t.right-t.left)/(pixels*ux),(t.top-t.bottom)/(pixels*uy)
                 if w>=0.75 and w<=1.33 and h>=0.75 and h<=1.33 then item.tile=t
-                else note('size '..pixels,string.format('Dock tile measured %.0f x %.0f px where %.0f x %.0f was set; its timer uses the dock point',
+                -- A first-frame tile has no layout yet (1 x 1 live): not worth a line.
+                elseif w>=0.25 or h>=0.25 then note('size '..pixels,string.format('Dock tile measured %.0f x %.0f px where %.0f x %.0f was set; its timer uses the dock point',
                     t.right-t.left,t.top-t.bottom,pixels*ux,pixels*uy)) end
             end
         end

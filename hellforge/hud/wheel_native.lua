@@ -206,29 +206,57 @@ local function native_backend(bridge,token)
         if not sr.Application.can_get('font',I.from_hex(font))or not sr.Application.can_get('texture',I.from_hex(atlas))or not sr.Application.can_get('material',I.from_hex(material))then return nil end
         return {font=font,atlas=atlas,material=material}
     end
+    -- Measured live 2026-11-16 (4K): what DBF draws in its screen GUI at a HUD
+    -- widget's world position lands 36 px (18 HUD units) below the widget. Two
+    -- timers drawn at 323 and 333 sat exactly 36 low; the backdrop drawn at a
+    -- tile's measured rectangle sat below the tile. Every dock drawing is lifted
+    -- by this much; dock_viewport_report logs the numbers to trace it to source.
+    local GUI_LIFT_UNITS=18
+    local viewport_transform=ffi.new('float[16]')
+    local function viewport(s)
+        local size,bytes=pair(read(s.dock_parent+0x24,8)),read(s.dock_parent+0x64,64)
+        if not size or not bytes then return nil end
+        ffi.copy(viewport_transform,bytes,64)
+        return size,viewport_transform
+    end
     function backend.dock_text_position(s,x,y)
-        local size=assert(pair(read(s.dock_parent+0x24,8)))
-        local bytes=assert(read(s.dock_parent+0x64,64));local m=ffi.new('float[16]');ffi.copy(m,bytes,64)
-        x=x+size[1]/2
+        local size,m=viewport(s);assert(size,'Dock viewport unreadable')
+        x,y=x+size[1]/2,y+GUI_LIFT_UNITS
         return tonumber(m[0])*x+tonumber(m[8])*y+tonumber(m[12]),tonumber(m[2])*x+tonumber(m[10])*y+tonumber(m[14])
     end
     -- A dock tile's rectangle in the same screen space as dock_text_position: its
-    -- own size and world transform, corner by corner. nil while it has no layout
-    -- (no area) or when a value is unreadable or not finite.
+    -- own size and world transform, corner by corner, lifted like every dock
+    -- drawing. nil while it has no layout (no area) or when a value is unreadable
+    -- or not finite.
     local tile_transform=ffi.new('float[16]')
-    function backend.dock_tile_bounds(address)
+    function backend.dock_tile_bounds(s,address)
+        local _,v=viewport(s)
         local size,bytes=pair(read(address+0x24,8)),read(address+0x64,64)
-        if not size or not bytes or not(size[1]>0 and size[2]>0) then return nil end
+        if not v or not size or not bytes or not(size[1]>0 and size[2]>0) then return nil end
+        local lift_x,lift_y=tonumber(v[8])*GUI_LIFT_UNITS,tonumber(v[10])*GUI_LIFT_UNITS
         ffi.copy(tile_transform,bytes,64);local m=tile_transform
         local left,right,bottom,top=math.huge,-math.huge,math.huge,-math.huge
         for _,c in ipairs({{0,0},{size[1],0},{0,size[2]},{size[1],size[2]}})do
-            local x=tonumber(m[0])*c[1]+tonumber(m[8])*c[2]+tonumber(m[12])
-            local y=tonumber(m[2])*c[1]+tonumber(m[10])*c[2]+tonumber(m[14])
+            local x=tonumber(m[0])*c[1]+tonumber(m[8])*c[2]+tonumber(m[12])+lift_x
+            local y=tonumber(m[2])*c[1]+tonumber(m[10])*c[2]+tonumber(m[14])+lift_y
             if not(math.abs(x)<=100000 and math.abs(y)<=100000)then return nil end
             left,right,bottom,top=math.min(left,x),math.max(right,x),math.min(bottom,y),math.max(top,y)
         end
         if right-left<=0 or top-bottom<=0 then return nil end
         return {left=left,right=right,bottom=bottom,top=top}
+    end
+    -- One line for the log: the dock viewport's size and transform, and its
+    -- parent's, so the lift above can be traced to an engine value.
+    function backend.dock_viewport_report(s)
+        local function describe(address)
+            local size,bytes=pair(read(address+0x24,8)),read(address+0x64,64)
+            if not size or not bytes then return 'unreadable' end
+            local m=ffi.new('float[16]');ffi.copy(m,bytes,64)
+            return string.format('%gx%g matrix %g %g %g %g %g %g',size[1],size[2],
+                tonumber(m[0]),tonumber(m[2]),tonumber(m[8]),tonumber(m[10]),tonumber(m[12]),tonumber(m[14]))
+        end
+        local parent=pointer(s.dock_parent+0xf0)
+        return 'viewport '..describe(s.dock_parent)..'; parent '..(parent and describe(parent) or 'none')
     end
     function backend.get(address,property)
         return pair(read(address+specs[property].offset,8))
