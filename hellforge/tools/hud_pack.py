@@ -147,8 +147,8 @@ def main():
         return
     files = release_files()
     version = json.loads(files["hellforge-mod.json"])["version"]
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", version):
-        raise ValueError("invalid mod version for export filename")
+    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", version):
+        raise ValueError("HellForge mod version must be 1–32 filename-safe ASCII characters")
     path = args.path or HF / "build/exports" / f"divers-best-friend-{version}.zip"
     if args.mode == "package":
         write_zip(path, files)
