@@ -260,7 +260,13 @@ local calls={
         node(p);node(p+0x110,p)
     end,
     [0x143eab0]=function(p) mine(p);node(p) end,
-    [0x144f800]=function(p,id,mode) assert(id==(p==strip+0x900 and 0x5af260a786a2ae33ULL or 0x358512d85e35b47dULL) and mode==0);mine(p).asset=id end,
+    [0x144f800]=function(p,id,mode)
+        assert(mode==0)
+        if p==strip+0x900 then assert(id==0x5af260a786a2ae33ULL)
+        elseif mine(p).asset then bindings=bindings+1
+        else assert(id==0x358512d85e35b47dULL) end
+        mine(p).asset=id
+    end,
     [0x144f6e0]=function(p) assert(mine(p).asset);return p end,
     [0x14498c0]=function(p,id,v) assert(mine(p).asset and id==0x7701209e and tonumber(ffi.cast('uintptr_t',v))==base+0x21e2d60) end,
     [0x14497a0]=function(p,id,v) assert(mine(p).asset and id==0xe13777ce and tonumber(ffi.cast('uintptr_t',v))==base+0x21e53c0) end,
@@ -268,8 +274,7 @@ local calls={
     [0x144cfb0]=function(p,v) mine(p).visible=v end,
     [0x144c5c0]=function(parent,p) assert(parent==stockrow or parent==strip);mine(p).owner=parent end,
     [0x144c2c0]=function(parent) assert(parent==stockrow or parent==strip) end,
-    [0x1450120]=function(p,slot,id) assert(slot==0x3aa8b87e and mine(p).asset);nodes[p].texture=id;bindings=bindings+1 end,
-    [0x143eef0]=function(p,lo,hi) assert(mine(p).texture and math.abs(lo.x-.15)<.001 and math.abs(hi.y-.85)<.001) end,
+    [0x143eef0]=function(p,lo,hi) assert(mine(p).asset and math.abs(lo.x-.15)<.001 and math.abs(hi.y-.85)<.001) end,
 }
 local proxy=setmetatable({cast=function(sig,v)
     if sig:find('(*)',1,true) then return assert(calls[v-base],sig) end
@@ -313,13 +318,13 @@ assert(divider.size[1]==1 and divider.size[2]==32 and divider.anchor[2]==.5 and 
 local icon=strip+0x380
 assert(nodes[strip].owner==stockrow and nodes[strip].anchor[1]==1)
 assert(nodes[strip].size[1]==230 and nodes[icon].size[1]==48)
-assert(nodes[icon].texture==0x3efff09cd12fb89aULL and nodes[icon].style[1]==.7)
+assert(nodes[icon].asset==0x3efff09cd12fb89aULL and nodes[icon].style[1]==.7)
 assert(nodes[strip+0x110].style[1]==.5 and nodes[strip+0x220].style[2]==.75)
 tick();assert(scopes==1 and bindings==4)
 nodes[plate].style[1]=0;nodes[glyph].style[1]=1
 tick();assert(nodes[strip+0x110].style[1]==0 and nodes[icon].style[1]==1 and bindings==4)
 model={changeable={fire_mode=true},fire_mode='AUTO'}
-tick();assert(nodes[icon].texture==0x6115051c9558c50eULL and nodes[icon+0x160].visible==0)
+tick();assert(nodes[icon].asset==0x6115051c9558c50eULL and nodes[icon+0x160].visible==0)
 nodes[holder].owner=frame
 tick();assert(renderer.status:find('Weapon HUD row changed',1,true) and nodes[strip].visible==0)
 nodes[holder].owner=stockrow;tick();assert(nodes[strip].visible==1)

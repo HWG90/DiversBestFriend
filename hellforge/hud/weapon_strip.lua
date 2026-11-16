@@ -43,7 +43,6 @@ local function new_renderer(b,scope)
  local attach=call('void (*)(uintptr_t,uintptr_t)',0x144c5c0)
  local finish=call('void (*)(uintptr_t)',0x144c2c0)
  local backing=call('void (*)(uintptr_t,uint32_t,uint8_t)',0x18166c0)
- local texture=call('void (*)(uintptr_t,uint32_t,uint64_t)',0x1450120)
  local material=call('uintptr_t (*)(uintptr_t)',0x144f6e0)
  local param4=call('void (*)(uintptr_t,uint32_t,const float *)',0x14498c0)
  local param2=call('void (*)(uintptr_t,uint32_t,const float *)',0x14497a0)
@@ -151,10 +150,10 @@ local function new_renderer(b,scope)
     local item=icons[i]
     if item then
      if assets[i]~=item.asset then
-      -- Definition-provided textures use the same native RGB-mask material,
-      -- tint, UV crop and layout as the fixed fire/RPM/zoom glyphs.
+      -- Bind the complete sprite asset so the atlas region and sprite material
+      -- come from the same glyph when the weapon or option changes.
       local id=asset_ids[item.asset] or (ffi.new('uint64_t',tonumber(item.asset:sub(1,8),16))*4294967296ULL+tonumber(item.asset:sub(9),16))
-      texture(p,0x3aa8b87e,id);uv(p,uv_min,uv_max);assets[i]=item.asset
+      asset(p,id,0);uv(p,uv_min,uv_max);assets[i]=item.asset
      end
      if resized then
       b.set(p,'size',{edge,edge});b.set(p,'position',{4+(i-1)*(edge+spacing),(height-edge)/2})
