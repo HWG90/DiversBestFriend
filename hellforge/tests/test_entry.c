@@ -328,6 +328,23 @@ static void test_paced(void)
     }
 }
 
+static void test_frame_pacing(void)
+{
+    EntryJob job;
+    start();
+    CHECK(begin(&job, 118, 70, false, 0), "paced job starts");
+    step(&job, 17, false);
+    CHECK(sent_is(&job, 1, 1) && job.next_at == 70, "first frame carries its 17 ms lateness");
+    step(&job, 84, false);
+    CHECK(sent_is(&job, 2, 2) && job.next_at == 140, "second frame does not accumulate lateness");
+    step(&job, 350, false);
+    CHECK(sent_is(&job, 3, 3) && job.next_at == 420, "stall sends only one arrow and drops missed beats");
+    step(&job, 351, false);
+    CHECK(sent_is(&job, 3, 3) && clean(), "no catch-up pulse on the following frame");
+    step(&job, 420, false);
+    CHECK(state_is(&job, ENTRY_DONE, "") && clean(), "remaining direction finishes with clean input");
+}
+
 static void test_interval_zero(void)
 {
     EntryJob job;
@@ -861,6 +878,7 @@ int main(void)
 {
     CHECK(start(), "the synthetic image builds with kind 118's four-direction code");
     test_paced();
+    test_frame_pacing();
     test_interval_zero();
     test_instant();
     test_menu_closed_between_directions();

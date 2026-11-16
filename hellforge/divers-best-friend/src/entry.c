@@ -239,8 +239,12 @@ void entry_step(EntryJob* job, const GameView* v, uint64_t now, bool trigger_dow
 {
     if (!job || job->state != ENTRY_RUNNING || !still_valid(job, v, now)) return;
     if (!job->instant) {
-        /* Paced (selection.lua:52-56): one direction when it is due. */
-        if (now >= job->next_at && send_direction(job, &v->local)) job->next_at = now + job->interval_ms;
+        /* One direction per frame. Carry fractional-frame lateness, but drop
+         * missed beats after a stall instead of bursting to catch up. */
+        if (now >= job->next_at && send_direction(job, &v->local)) {
+            uint64_t origin = now - job->next_at >= job->interval_ms ? now : job->next_at;
+            job->next_at = origin + job->interval_ms;
+        }
         return;
     }
     /* Instant (the 26251122 tree's input.lua:24-36): every direction but the last now; the last once the trigger has

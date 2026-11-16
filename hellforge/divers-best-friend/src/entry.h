@@ -16,7 +16,8 @@
  * Every entry_step of a running job first aborts (ENTRY_FAILED) when: the menu is closed or inactive, local_ok is false,
  * the identity (manager, key) or the input component is not the job's, the deadline has passed (now > deadline), or the
  * payload no longer holds the kind. Then it sends what is due:
- *   paced    one direction when now >= next_at, then next_at = now + interval (an interval of 0: one per step);
+ *   paced    one direction when now >= next_at; advance the due time by interval, carrying sub-frame lateness.
+ *            After a whole missed interval restart from now, with no catch-up burst (interval 0: one per step);
  *   Instant  every direction but the last at once; the last only once `trigger_down` (the binding that started the job)
  *            has been false for INSTANT_SETTLE_MS (100) without a break: settle_at is set when it is first seen up and
  *            cleared whenever it is down. When Confirm is also the throw, equipping while it is held would start the throw.

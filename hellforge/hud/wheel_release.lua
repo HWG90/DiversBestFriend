@@ -48,7 +48,7 @@ local function release_controller(input,report)
                 if now>=job.next_at then
                     local done,message=advance_all(input.advance_release,job,now)
                     if message then self.status=message;report('Release: '..message) end
-                    job.finished=done;job.next_at=now+job.interval_ms
+                    job.finished=done;job.next_at=next_input_at(job.next_at,now,job.interval_ms)
                     if done then job.deadline=now+2000 end
                 end
             end)

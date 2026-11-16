@@ -1265,11 +1265,13 @@ static bool handler_took(const uint8_t* code, int n)
     return true;
 }
 
-/* One direction per tick, at least the interval apart (by the same clock DBF paces with; 5 ms for the read order). */
-static bool paced(int n, unsigned interval)
+/* One direction per tick, never ahead of the job's cadence. Adjacent gaps
+ * may be shorter than interval when a late frame's remainder is carried.
+ * Deterministic entry tests cover exact deadlines and dropping stalled beats. */
+static bool paced(int n, unsigned interval, ULONGLONG started)
 {
     for (int i = 1; i < n && i < MAX_CALLS; i++) {
-        if (g_handler_tick[i] == g_handler_tick[i - 1] || g_handler_ms[i] - g_handler_ms[i - 1] + 5u < interval) {
+        if (g_handler_tick[i] == g_handler_tick[i - 1] || g_handler_ms[i] + 5u < started + i * interval) {
             printf("  directions %d and %d: ticks %d and %d, %llu ms apart\n", i, i + 1, g_handler_tick[i - 1],
                    g_handler_tick[i], (unsigned long long)(g_handler_ms[i] - g_handler_ms[i - 1]));
             return false;
@@ -1486,13 +1488,14 @@ static void run_list_confirm(HMODULE dll)
     CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_MOVE, "and plays the move sound");
 
     key(KEY_CONFIRM, true);
+    ULONGLONG confirmed_at = GetTickCount64();
     entry_tick();
     CHECK(g_sound_count == 2 && g_sounds[1] == DBF_VAL_SOUND_CONFIRM && g_calls[FN_INPUT] == 0,
           "Confirm starts the entry with the confirm sound; the first direction goes on the next tick");
     key(KEY_CONFIRM, false);
     tick_until_calls(st->code_len);
     CHECK(handler_took(st->code, st->code_len), "the handler took the second row's code, direction by direction");
-    CHECK(paced(st->code_len, INTERVAL_MS), "one direction per tick, at least 60 ms apart (input_interval_ms)");
+    CHECK(paced(st->code_len, INTERVAL_MS, confirmed_at), "one direction per tick, never ahead of the configured cadence");
     CHECK(actions_idle(), "the action bytes are 0 again");
     CHECK(status_has("text:Entry: done"), "the Status tab says the entry is done");
     CHECK(ended("Code entry done: Orbital Gatling Barrage (every change put back)"), "and the log says so");
@@ -1893,10 +1896,11 @@ static void run_no_host_entry(void)
     if (!entry_start(&scene, BASE_SETTINGS, st->kind, st->code, st->code_len)) return;
     CHECK(native_chosen(0), "the native card graphics work without an Overlay Host");
     CHECK(logged(NO_HOST_LINE) == 1 && g_ticker_count == 1, "one line says what runs without the host; HellForge's tick");
+    ULONGLONG confirmed_at = GetTickCount64();
     tap(KEY_CONFIRM);
     tick_until_calls(st->code_len);
     CHECK(handler_took(st->code, st->code_len) && actions_idle(), "Confirm on its key enters the top row's code");
-    CHECK(paced(st->code_len, INTERVAL_MS), "paced as the settings say");
+    CHECK(paced(st->code_len, INTERVAL_MS, confirmed_at), "paced as the settings say");
     CHECK(ended("Code entry done: Orbital Precision Strike (every change put back)"), "done");
     CHECK(g_sound_count == 1 && g_sounds[0] == DBF_VAL_SOUND_CONFIRM, "with the confirm sound");
     CHECK(logged(NO_HOST_LINE) == 1, "the no-host line is still logged once");

@@ -14,6 +14,12 @@ local function usage_interval(owner)
     if owner.instant then return 0 end
     return owner.randomize_delay and math.random(70,240)or input_interval(owner.interval_ms,70)
 end
+-- Carry sub-frame lateness forward instead of adding it to every arrow.
+-- A long stall drops the missed beat: never burst normal input to catch up.
+local function next_input_at(due,now,interval)
+    if interval<=0 or now-due>=interval then return now+interval end
+    return due+interval
+end
 -- Runs the job's remaining directions now when it is instant, one otherwise.
 -- Each step is still one pulse through the native handler with its checks.
 -- The last direction equips the beacon. An instant job holds it until the
@@ -66,15 +72,17 @@ local function input_backend(b,bridge)
         return value
     end
     local function lookup(owner,offset,key,limit)
-        local cap=num(owner+offset+8)
+        local header=read(owner+offset,20)
+        local cap=b.u32(header,8)
         assert(cap>0 and cap<=65536,'Invalid lookup capacity')
         local power=1; while power<cap do power=power*2 end
         assert(power==cap,'Lookup capacity is not power of two')
-        local empty,seed=num(owner+offset+12),num(owner+offset+16)
+        local empty,seed=b.u32(header,12),b.u32(header,16)
         local hash=(key%65536*seed+(math.floor(key/65536)*seed%65536)*65536)%4294967296
         -- Entries are pairs of uint32_t (key/index), not pointer objects.
         -- Live r7 capture: table pointer ended in C4C, valid 4-byte alignment.
-        local data=ptr(owner+offset,4)
+        local data=b.u32(header,0)+b.u32(header,4)*4294967296
+        assert(data>=65536 and data<2^47 and data%4==0,'Invalid lookup data pointer')
         for probe=0,cap-1 do
             local slot=read(data+((hash+probe)%cap)*8,8)
             local found=b.u32(slot,0)
@@ -246,7 +254,10 @@ local function input_backend(b,bridge)
             assert(d==job.code[i],'Stratagem code changed; close and reopen the menu')
         end
         assert(num(c.component)==job.sent and num(c.component+0x14)==0,'Native input changed; cancelled')
-        for i=1,job.sent do assert(read(c.component+3+i,1):byte()==job.code[i],'Native sequence changed') end
+        if job.sent>0 then
+            local prefix=read(c.component+4,job.sent)
+            for i=1,job.sent do assert(prefix:byte(i)==job.code[i],'Native sequence changed') end
+        end
         idle_actions(c)
         local direction=assert(job.code[job.sent+1])
         -- Native actions: left=1 right=2 up=3 down=4.
@@ -396,4 +407,4 @@ local function input_backend(b,bridge)
     return out
 end
 
-return {selectable_kind=selectable_kind,input_interval=input_interval,usage_interval=usage_interval,advance_all=advance_all,input_backend=input_backend}
+return {selectable_kind=selectable_kind,input_interval=input_interval,usage_interval=usage_interval,next_input_at=next_input_at,advance_all=advance_all,input_backend=input_backend}

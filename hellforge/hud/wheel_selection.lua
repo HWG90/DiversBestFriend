@@ -54,7 +54,7 @@ local function selection_controller(input,report)
                 local ok,done,message=pcall(advance_all,input.advance,self.job,now)
                 if not ok then self.job=nil; report('Stopped: '..tostring(done)); return end
                 if message then report(message) end
-                if done then self.job=nil else next_at=now+self.job.interval_ms end
+                if done then self.job=nil else next_at=next_input_at(next_at,now,self.job.interval_ms) end
             end
             return
         end

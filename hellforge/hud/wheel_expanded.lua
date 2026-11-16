@@ -33,8 +33,39 @@ local function expanded_wheel(b,scope,input)
     local color=ffi.cast('void (*)(uintptr_t, const float *)',b.base+0x1448690)
     local asset=ffi.cast('void (*)(uintptr_t, uint64_t, uint8_t)',b.base+0x144f800)
     local uv=ffi.cast('void (*)(uintptr_t, NSR_vec2, NSR_vec2)',b.base+0x143eef0)
+    -- Only this subtree's owned widgets are retained here. Native list rows
+    -- are animated by the game and must keep their existing live setters.
+    -- Commit after the engine call, so a failed update is retried next time.
+    local properties={}
+    local function scalar(call,key)
+        return function(p,value)
+            local prior=properties[p]
+            if not prior then prior={};properties[p]=prior end
+            if prior[key]==value then return end
+            call(p,value);prior[key]=value
+        end
+    end
+    visible=scalar(visible,'visible')
+    opacity=scalar(opacity,'opacity')
+    rotation=scalar(rotation,'rotation')
+    local native_color=color
+    color=function(p,value)
+        local prior=properties[p]
+        if not prior then prior={};properties[p]=prior end
+        local r,g,b=tonumber(value[0]),tonumber(value[1]),tonumber(value[2])
+        if prior.r==r and prior.g==g and prior.b==b then return end
+        native_color(p,value);prior.r,prior.g,prior.b=r,g,b
+    end
+    local function set(p,key,value)
+        local prior=properties[p]
+        if not prior then prior={};properties[p]=prior end
+        local v=prior[key]
+        if v and v[1]==value[1] and v[2]==value[2] then return end
+        if b.set(p,key,value)~=false then prior[key]={value[1],value[2]} end
+    end
     local storage,address,identity,parent,signature
     local retired,content={},{}
+    local geometry_count,geometry
     local SIZE,STRIDE=0x15710,0x1560
     local function rgb(token)
         local c=style.tokens.colors[token]
@@ -51,8 +82,8 @@ local function expanded_wheel(b,scope,input)
     end
     local function link(p,c) attach(p,c);finish(p) end
     local function centered(p,size,pivot)
-        b.set(p,'size',{size,size});b.set(p,'position',{0,0})
-        b.set(p,'anchor',{0.5,0.5});b.set(p,'pivot',{pivot,pivot})
+        set(p,'size',{size,size});set(p,'position',{0,0})
+        set(p,'anchor',{0.5,0.5});set(p,'pivot',{pivot,pivot})
         rotation_pivot(p,ffi.new('NSR_vec2',{pivot,pivot}))
         opacity(p,1)
     end
@@ -77,6 +108,10 @@ local function expanded_wheel(b,scope,input)
         end)
         for _,row in ipairs(rows) do parts[#parts+1]=row.address..':'..row.kind end
         local codes=input.display_codes(rows)
+        if geometry_count~=#rows then
+            geometry_count,geometry=#rows,{}
+            for i=1,math.max(8,#rows) do geometry[i]={expanded_geometry(#rows,i)} end
+        end
         local current=table.concat(parts,',')
         local changed=signature~=current;signature=current
         scope.context_scope(snapshot.list,function(resource)
@@ -88,6 +123,7 @@ local function expanded_wheel(b,scope,input)
                 address,storage=nil,nil
             end
             if not address then
+                properties={}
                 storage=b.alloc_widget(SIZE+64)
                 address=math.floor((tonumber(ffi.cast('uintptr_t',storage))+31)/16)*16
                 ffi.fill(ffi.cast('void *',address-16),16,165)
@@ -128,8 +164,8 @@ local function expanded_wheel(b,scope,input)
             end
             assert(owned(),'Expanded ownership mismatch')
             local center=snapshot.center or {0,0}
-            b.set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
-            local size=radial.wheel_scale or 1;b.set(address,'scale',{size,size})
+            set(address,'position',{center[1],center[2]-(radial.vertical_offset or 0)})
+            local size=radial.wheel_scale or 1;set(address,'scale',{size,size})
             for i=1,16 do
                 local turn,stretch,wedge,icon=slot(i)
                 assert(b.pointer(turn+0xf0)==address and b.pointer(stretch+0xf0)==turn and
@@ -137,13 +173,13 @@ local function expanded_wheel(b,scope,input)
                 local active=i<=math.max(8,#rows)
                 visible(turn,active and 1 or 0);visible(icon,rows[i] and 1 or 0)
                 if active then
-                    local angle,scale,pos=expanded_geometry(#rows,i)
-                    rotation(turn,-angle);b.set(stretch,'scale',{1,scale});b.set(icon,'position',pos)
+                    local angle,scale,pos=unpack(geometry[i])
+                    rotation(turn,-angle);set(stretch,'scale',{1,scale});set(icon,'position',pos)
                 end
-                local size=radial.icon_scale or 1;b.set(icon,'scale',{size,size})
+                local size=radial.icon_scale or 1;set(icon,'scale',{size,size})
                 local sequence=codes[i] or {}
                 assert(#sequence<=12,'Expanded code exceeds arrow capacity')
-                local _,_,pos=expanded_geometry(#rows,math.min(i,math.max(8,#rows)))
+                local pos=geometry[math.min(i,math.max(8,#rows))][3]
                 local spacing=math.min(16,104/math.max(1,#sequence))*size
                 local code_key=table.concat(sequence,',')..':'..size..':'..pos[1]..':'..pos[2]
                 local previous=content['code'..i]
@@ -156,8 +192,8 @@ local function expanded_wheel(b,scope,input)
                         if direction then
                             assert(direction>=1 and direction<=4 and direction%1==0,'Invalid expanded arrow direction')
                             uv(p,ffi.new('NSR_vec2',{direction/5,0}),ffi.new('NSR_vec2',{(direction+1)/5,1}))
-                            b.set(p,'size',{spacing,spacing})
-                            b.set(p,'position',{pos[1]+(j-(#sequence+1)/2)*spacing,pos[2]-42*size})
+                            set(p,'size',{spacing,spacing})
+                            set(p,'position',{pos[1]+(j-(#sequence+1)/2)*spacing,pos[2]-42*size})
                         end
                     end
                     content['code'..i]=code_key
