@@ -1,3 +1,11 @@
+# R50 — DBF Reforged HellForge .19 — 2026-11-25
+
+- Works on HellForge 0.5. After the HellForge update, .11 lost track of your diver, so stratagem codes, code entry, terminal arrows and the weapon strip stopped working. They work again.
+- The cooldown dock's timers, charge counts and Inside backdrop sit on their tiles again.
+- The F7 settings menu groups its categories, with sections you can fold. Q and E switch views and Tab applies changes. Its shortcuts stay quiet while you type or use another panel.
+- The weapon strip shows the game's own icons for programmable ammunition.
+- Smoother code entry and less work per frame for the expanded wheel.
+
 # R50 — DBF Reforged — 2026-11-05
 
 - Native game HUD wheels, wedge blur, cooldowns and weapon strip, with settings and diagnostics in NEST.

@@ -2,11 +2,11 @@
 
 # DBF Reforged
 
-**R50 for HellForge · revision .11**
+**R50 for HellForge · revision .19**
 
 DBF Reforged brings Diver’s Best Friend’s stratagem selection, cooldown displays and weapon strip to HellForge. Choose stratagems with the native wheel, expanded wedges or list, enter their codes automatically, then throw the beacon. The game draws the HUD, while the settings menu follows HF Editor’s typography and layout.
 
-[Download R50 .11](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.11) · [Ayaka](https://ayakamods.com/mods/dbf-reforged-automated-stratagem-system-ass.5899/) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564)
+[Download R50 .19](https://github.com/HWG90/DiversBestFriend/releases/tag/r50-hellforge.19) · [Ayaka](https://ayakamods.com/mods/dbf-reforged-automated-stratagem-system-ass.5899/) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/17564)
 
 ## Features
 
@@ -19,11 +19,11 @@ DBF Reforged brings Diver’s Best Friend’s stratagem selection, cooldown disp
 
 ## Install
 
-1. Close the game and import **divers-best-friend-R50-hellforge.11.zip** into HellForge. Keep the ZIP intact.
+1. Close the game and import **divers-best-friend-R50-hellforge.19.zip** into HellForge. Keep the ZIP intact.
 2. Enable **DBF Reforged** and launch the game.
 3. Press **F7** to open settings.
 
-The ZIP includes NEST 0.8.2, which starts automatically. DBF runs its HUD directly. This release targets HellForge 0.4 and Helldivers 2 game build **25480438**.
+The ZIP includes NEST 0.8.2, which starts automatically. DBF runs its HUD directly. This release targets HellForge 0.5 and Helldivers 2 game build **25480438**.
 
 When upgrading from an earlier bundle, disable the older standalone NEST 0.8.1 entry and restart. DBF will use the included runtime. An active compatible NEST 0.8.2 installation is shared automatically. [Installation and upgrade guide](hellforge/NEST-BUNDLE.md)
 

@@ -1,8 +1,8 @@
 # Install DBF Reforged R50
 
-This package is **R50-hellforge.19-preview**, with NEST 0.8.2 included. It is built for HellForge 0.5.
+The current release is **R50-hellforge.19**, with NEST 0.8.2 included. It is built for HellForge 0.5.
 
-1. In HellForge’s Mods page, import **divers-best-friend-R50-hellforge.19-preview.zip** directly. Keep the ZIP intact.
+1. In HellForge’s Mods page, import **divers-best-friend-R50-hellforge.19.zip** directly. Keep the ZIP intact.
 2. Enable **DBF Reforged**. The package includes its settings host; no separate NEST import is needed. An active compatible standalone NEST is reused.
 3. In the game, press **F7** to open DBF settings. **Page Down** opens NEST’s shared panel list by default. If a customized host assigns F7 to that list, change its list shortcut to free F7 for DBF.
 
