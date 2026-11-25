@@ -99,4 +99,10 @@ and rectangles, and it fails on the lifted code. Wine: host-api5, masked-log, mo
 
 Package `build/exports/divers-best-friend-R50-hellforge.19-preview.zip`, SHA-256
 `f30d9dc11c0d284b665b0597b7bfb144ca3992b267539da0031cd5723f9896b9`, DLL `94462d85…`. `verify-package` passes, and no
-machine paths are inside. Not installed yet.
+machine paths are inside.
+
+Installed 2026-11-25 16:08Z, on the user's word, while the user was in a mission. The zip was copied in as `.part`,
+the .18 zip (`4a8cf815…`) was moved to `backport-backups/20261125T160853Z-dbf-19-dock-labels/` (with
+`receipt.json`), and the copy was renamed into place. `HellForge.Cli mods` lists R50-hellforge.19-preview, enabled,
+with no problems, and its unpacked DLL is `94462d85…`. The running game keeps the .18 DLL until its next start, so the
+in-game check of the dock comes after a restart.
