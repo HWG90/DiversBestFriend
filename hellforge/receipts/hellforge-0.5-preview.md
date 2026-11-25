@@ -72,3 +72,31 @@ The package's INSTALL.md (from `NEST-BUNDLE.md`) still named .11, so it now name
 zip: SHA-256 `dc282f23fe4aca0e3a07fd2ca14e2de437b079cbe590c8d30b01a42dd521183a`, 75 files. `verify-package` passes, and
 the DLL is unchanged (`842a1d29…`). The installed `4a8cf815…` zip differs only in INSTALL.md. No machine paths are in
 the zip.
+
+## R50-hellforge.19-preview: the cooldown dock on 0.5
+
+In game on .18 (2026-11-25 15:36–15:37Z), the user reported that the dock's icons and overlays were "either
+completely transparent or not aligned". Matching the screenshot paste times against the log's mode lines showed the
+first was taken in Inside mode and the second in Below mode. In both, every drawing DBF places from a tile sat 36 px
+(18 HUD units) too high: the timers, the charge count (DBF's own label; the native badge is hidden), and the Inside
+backdrop. Shifted up, the backdrop dimmed the top of each tile and the band above it. The native tiles themselves drew
+as in the accepted .17 look; the colours of icon and fill match.
+
+Measured live in a mission (4K), read-only. The window capture used KWin's `kwin_capture`, and tile memory was read
+from `/proc`:
+- DBF's blur probe drew a 256 px square at screen centre in each world. The main world and the first other world, the
+  one the dock uses, both put it on rows 952–1207 and columns 1792–2047, exactly as drawn. The other world's copy is
+  dimmed by post-processing. Worlds 2–4 show nothing.
+- In one synchronized capture, the tiles' own transforms (tile 0 at x 1752..1848, y 215.4..311.4 y-up) matched the
+  drawn tiles to the pixel.
+
+So the 18-unit lift .17 added (`GUI_LIFT_UNITS`, after a 0.4 session saw the timers 36 px low) is wrong on 0.5, and
+.19 removes it. Dock points and tile rectangles are the HUD transforms as they are. The 0.4 offset was never traced
+to an engine value, so the notes no longer claim 0.4. `dock_viewport_report` still logs the geometry.
+
+Tests: `build.sh test` with `DBF_R46_DIR` gives 25/25 plus 61 Python tests. The dock test now expects unlifted points
+and rectangles, and it fails on the lifted code. Wine: host-api5, masked-log, moved-keys and retry pass.
+
+Package `build/exports/divers-best-friend-R50-hellforge.19-preview.zip`, SHA-256
+`f30d9dc11c0d284b665b0597b7bfb144ca3992b267539da0031cd5723f9896b9`, DLL `94462d85…`. `verify-package` passes, and no
+machine paths are inside. Not installed yet.

@@ -130,7 +130,7 @@ assert(widget(tile).state==4 and widget(tile+0x1500).state==3)
 assert(widget(tile+0xa30).opacity==0 and text['2:02'] and text['5'] and text['2'])
 -- No measured tile: R46's point, 30 above the dock point (144), centred on x -30.
 assert(text['2:02'][1]==960-30-15 and text['2:02'][2]==144+30)
--- The geometry for tracing the GUI lift is logged once, with the GUI resolution.
+-- The geometry for tracing a HUD/GUI mismatch is logged once, with the GUI resolution.
 assert(#logged==1 and logged[1]=='Dock geometry: GUI 1920x1080, viewport test',logged[1])
 local previous=ticks
 step(1,450);assert(ticks==previous)
