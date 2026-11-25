@@ -65,3 +65,10 @@ copied into `mods/` as `.part`, the .17 zip (`8d9c3dba…`) was moved to
 HellForge unpacked it to `mods/.unpacked/divers-best-friend-R50-hellforge.18-preview-4a8cf815e8a4`, whose DLL equals
 the build's (`842a1d29…`). `HellForge.Cli mods` lists DBF Reforged R50-hellforge.18-preview, enabled, with no
 problems. The in-game check is pending.
+
+## Package for release
+
+The package's INSTALL.md (from `NEST-BUNDLE.md`) still named .11, so it now names this zip and HellForge 0.5. Rebuilt
+zip: SHA-256 `dc282f23fe4aca0e3a07fd2ca14e2de437b079cbe590c8d30b01a42dd521183a`, 75 files. `verify-package` passes, and
+the DLL is unchanged (`842a1d29…`). The installed `4a8cf815…` zip differs only in INSTALL.md. No machine paths are in
+the zip.
