@@ -347,6 +347,63 @@ class SyntheticTests(unittest.TestCase):
         self.assertEqual(receipt["tally"]["addresses"], 2)
         self.assertEqual(receipt["tally"]["values"], 4)
 
+    def add_disp32(self):
+        """A witness holding lea rax, [rax+0x1e65e4] (R46's owner_map_value: the registry keys at 0xf32f20 / 8), in
+        section 2 (no raw data: unreadable), the offset it proves (native.lua:6) and the address of its disp32."""
+        self.add_value_lines()
+        self.fx.guards.append(("keys_lea", 0x20300, b"\x48\x8d\x80" + struct.pack("<i", 0x1e65e4) + b"\x49\x8d"))
+        self.fx.entries["witnesses"]["keys_lea"] = {"features": ["STATE", "STRATAGEMS"], "reason": "the keys' lea"}
+        self.fx.entries["addresses"] += [
+            {"name": "KEYS_OFFSET", "kind": "offset", "value": "0xf32f20", "source": "R46 native.lua:6"},
+            {"name": "KEYS_DISPLACEMENT", "kind": "rva", "value": "0x20303",
+             "disp32_of": {"witness": "keys_lea", "scale": 8, "holds": "KEYS_OFFSET"}},
+        ]
+        return self.fx.entries["addresses"][-1]
+
+    def test_disp32_address_emits_its_rva_and_its_proof(self):
+        self.add_disp32()
+        code, err = self.fx.run()
+        self.assertEqual(code, 0, err)
+        with open(self.fx.out_h, encoding="utf-8") as f:
+            header = f.read()
+        self.assertIn("#define DBF_RVA_KEYS_DISPLACEMENT 0x20303u /* keys_lea+0x3 (guards.lua:8): its disp32 "
+                      "0x1e65e4 x 8 = KEYS_OFFSET in the vanilla code */", header)
+        with open(self.fx.receipt, encoding="utf-8") as f:
+            receipt = json.load(f)
+        row = {a["name"]: a for a in receipt["addresses"]}["KEYS_DISPLACEMENT"]
+        self.assertEqual(row["kind"], "rva")
+        self.assertEqual(row["value"], "0x20303")
+        self.assertEqual(row["disp32_of"], {"witness": "keys_lea", "scale": 8, "holds": "KEYS_OFFSET",
+                                            "disp32": "0x1e65e4"})
+
+    def test_disp32_address_refusals(self):
+        cases = (
+            ("the disp32 x scale is not the offset", {"disp32_of": {"witness": "keys_lea", "scale": 4,
+                                                                    "holds": "KEYS_OFFSET"}}),
+            ("the disp32 is not inside the witness", {"value": "0x20307"}),
+            ("the disp32 starts before the witness", {"value": "0x202ff"}),
+            ("no such witness", {"disp32_of": {"witness": "nowhere", "scale": 8, "holds": "KEYS_OFFSET"}}),
+            ("a dropped witness gates nothing", {"disp32_of": {"witness": "unused", "scale": 8,
+                                                              "holds": "KEYS_OFFSET"}}),
+            ("holds names no offset", {"disp32_of": {"witness": "keys_lea", "scale": 8, "holds": "HUD_ROOT"}}),
+            ("holds names nothing", {"disp32_of": {"witness": "keys_lea", "scale": 8, "holds": "NOPE"}}),
+            ("scale is a SIB scale", {"disp32_of": {"witness": "keys_lea", "scale": 3, "holds": "KEYS_OFFSET"}}),
+            ("an unknown field", {"disp32_of": {"witness": "keys_lea", "scale": 8, "holds": "KEYS_OFFSET",
+                                                "extra": 1}}),
+            ("a disp32 address is an RVA", {"kind": "offset"}),
+            ("it has no R46 source", {"source": "R46 native.lua:6"}),
+        )
+        for why, change in cases:
+            with self.subTest(why=why):
+                self.tearDown()
+                self.setUp()
+                entry = self.add_disp32()
+                entry.update(change)
+                code, err = self.fx.run()
+                self.assertNotEqual(code, 0, why)
+                self.assertIn("KEYS_DISPLACEMENT", err, why)
+                self.assertFalse(os.path.exists(self.fx.out_h), why)
+
     def test_value_must_appear_on_its_line_as_a_whole_literal(self):
         self.add_value_lines()
         for value, line in (("5", 5), ("4", 2), ("6", 6), ("553", 6), ("0x7ff", 7), ("141313", 8)):

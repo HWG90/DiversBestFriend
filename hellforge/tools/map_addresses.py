@@ -373,6 +373,56 @@ def _check_source(what, entry, value, r46, problems, decimal=False):
                                                                    " or " + expr if expr else ""))
 
 
+DISP32_FIELDS = {"witness", "scale", "holds"}
+
+
+def _check_disp32(what, entry, kind, value, guards, assignments, offsets, problems):
+    """An address the port reads from the game's code at run time: the RVA of a disp32 inside an emitted witness, which
+    HellForge may rewrite when it moves what the code addresses (0.5.0's entity maps: R46's registry keys). The witness's
+    bytes there, as R46 recorded them (the vanilla code), times `scale` must equal `holds`, an offset given earlier in the
+    table: the vanilla code holds that offset, so the read gives R46's value until HellForge moves it. It has no R46
+    source line of its own. Returns the receipt's disp32_of (with the disp32 found) and the header comment, or None."""
+    spec = entry.get("disp32_of")
+    if kind != "rva":
+        problems.append("%s: a disp32_of address is an RVA (kind \"rva\"), not %r" % (what, kind))
+        return None
+    if "source" in entry or "expr" in entry:
+        problems.append("%s: a disp32_of address takes no R46 source or expr: its witness is its source" % what)
+        return None
+    if not isinstance(spec, dict) or set(spec) != DISP32_FIELDS:
+        problems.append("%s: disp32_of must hold exactly %s" % (what, ", ".join(sorted(DISP32_FIELDS))))
+        return None
+    witness, scale, holds = spec["witness"], spec["scale"], spec["holds"]
+    guard = next((g for g in guards if g.name == witness), None)
+    assignment = assignments.get(witness) if isinstance(witness, str) else None
+    if guard is None or not isinstance(assignment, dict):
+        problems.append("%s: disp32_of names witness %r, which is not in guards.lua and the table" % (what, witness))
+        return None
+    if assignment.get("dropped") is True or not assignment.get("features"):
+        problems.append("%s: disp32_of's witness %s is dropped: the witness must gate the read" % (what, witness))
+        return None
+    if scale not in (1, 2, 4, 8) or isinstance(scale, bool):
+        problems.append("%s: disp32_of's scale %r is not 1, 2, 4 or 8" % (what, scale))
+        return None
+    if holds not in offsets:
+        problems.append("%s: disp32_of holds %r, which is not an offset given earlier in the table" % (what, holds))
+        return None
+    at = value - guard.rva
+    if not 0 <= at <= len(guard.data) - 4:
+        problems.append("%s: %s is not the start of a disp32 inside witness %s (0x%x, %d bytes)" % (
+            what, _hex(value), witness, guard.rva, len(guard.data)))
+        return None
+    disp = struct.unpack_from("<i", guard.data, at)[0]
+    if disp * scale != offsets[holds]:
+        problems.append("%s: %s's disp32 at +0x%x is %s; x %d is not %s (%s)" % (
+            what, witness, at, _hex(disp) if disp >= 0 else "-" + _hex(-disp), scale, holds, _hex(offsets[holds])))
+        return None
+    found = {"witness": witness, "scale": scale, "holds": holds, "disp32": _hex(disp) if disp >= 0 else "-" + _hex(-disp)}
+    comment = "%s+0x%x (guards.lua:%d): its disp32 %s x %d = %s in the vanilla code" % (
+        witness, at, guard.line, found["disp32"], scale, holds)
+    return found, comment
+
+
 def _features(what, entry, problems):
     """(features list in Feature order, dropped) from an entry's "features" or "dropped"."""
     has_features, dropped = "features" in entry, entry.get("dropped") is True
@@ -438,7 +488,8 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
         guards.append(Guard(name, int(span["rva"], 0), bytes.fromhex(span["bytes"]), 0))
 
     # Addresses.
-    addresses, names = [], set()
+    addresses, names, offsets = [], set(), {}
+    assignments = table.get("witnesses", {})
     for i, entry in enumerate(table.get("addresses", [])):
         name = entry.get("name")
         what = "address %s" % (name or "#%d" % (i + 1))
@@ -460,12 +511,22 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
             problems.append("%s: %s does not fit 32 bits" % (what, _hex(value)))
         if kind == "rva" and (value >= pe.image_size or pe.section_of(value) is None):
             problems.append("%s: RVA %s is outside game.dll's sections" % (what, _hex(value)))
+        if "disp32_of" in entry:
+            checked = _check_disp32(what, entry, kind, value, guards, assignments, offsets, problems)
+            if checked is None:
+                continue
+            row = {"name": name, "kind": kind, "value": _hex(value), "define": KINDS[kind] + name,
+                   "source": checked[1], "disp32_of": checked[0]}
+            addresses.append(row)
+            continue
         _check_source(what, entry, value, r46, problems, decimal=kind != "rva")
         row = {"name": name, "kind": kind, "value": entry["value"] if kind == "value" else _hex(value),
                "define": KINDS[kind] + name, "source": entry.get("source")}
         if "expr" in entry:
             row["expr"] = entry["expr"]
         addresses.append(row)
+        if kind == "offset":
+            offsets[name] = value
     if not any(a["kind"] != "value" for a in addresses):
         problems.append("the table has no addresses")
 
@@ -500,8 +561,7 @@ def generate(r46_dir, dll_path, out_h, receipt_path, table_path, content_header,
                           "guarded_by": guarded_by if define else None})
     functions.sort(key=lambda f: f["rva"])
 
-    # Witnesses.
-    assignments = table.get("witnesses", {})
+    # Witnesses (assignments was read with the addresses, for disp32_of).
     guard_names = {g.name for g in guards}
     for name in sorted(guard_names - set(assignments)):
         problems.append("witness %s (guards.lua) has no assignment in the table" % name)

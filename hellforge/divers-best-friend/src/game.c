@@ -165,13 +165,33 @@ static bool read_payload(GameView* v, Local* out)
     return true;
 }
 
+/* Where the registry's keys are: the disp32 of the lea that names them (DBF_RVA_REGISTRY_KEYS_DISPLACEMENT, inside the
+ * owner_map_value witness) times 8, as the game's own lookup computes it. R46 had the offset as a constant
+ * (DBF_OFF_REGISTRY_KEYS_OFFSET, the vanilla code's), but HellForge 0.5.0 moves the entity maps behind the Game block
+ * and rewrites that disp32 (live 2026-11-25: 0x1e65e4 -> 0x104c390, keys 0xf32f20 -> 0x8261c80; the old place then
+ * reads 0), and it may skip the move, so the code is read every time. Accepted: R46's offset, or one past it below 2^31
+ * (HellForge only grows the block); anything else is "registry keys unrecognised". */
+static bool registry_keys(GameView* v, uintptr_t* offset)
+{
+    uint32_t displacement;
+    uint64_t at;
+    if (!mem_u32(g_base + DBF_RVA_REGISTRY_KEYS_DISPLACEMENT, &displacement))
+        return fail(v, "registry keys unreadable");
+    at = (uint64_t)displacement * 8u;
+    if ((int32_t)displacement <= 0 || at < DBF_OFF_REGISTRY_KEYS_OFFSET || at >= UINT64_C(0x80000000))
+        return fail(v, "registry keys unrecognised");
+    *offset = (uintptr_t)at;
+    return true;
+}
+
 /* R46's code-entry context (input.lua:102-126, what display_codes and entry use): player manager -> network index ->
  * registry key -> avatar (unit and input owner agree, the menu-active word readable) -> player context -> the player's
  * peer, which must be the session's. Its mission step (input.lua:127-136) finds the entry carrying that same peer, the
- * payload read_payload found. local_ok, the codes and `out` depend on it; `out` is written only when it holds. */
+ * payload read_payload found. local_ok, the codes and `out` depend on it; `out` is written only when it holds. The
+ * registry's keys are where the code says (registry_keys), not at R46's constant. */
 static bool read_local_player(GameView* v, const Local* local, GameLocal* out)
 {
-    uintptr_t pm, registry, manager, unit, avatar, ui;
+    uintptr_t pm, registry, keys, manager, unit, avatar, ui;
     uint32_t players, network, registry_index, key, avatars, avatar_index, unit_key, owner, menu, context, player_index;
     uint32_t word;
     uint64_t peer;
@@ -185,7 +205,8 @@ static bool read_local_player(GameView* v, const Local* local, GameLocal* out)
     if (!mem_ptr(g_base + DBF_RVA_REGISTRY, &registry)) return fail(v, "registry unreadable");
     if (!lookup(v, registry, DBF_OFF_REGISTRY_LOOKUP_OFFSET, network, DBF_VAL_REGISTRY_INDEX_LIMIT, &registry_index))
         return false;
-    if (!mem_u32(registry + DBF_OFF_REGISTRY_KEYS_OFFSET + (uintptr_t)DBF_OFF_REGISTRY_KEY_STRIDE * registry_index, &key))
+    if (!registry_keys(v, &keys)) return false;
+    if (!mem_u32(registry + keys + (uintptr_t)DBF_OFF_REGISTRY_KEY_STRIDE * registry_index, &key))
         return fail(v, "registry unreadable");
 
     if (!mem_ptr(g_base + DBF_RVA_AVATARS, &manager) || !mem_u32(manager + DBF_OFF_AVATARS_COUNT_OFFSET, &avatars))

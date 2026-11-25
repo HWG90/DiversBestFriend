@@ -30,6 +30,7 @@ _Static_assert(DBF_OFF_CARD_TIMER_SIZE == 0x44u, "the timer block is 0x44 bytes 
 #define RVA_UI 0x347ce28u           /* input.lua:294 */
 #define RVA_CONTROLS 0x347cf18u     /* input.lua:313 */
 #define RVA_DISPLACEMENT 0x66d550u  /* native.lua:51 */
+#define RVA_KEYS_DISPLACEMENT 0xfd9c53u /* owner_map_value + 10: lea rax, [rax + keys / 8] (guards.lua:36) */
 #define RVA_TABLE 0x37cb600u        /* native.lua:52 */
 #define TABLE_ENTRIES 150u          /* entries 0..149, 8 bytes each (native.lua:55) */
 #define RVA_POSITIONS 0x3326508u    /* input.lua:150 */
@@ -195,6 +196,7 @@ static int g_writes;
 static int g_mapped_writes;
 static bool g_built;
 static uint32_t g_local_key = LOCAL_KEY; /* the local player's key: LOCAL_KEY until syn_respawn_local */
+static uint32_t g_keys = REGISTRY_KEYS;  /* the registry keys' offset: REGISTRY_KEYS until syn_move_registry_keys */
 static SynScene g_scene;
 static uintptr_t g_block;               /* HellForge's moved block (syn_move_table); 0 when the table is not moved */
 static uintptr_t g_mod_row[HF_NEW];     /* rows of the mod stratagems added (by kind - 150); 0 when not added */
@@ -346,10 +348,12 @@ static uintptr_t syn_module_base(const char* module, size_t* size)
     return 0;
 }
 
-/* HellForge rewrites the definition-table displacement when it moves the table. */
+/* HellForge rewrites the definition-table displacement when it moves the table, and (0.5.0) the registry keys'
+ * displacement when it moves the entity maps. */
 static int syn_rewrites(uint32_t rva, uint32_t size)
 {
-    return rva < RVA_DISPLACEMENT + 4u && rva + size > RVA_DISPLACEMENT;
+    return (rva < RVA_DISPLACEMENT + 4u && rva + size > RVA_DISPLACEMENT)
+        || (rva < RVA_KEYS_DISPLACEMENT + 4u && rva + size > RVA_KEYS_DISPLACEMENT);
 }
 
 static const MemPort MEM_PORT = { syn_read, syn_write };
@@ -501,6 +505,7 @@ bool syn_build(const SynScene* s)
     g_scene = *s;
     g_built = true;
     g_local_key = LOCAL_KEY;
+    g_keys = REGISTRY_KEYS;
     g_block = 0;
     memset(g_mod_row, 0, sizeof g_mod_row);
     memset(g_mod_tomb, 0, sizeof g_mod_tomb);
@@ -520,6 +525,7 @@ bool syn_build(const SynScene* s)
     put64(&b, SYN_GAME_BASE + RVA_SESSION, AT_SESSION);
     put64(&b, SYN_GAME_BASE + RVA_SETTINGS, AT_SETTINGS);
     put32(&b, SYN_GAME_BASE + RVA_DISPLACEMENT, s->table_rva);
+    put32(&b, SYN_GAME_BASE + RVA_KEYS_DISPLACEMENT, REGISTRY_KEYS / 8u); /* the vanilla lea: owner_map_value's bytes */
     put_table(&b, RVA_TABLE); /* the vanilla table is always there; a moved one is a copy */
     if (s->table_rva != RVA_TABLE) { /* moved before the first read: a block of HellForge's shape */
         put_table(&b, s->table_rva);
@@ -700,6 +706,29 @@ bool syn_move_table(int32_t displacement)
     g_block = block;
     memset(g_mod_row, 0, sizeof g_mod_row);
     memset(g_mod_tomb, 0, sizeof g_mod_tomb);
+    return true;
+}
+
+/* HellForge 0.5.0's entity-map move ("entity maps of 8192 slots, behind the Game block"; live 2026-11-25: keys
+ * 0xf32f20 -> 0x8261c80, the old entries read 0): both players' entries copied to registry + keys_offset, the old ones
+ * zeroed, and the disp32 at RVA_KEYS_DISPLACEMENT made keys_offset / 8. */
+bool syn_move_registry_keys(uint32_t keys_offset)
+{
+    static const uint32_t INDICES[2] = { LOCAL_REGISTRY_INDEX, OTHER_REGISTRY_INDEX };
+    uint8_t entry[REGISTRY_KEY_STRIDE];
+    if (!g_built || keys_offset % 8u != 0) return false;
+    for (int i = 0; i < 2; i++) {
+        uintptr_t from = AT_REGISTRY + g_keys + REGISTRY_KEY_STRIDE * INDICES[i];
+        if (syn_read(from, entry, sizeof entry) != 0
+            || !syn_poke(AT_REGISTRY + keys_offset + REGISTRY_KEY_STRIDE * INDICES[i], entry, sizeof entry))
+            return false;
+    }
+    for (int i = 0; i < 2 && keys_offset != g_keys; i++) {
+        memset(entry, 0, sizeof entry);
+        if (!syn_poke(AT_REGISTRY + g_keys + REGISTRY_KEY_STRIDE * INDICES[i], entry, sizeof entry)) return false;
+    }
+    if (!syn_poke_u32(SYN_GAME_BASE + RVA_KEYS_DISPLACEMENT, keys_offset / 8u)) return false;
+    g_keys = keys_offset;
     return true;
 }
 
@@ -934,7 +963,7 @@ bool syn_respawn_local(uint32_t key)
     if (!g_built || key == OTHER_KEY || key == 0xffffffffu) return false;
     g_local_key = key;
     /* The same lookups syn_build lays out, with the new key in place of the old. */
-    put32(&b, AT_REGISTRY + REGISTRY_KEYS + REGISTRY_KEY_STRIDE * LOCAL_REGISTRY_INDEX, key);
+    put32(&b, AT_REGISTRY + g_keys + REGISTRY_KEY_STRIDE * LOCAL_REGISTRY_INDEX, key);
     put_lookup(&b, AT_AVATARS, AVATARS_LOOKUP, AT_LOOKUPS + 0x1000u, 8, 0x85ebca6bu, 0xffffffffu, 2, keys, AVATARS);
     put_lookup(&b, AT_POSITIONS, POSITIONS_LOOKUP, AT_LOOKUPS + 0x3000u, 16, 0x27d4eb2fu, 0xffffffffu, 2, keys, POSITIONS);
     put32(&b, syn_local_unit() + UNIT_KEY, key);

@@ -1,8 +1,10 @@
 # DBF Reforged — R50 for HellForge
 
-This development preview is **R50-hellforge.17-preview** (public release: **R50-hellforge.11**). This build targets Helldivers 2 build 25480438 on HellForge 0.4. Import the DBF ZIP directly in HellForge and enable DBF Reforged. NEST 0.8.2 is included for settings; an active compatible standalone NEST is reused. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
+This development preview is **R50-hellforge.18-preview** (public release: **R50-hellforge.11**). This build targets Helldivers 2 build 25480438 on HellForge 0.5 (and 0.4). Import the DBF ZIP directly in HellForge and enable DBF Reforged. NEST 0.8.2 is included for settings; an active compatible standalone NEST is reused. DBF starts its own game HUD. Existing Bingus Shared Loader installations can keep running their other addons. Importing this ZIP updates the same HellForge DBF mod ID.
 
 The performance preview retains unchanged expanded-wheel properties and geometry, batches input lookup reads, and carries frame scheduling lateness through paced code entry. Ownership and code checks remain live, normal entry sends at most one arrow per update, and a long stall never causes a catch-up burst. Offline regression results do not establish in-game frame rate or perceived latency; verify selection, cooldown transitions, menu reopen and calls in a mission.
+
+HellForge 0.5 moves the game's entity maps and, when mods add projectiles, the projectile list. DBF now reads both where the game's code points, so the local player, stratagem codes, code entry, terminal arrows and the weapon strip work on HellForge 0.5. Where nothing is moved, the code points at the same places as before.
 
 If standalone NEST 0.8.1 is enabled, disable it and restart to use bundled 0.8.2, or update the standalone host. DBF displays a migration notice on the older host.
 

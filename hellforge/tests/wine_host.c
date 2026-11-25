@@ -27,6 +27,8 @@
  *   on-fails       the API 4 stub, and HellForge refuses the listener (hf->on fails): DBF logs it and registers nothing
  *   masked-log     the API 4 stub and a stub loader that rewrites several witness bytes, two witnesses' worth: the count
  *                  of masked bytes of each is logged once, however often the witness is read again
+ *   moved-keys     the API 4 stub and a stub loader that reports HellForge 0.5's rewritten registry-keys disp32: the keys
+ *                  moved behind the Game block are followed, every code is read, and the 4 masked bytes logged once
  * The code-entry cases (Plan 2, Task 12), with the API 8 stub host and the stub loader (old-host-input: API 5; no-host-entry: the loader
  * alone), a settings.ini in a LOCALAPPDATA of their own, a writable image (hf->write writes into pages that exist), a
  * window of this process in front and DBF's keys pressed with keybd_event (F20 slot 1, F21 Next, F22 Previous, F23
@@ -86,7 +88,7 @@
 #include "test.h"
 #include "wine_overlay_stub.h"
 
-#define VERSION_LINE "DBF Reforged R50-hellforge.17-preview (game 25480438)"
+#define VERSION_LINE "DBF Reforged R50-hellforge.18-preview (game 25480438)"
 #define NO_HOST_LINE "No Overlay Host 0.2.0 or later: running without a settings window; key and controller " \
                      "bindings still work, wheel bindings do nothing"
 #define NO_TICK_LINE "DBF Reforged could not get a game-thread tick"
@@ -542,7 +544,7 @@ typedef enum {
     C_NO_HOST, C_API3, C_API4, C_API5, C_NO_TICK, C_RETRY, C_ON_AT_ONCE, C_LATE_MODULE, C_SECOND_LOADED, C_NULL_PANEL,
     C_ON_FAILS, C_MASKED_LOG, C_LIST_CONFIRM, C_INSTANT, C_MENU_CLOSE, C_MISSION_END, C_SHORTCUT, C_SHORTCUT_HUD,
     C_MOD_STRATAGEM, C_SCRAMBLE, C_NO_ENTRY_ADMISSION, C_NO_HOST_ENTRY, C_RELEASE_RETRY, C_CARD_GONE, C_SHORTCUT_BLOCKED,
-    C_LATCH_RETRY, C_OLD_HOST_INPUT
+    C_LATCH_RETRY, C_OLD_HOST_INPUT, C_MOVED_KEYS
 } CaseId;
 
 typedef struct CaseInfo {
@@ -566,6 +568,7 @@ static const CaseInfo CASES[] = {
     [C_NULL_PANEL] = { "null-panel", "the Overlay Host takes no window", true, false, false },
     [C_ON_FAILS] = { "on-fails", "HellForge refuses the game-loaded listener", true, false, false },
     [C_MASKED_LOG] = { "masked-log", "HellForge rewrites bytes of two witnesses", true, true, false },
+    [C_MOVED_KEYS] = { "moved-keys", "HellForge 0.5 moves the registry keys and rewrites their disp32", true, true, false },
     [C_LIST_CONFIRM] = { "list-confirm", "List Select: Next once, Confirm, the code paced", true, true, true },
     [C_INSTANT] = { "instant", "List Select with Instant: the last direction once Confirm is up", true, true, true },
     [C_MENU_CLOSE] = { "menu-close", "the game closes the menu during a code", true, true, true },
@@ -948,6 +951,44 @@ static void run_masked_log(void)
     check_full_window("a second after the unrewritten byte was put right");
     CHECK(logged(a_line) == 1 && logged(b_line) == 1 && logged_ending(MASKED_TAIL) == 2,
           "admitted, the counts were logged once each");
+    CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
+}
+
+/* --- moved-keys ------------------------------------------------------------------------------------------------ */
+
+/* HellForge 0.5.0 moves the registry's keys behind the Game block and rewrites the disp32 of the lea inside
+ * owner_map_value (live 2026-11-25: 0x1e65e4 -> 0x104c390, keys 0xf32f20 -> 0x8261c80, the old place reading 0), and
+ * its loader reports those 4 bytes. Admission leaves them out and logs them once, as the live log did ("witness
+ * owner_map_value: 4 of 20 bytes rewritten by HellForge"), and the reader follows the code to the keys: the local
+ * player is found and every row has its code (.17 read the old place and found no local player). */
+static void run_moved_keys(void)
+{
+    const DbfWitness* w = witness("owner_map_value");
+    void (*set_rewritten)(uint32_t) = (void (*)(uint32_t))need(g_loader, "stub_set_rewritten");
+    void (*add_rewritten)(uint32_t) = (void (*)(uint32_t))need(g_loader, "stub_add_rewritten");
+    char line[LINE_SIZE];
+    uint32_t displacement = 0;
+
+    CHECK(w != NULL && w->size == 20 && set_rewritten && add_rewritten,
+          "the table has owner_map_value (20 bytes), and the stub loader takes rewritten bytes");
+    if (!w || !set_rewritten || !add_rewritten) return;
+    CHECK(syn_move_registry_keys(0x8261c80u)
+              && syn_read(SYN_GAME_BASE + DBF_RVA_REGISTRY_KEYS_DISPLACEMENT, &displacement, sizeof displacement) == 0
+              && displacement == 0x104c390u,
+          "HellForge 0.5's move: the keys at 0x8261c80, the old ones zeroed, the disp32 0x104c390");
+    set_rewritten(DBF_RVA_REGISTRY_KEYS_DISPLACEMENT);
+    for (uint32_t i = 1; i < 4; i++) add_rewritten(DBF_RVA_REGISTRY_KEYS_DISPLACEMENT + i);
+    snprintf(line, sizeof line, "witness owner_map_value: 4 of %u" MASKED_TAIL, (unsigned)w->size);
+
+    run_init();
+    fire(HF_EVENT_GAME_LOADED);
+    do_tick();
+    CHECK(logged(line) == 1 && logged_ending(MASKED_TAIL) == 1,
+          "owner_map_value's four rewritten bytes are logged once, and no other witness");
+    check_full_window("with the registry keys moved");
+    do_tick();
+    check_full_window("a tick later");
+    CHECK(logged(line) == 1, "read again, it logs nothing more");
     CHECK(syn_write_count() == 0 && fn_calls() == 0, "no hf->write or gameplay, sound or scramble call");
 }
 
@@ -2066,7 +2107,7 @@ int main(int argc, char** argv)
     if (argc < 3) {
         puts("usage: wine_host.exe <divers_best_friend.dll> <case> [<goose_overlay.dll>] [<hellforge_modloader.dll>]\n"
              "cases: no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel"
-             " on-fails masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem"
+             " on-fails masked-log moved-keys list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem"
              " scramble no-entry-admission old-host-input no-host-entry release-retry card-gone shortcut-blocked latch-retry");
         return 2;
     }
@@ -2138,6 +2179,7 @@ int main(int argc, char** argv)
     case C_NULL_PANEL: run_null_panel(); break;
     case C_ON_FAILS: run_on_fails(); break;
     case C_MASKED_LOG: run_masked_log(); break;
+    case C_MOVED_KEYS: run_moved_keys(); break;
     case C_LIST_CONFIRM: run_list_confirm(dll); break;
     case C_INSTANT: run_instant(); break;
     case C_MENU_CLOSE: run_interrupted(false); break;

@@ -30,6 +30,7 @@ ptr(base+0x3326340,state);word(state+0xac21c,4)
 ptr(base+0x346d538,hud);put(list_open,'\0')
 ptr(base+0x3326468,pm);word(pm+0x88,1);word(pm+0x3a8,7)
 ptr(base+0x346bf98,registry);map(registry+0xf22ec8,7,0);word(registry+0xf32f20,key)
+word(base+0xfd9c53,0x1e65e4) -- owner_map_value's lea: the keys at disp32*8 (0xf32f20)
 ptr(base+0x3326d20,manager);word(manager+0x70,1);map(manager+0xf8,key,0)
 ptr(manager+0x110,unit);word(unit+8,key)
 put(component,string.rep('\0',0x38));word(component+0x28,key)
@@ -97,6 +98,21 @@ assert(u32(read(actions+24,4),0)==0,'must retain unverified local trigger')
 ptr(base+0x3326d20,manager);input.end_release(job,true)
 assert(u32(read(actions+24,4),0)==2 and read(list_open,1)=='\0')
 print('Equipped modded slot, code changes, pulse restoration, reopen rollback and transient avatar cleanup passed')
+
+-- HellForge 0.5.0 moves the registry keys behind the Game block and rewrites the lea's disp32 (0xfd9c53): the
+-- context follows the code, and the old place then reads zero.
+put(list_open,'\1');word(avatar+0xfd8,512)
+assert(input.view_context().key==key,'R46 keys')
+word(registry+0x8261c80,key);word(registry+0xf32f20,0);word(base+0xfd9c53,0x104c390)
+assert(input.view_context().key==key,'moved registry keys followed')
+for _,disp in ipairs({0x1e65e3,0,0xfff00000,0x10000000}) do
+    word(base+0xfd9c53,disp)
+    local ok_keys,why_keys=pcall(input.view_context)
+    assert(not ok_keys and tostring(why_keys):find('Registry keys unrecognised',1,true),tostring(why_keys))
+end
+word(registry+0xf32f20,key);word(base+0xfd9c53,0x1e65e4)
+put(list_open,'\0');word(avatar+0xfd8,0)
+print('Registry keys read from the code: R46 layout, HellForge 0.5 move and refusals passed')
 
 -- C can publish a newer row set after decorate and before wheel preparation.
 local definition=0x34000000

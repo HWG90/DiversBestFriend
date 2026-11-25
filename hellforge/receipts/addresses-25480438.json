@@ -9,7 +9,7 @@
     "image_size": "0x4744000"
   },
   "inputs": {
-    "addresses_25480438.json": "a2db457595df23e1fc00098039429410f2d860e3e8aec4be387c32325905d1f9",
+    "addresses_25480438.json": "ba0f0c37f8428adf73d46e22c1ed70f120e4a01b83cf7034dbdd60e11871cb7a",
     "blacklist.lua": "9ba6ac940b0264403ffa0dcaed58e6268e38d1a6c1e227a7845c7e5c0a47b599",
     "camera.lua": "9a1b20bd8f244b68c27697c1b29c11e0567a6f0a5664a97f0ddf6a0d446a4307",
     "cooldown_dock.lua": "940b8b813e8a523c1dae293eb6ddfc33c18bf7ffa090a9bca0b9b0b3d88a881a",
@@ -26,7 +26,7 @@
     "pointing.lua": "5b4edbdd96a8296e4c32cf454f14d7e62e1f49a464b0e32d5b944120b8840897"
   },
   "outputs": {
-    "addresses_25480438.h": "13bbd68f475cb999a90d064b8e2c96a967cfbe75ce3a6538b81defeb0ae9c590",
+    "addresses_25480438.h": "0c2b063feb506b616b3b05791a4a31adc39bb09fdcac48d826df83e248fd4da3",
     "kind_names_25480438.h": "70530c171886ce205103ecc5ec4bbcf8ccd394b3cce0a2164c6cbb62d772e1fc"
   },
   "tally": {
@@ -56,7 +56,7 @@
       "WEAPON": 0,
       "TERMINAL": 0
     },
-    "addresses": 113,
+    "addresses": 114,
     "values": 65,
     "functions": 8,
     "blacklist_kinds": 37,
@@ -374,6 +374,19 @@
       "value": "0xf32f20",
       "define": "DBF_OFF_REGISTRY_KEYS_OFFSET",
       "source": "R46 input.lua:107"
+    },
+    {
+      "name": "REGISTRY_KEYS_DISPLACEMENT",
+      "kind": "rva",
+      "value": "0xfd9c53",
+      "define": "DBF_RVA_REGISTRY_KEYS_DISPLACEMENT",
+      "source": "owner_map_value+0xa (guards.lua:36): its disp32 0x1e65e4 x 8 = REGISTRY_KEYS_OFFSET in the vanilla code",
+      "disp32_of": {
+        "witness": "owner_map_value",
+        "scale": 8,
+        "holds": "REGISTRY_KEYS_OFFSET",
+        "disp32": "0x1e65e4"
+      }
     },
     {
       "name": "REGISTRY_LOOKUP_OFFSET",
@@ -2264,7 +2277,7 @@
         "STATE",
         "STRATAGEMS"
       ],
-      "reason": "registry keys at +0xf32f20 + index*24, the local-player lookup (input.lua:107)",
+      "reason": "registry keys at +0xf32f20 + index*24, the local-player lookup (input.lua:107); its disp32 is REGISTRY_KEYS_DISPLACEMENT (HellForge 0.5 rewrites it)",
       "nearest_bound_function": null,
       "section": "#1",
       "file_offset": null,

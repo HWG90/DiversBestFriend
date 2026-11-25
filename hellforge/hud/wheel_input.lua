@@ -106,7 +106,11 @@ local function input_backend(b,bridge)
         local network=num(pm+0x3a8)
         assert(network<0x7fff,'Local network index unavailable')
         local registry=ptr(base+0x346bf98)
-        local key=num(registry+0xf32f20+24*lookup(registry,0xf22ec8,network,65536))
+        -- The keys sit where the game's lea says (owner_map_value+10 at 0xfd9c53: disp32*8, R46's 0xf32f20).
+        -- HellForge 0.5.0 moves them behind the Game block and rewrites that disp32 (0x1e65e4 -> 0x104c390).
+        local keys=num(base+0xfd9c53)
+        assert(keys>=0x1e65e4 and keys<0x10000000,'Registry keys unrecognised')
+        local key=num(registry+keys*8+24*lookup(registry,0xf22ec8,network,65536))
         local manager=ptr(base+0x3326d20)
         local count=num(manager+0x70)
         assert(count>0 and count<=8,'Invalid avatar count')

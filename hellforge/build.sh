@@ -16,7 +16,10 @@
 #                                                once per case, with the stub Overlay Hosts and loader built here and a stub
 #                                                at each game function DBF calls (the code-entry cases press keys in a window
 #                                                of the host's own); then the real BindPort of src/platform_win.c
-#                                                (tests/wine_bind.c) and the HUD settings.ini persistence probe
+#                                                (tests/wine_bind.c) and the HUD settings.ini persistence probe.
+#                                                DBF_WINE_CASES="masked-log moved-keys" runs only the cases named and
+#                                                none of the probes: the cases that are not code-entry cases open no
+#                                                window and press no keys, so they can run beside a live game
 #        ./build.sh install <HellForge installation>
 #                                                copies the mod into <installation>/mods/divers-best-friend, after
 #                                                backing up what was there into <installation>/backport-backups/<UTC>/
@@ -159,8 +162,9 @@ run_wine_tests() {
   # keys pressed in a window of the host's own; use the API 8 stub host and the stub loader (old-host-input with API 5, no-host-entry with
   # the loader alone).
   for name in no-host host-api3 host-api4 host-api5 no-tick retry on-at-once late-module second-loaded null-panel on-fails \
-              masked-log list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem scramble \
+              masked-log moved-keys list-confirm instant menu-close mission-end shortcut shortcut-hud mod-stratagem scramble \
               no-entry-admission old-host-input no-host-entry release-retry card-gone shortcut-blocked latch-retry; do
+    if [ -n "${DBF_WINE_CASES:-}" ] && [[ " $DBF_WINE_CASES " != *" $name "* ]]; then continue; fi
     case $name in
       no-host) stubs=() ;;
       host-api5|old-host-input) stubs=("$(w "$out/overlay-api5/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
@@ -168,7 +172,7 @@ run_wine_tests() {
       release-retry|card-gone|latch-retry|shortcut-blocked)
         stubs=("$(w "$out/overlay-api8/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       no-host-entry) stubs=("$(w "$out/modloader/hellforge_modloader.dll")") ;;
-      masked-log) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
+      masked-log|moved-keys) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")" "$(w "$out/modloader/hellforge_modloader.dll")") ;;
       host-api3|host-api4) stubs=("$(w "$out/overlay-api${name#host-api}/goose_overlay.dll")") ;;
       *) stubs=("$(w "$out/overlay-api4/goose_overlay.dll")") ;; # the cases of the API 4 stub alone
     esac
@@ -184,6 +188,10 @@ run_wine_tests() {
       echo "SKIP $name (no focusable desktop for its keys; log $out/$name.log)"; skipped=$((skipped + 1))
     else echo "FAIL $name (exit $status; log $out/$name.log)"; failed=$((failed + 1)); fi
   done
+  if [ -n "${DBF_WINE_CASES:-}" ]; then # only the cases named; the probes below are left out
+    echo "wine-test ($DBF_WINE_CASES): $passed passed, $failed failed, $skipped skipped"
+    [ "$failed" -eq 0 ]; return
+  fi
   # The real BindPort (src/platform_win.c) in a program of its own: it needs no game and no stub host, so it runs once,
   # after the cases.
   "$zig" cc "${flags[@]}" -I "$mod/src" -I "$here/tests" -I "$sdk" "$here/tests/wine_bind.c" "$mod/src/platform_win.c" \

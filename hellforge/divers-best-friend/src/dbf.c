@@ -64,7 +64,7 @@
 #include "hud_prefs.h"
 #include "migration.h"
 
-#define DBF_VERSION "R50-hellforge.17-preview"
+#define DBF_VERSION "R50-hellforge.18-preview"
 #define DBF_GAME_BUILD "25480438"
 #define DBF_PANEL_ID "goose.divers-best-friend"
 #define DBF_TITLE "DBF Reforged"

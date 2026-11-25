@@ -110,8 +110,16 @@ local api={enabled=true,auto_terminal_complete=true,terminal_input=1} -- direct-
 local scope={terminal_guards_25480438=guards}
 setmetatable(scope,{__index=_G})
 local T=setfenv(assert(loadfile(here..'/../hud/terminal.lua')),scope)()
+-- Like the DLL's guard: bytes HellForge reports as rewritten (hellforge_lua_rewrites) are left out. HellForge 0.5.0
+-- reports the registry keys' disp32 (0xfd9c53, inside network_owner_map) when it moves the entity maps.
+local REWRITTEN={0xfd9c53}
 local bridge={dbf_hud_guard=function(rva,expected,size)
-    return read(image+rva,size)==expected and 1 or 0
+    local actual=read(image+rva,size)
+    for _,at in ipairs(REWRITTEN) do
+        local o=at-rva
+        if actual and o>=0 and o+4<=size then expected=expected:sub(1,o)..actual:sub(o+1,o+4)..expected:sub(o+5) end
+    end
+    return actual==expected and 1 or 0
 end}
 local function controller() return T.terminal_controller(backend,bridge,scope.terminal_arrow_update) end
 
@@ -136,6 +144,18 @@ case('missing enable value fails closed',function()api.auto_terminal_complete=ni
     function()api.auto_terminal_complete=true;assert(progress(A,2)==0)end)
 case('non-arrow stage is skipped',function()terminal(A,1,6,0,{})end,
     function()assert(progress(A,1)==0)end)
+-- HellForge 0.5.0 moves the registry keys behind the Game block and rewrites the lea's disp32: the local key is read
+-- where the code says, and the old place then reads 0. (Offline the keys move within the allocated registry.)
+local function keys_at(offset)
+    put(registry+0xf32f20+24*3,'uint32_t',0);put(registry+0xf38000+24*3,'uint32_t',0)
+    put(registry+offset+24*3,'uint32_t',KEY);put(image+0xfd9c53,'uint32_t',offset/8)
+end
+case('moved registry keys are followed',function()keys_at(0xf38000);terminal(A,2,6,3,CODE)end,
+    function()assert(progress(A,2)==6)end)
+case('unrecognised registry keys leave it alone',function()put(image+0xfd9c53,'uint32_t',0x1e65e3);terminal(A,2,6,3,CODE)end,
+    function(t)assert(progress(A,2)==3 and tostring(t.reason):find('Registry keys unrecognised',1,true))end)
+keys_at(0xf32f20)
+case('R46 keys again',function()terminal(A,2,6,3,CODE)end,function()assert(progress(A,2)==6)end)
 -- Arrows: the module sets controls+0x3FC8+action*32 and runs the arrow stage
 -- update (989750) itself. Offline a fake update stands in for 989750.
 local function arrow(action)return controls+0x3fc8+32*action end

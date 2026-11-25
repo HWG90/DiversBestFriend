@@ -716,6 +716,56 @@ static void test_local_player(void)
     CHECK(!v->local_ok && reason_is(v, "session unreadable") && v->row_count == 0, "session unreadable");
 }
 
+/* HellForge 0.5.0 moves the registry's keys behind the Game block and rewrites the disp32 that names them (inside
+ * owner_map_value): the chain reads the keys where the code says they are. Live 2026-11-25: R46's 0xf32f20 then reads 0
+ * and the chain stopped at "avatar identity mismatch"; the code's 0x104c390 * 8 = 0x8261c80 held. */
+static void test_registry_keys_moved(void)
+{
+    SynScene s;
+    const GameView* v;
+    const uint32_t moved = 0x8261c80u;
+    struct { uint32_t disp; const char* text; } refused[] = {
+        { 0x1e65e3u, "disp32 0x1e65e3 (keys 0xf32f18, below R46's): \"registry keys unrecognised\"" },
+        { 0u, "disp32 0: \"registry keys unrecognised\"" },
+        { 0xfff00000u, "a negative disp32: \"registry keys unrecognised\"" },
+        { 0x10000000u, "disp32 0x10000000 (x 8 reaches 2^31): \"registry keys unrecognised\"" },
+    };
+    start_default(&s);
+    v = read_view();
+    CHECK(v->local_ok && v->local.key == syn_local_key() && default_rows(v, &s) && reason_is(v, ""),
+          "R46's keys (disp32 0x1e65e4, keys at 0xf32f20): the chain holds");
+    CHECK(syn_move_registry_keys(moved), "HellForge 0.5's move: keys at 0x8261c80, the old entries zeroed");
+    v = read_view();
+    CHECK(v->local_ok && v->local.key == syn_local_key() && default_rows(v, &s) && reason_is(v, ""),
+          "moved keys: the chain holds and the codes are served, the key read at 0x8261c80");
+    adm_init(syn_adm_port(), 0);
+    adm_tick(GRACE_OVER);
+    v = read_view();
+    CHECK(v->local_ok && default_rows(v, &s) && reason_is(v, ""),
+          "admission again over the rewritten disp32 (HellForge reports it): State and Stratagems admitted");
+    CHECK(syn_respawn_local(syn_local_key() ^ 0x100u), "a respawn writes its key at the moved place");
+    v = read_view();
+    CHECK(v->local_ok && v->local.key == syn_local_key() && reason_is(v, ""), "after a respawn: the moved key");
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        start_default(&s);
+        syn_poke_u32(SYN_GAME_BASE + DBF_RVA_REGISTRY_KEYS_DISPLACEMENT, refused[i].disp);
+        v = read_view();
+        CHECK(!v->local_ok && reason_is(v, "registry keys unrecognised") && default_rows_without_codes(v, &s)
+                  && local_is_zero(v),
+              refused[i].text);
+    }
+    start_default(&s);
+    syn_poke_u32(SYN_GAME_BASE + DBF_RVA_REGISTRY_KEYS_DISPLACEMENT, moved / 8u);
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "registry unreadable") && default_rows_without_codes(v, &s),
+          "the disp32 moved but nothing at 0x8261c80: \"registry unreadable\"");
+    start_default(&s);
+    syn_unmap(SYN_GAME_BASE + DBF_RVA_REGISTRY_KEYS_DISPLACEMENT);
+    v = read_view();
+    CHECK(!v->local_ok && reason_is(v, "registry keys unreadable") && default_rows_without_codes(v, &s),
+          "the disp32 unreadable: \"registry keys unreadable\"");
+}
+
 static void test_first_reason_wins(void)
 {
     SynScene s;
@@ -985,6 +1035,7 @@ int main(void)
     test_admission_gates();
     test_display_path();
     test_local_player();
+    test_registry_keys_moved();
     test_first_reason_wins();
     test_local_context();
     test_lookup_probe_limit();

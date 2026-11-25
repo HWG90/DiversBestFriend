@@ -44,6 +44,8 @@ local avatar, weapon = owner+0xf32f18, owner+0xf32f18+24
 local aid, wid, unit = 12, 13, 85
 put(base,'MZ'); word(base+60,128); put(base+128,'PE\0\0')
 word(base+136,0x6ab3b43f); word(base+128+0x50,0x4744000)
+-- The vanilla code operands the reader takes the records and the projectile list from.
+word(base+0xfd9c53,0x1e65e4); word(base+0x75a378,0x15f); word(base+0x75a395,0x37c7670)
 word(player+0x84,1); word(player+0x88,1)
 local local_player = array(player+0xe8)
 word(local_player+8,123); put(local_player+20,'\1'); map(player+0xd0,123,0)
@@ -226,6 +228,52 @@ raced(function() word(round_state+4,1) end)
 word(round_state+4,2)
 assert(#assert(reader.poll()).ammo_options==0)
 word(configs+0x358,8)
+-- HellForge 0.5.0: the owner's records move behind the Game block and, with mods' projectiles, the projectile
+-- list moves into a block of its own. The reader follows the rewritten operands; the old places read zero.
+do
+    local function get(address)
+        local v=0;for i=3,0,-1 do v=v*256+(bytes[address+i] or 0) end;return v
+    end
+    local moved_records,list=owner+0x8261c78,base+0x14f29000
+    local saved={};for i=0,47 do saved[i]=bytes[avatar+i] end
+    local holders={get(inventory+0x28+24),get(driver+0x28+24),get(control+0x30+24),get(rpm+0x68)}
+    local function records_at(at)
+        for i=0,47 do bytes[avatar+i]=nil;bytes[moved_records+i]=nil end
+        for i=0,47 do bytes[at+i]=saved[i] end
+        ptr(holders[1],at);for i=2,4 do ptr(holders[i],at+24) end
+        word(base+0xfd9c53,(at-owner+8)/8)
+    end
+    records_at(moved_records)
+    local moved=assert(reader.poll(),reader.status)
+    assert(moved.ammo_options[1].asset==aphet and moved.binding.avatar_record==moved_records,'the moved records')
+    local mod_projectile=allocate();asset(mod_projectile+0x10,'0123456789abcdef')
+    ptr(list+115*8,projectile_a);ptr(list+224*8,projectile_b);ptr(list+0x160*8,mod_projectile)
+    ptr(base+0x37c7670+115*8,0)
+    word(base+0x75a378,0x164);word(base+0x75a395,0x14f29000)
+    assert(assert(reader.poll(),reader.status).ammo_options[1].asset==aphet,'the moved list, not the vanilla one')
+    word(projectile_definition,0x160)
+    assert(assert(reader.poll(),reader.status).ammo_options[1].asset=='0123456789abcdef','a mod projectile')
+    word(projectile_definition,0x164)
+    assert(#assert(reader.poll()).ammo_options==0,'past the moved bound')
+    word(projectile_definition,115)
+    word(base+0x75a395,0x37c7678)
+    local bad=assert(reader.poll())
+    assert(#bad.ammo_options==0 and bad.ammo_error:find('projectile list unrecognised',1,true),bad.ammo_error)
+    word(base+0x75a395,0x14f29004)
+    bad=assert(reader.poll())
+    assert(#bad.ammo_options==0 and bad.ammo_error:find('projectile list unrecognised',1,true),'unaligned')
+    word(base+0x75a395,0x14f29000);word(base+0x75a378,0x15e)
+    bad=assert(reader.poll())
+    assert(#bad.ammo_options==0 and bad.ammo_error:find('count unrecognised',1,true),bad.ammo_error)
+    word(base+0x75a378,0x164)
+    word(base+0xfd9c53,0x1e65e3)
+    assert(reader.poll()==nil and reader.status:find('registry keys unrecognised',1,true),reader.status)
+    records_at(avatar)
+    ptr(base+0x37c7670+115*8,projectile_a)
+    word(base+0x75a378,0x15f);word(base+0x75a395,0x37c7670)
+    local back=assert(reader.poll(),reader.status)
+    assert(back.ammo_options[1].asset==aphet and back.binding.avatar_record==avatar,'back to the vanilla layout')
+end
 -- The resource bytes only select definition records, never hard-coded names.
 word(weapon,0x12345678);word(weapon+4,0xabcdef12)
 assert(assert(reader.poll()).ammo_options[1].asset==aphet)

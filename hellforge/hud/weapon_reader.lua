@@ -1,9 +1,15 @@
 -- R50's bounded reader, rebound to the 25480438 weapon managers and stock HUD.
+-- The owner's records and the projectile list are read where the game's code says, not at R46's constants:
+-- HellForge 0.5.0 moves both and rewrites the operands (see records() and projectiles() below).
 local Layout = {
     player=0x3326468, owner=0x346bf98, inventory=0x3326738, driver=0x3326660,
-    selector=0x3326420, entity_map=0xf1aeb0, unit_map=0xf22ec8, records=0xf32f18,
+    selector=0x3326420, entity_map=0xf1aeb0, unit_map=0xf22ec8,
+    keys_disp=0xfd9c53, projectile_count=0x75a378, projectile_disp=0x75a395,
 }
+local IMAGE_SIZE = 0x4744000
 local witnesses = {
+    -- owner_map_value: lea rax,[rax+keys/8] (Layout.keys_disp is its disp32).
+    {0xfd9c49, "8b4004488d0440488d80e4651e00498d04c38b00"},
     {0x755d50, "488b1d990fbd02"},
     {0x755dff, "488b4358488d14898b449004e92d010000"},
     {0x759f4c, "83fe020f8338fdffff4c8b0594cdbc02"},
@@ -156,13 +162,33 @@ local function weapon_reader(backend, bridge)
         assert(r.read(r.p(r.p(m+registry)+index*8),24)==record,'component identity')
         return index
     end
+    -- The owner's 24-byte records: the game's keys (owner_map_value's disp32 * 8; R46's 0xf32f20) less 8.
+    -- HellForge 0.5.0 moves them behind the Game block and rewrites that disp32 (0x1e65e4 -> 0x104c390,
+    -- records 0xf32f18 -> 0x8261c78). It may skip the move, so the code is read every time.
+    local function records()
+        local keys=r.u(r.read(base+Layout.keys_disp,4),0)
+        assert(keys>=0x1e65e4 and keys<0x10000000,'registry keys unrecognised')
+        return keys*8-8
+    end
+    -- The projectile list: the bound and the table of the game's own reader (cmp rax,count at 0x75a376;
+    -- mov rax,[rcx+rax*8+table] at 0x75a391; witness 0x75a36e). R46's are 0x15f and game+0x37c7670. When mods
+    -- add projectiles HellForge 0.5.0 copies the list into a block of its own outside game.dll and rewrites both
+    -- (live 2026-11-25: 0x164 and game+0x14f29000; the vanilla entries are kept in both).
+    local function projectiles()
+        local count=r.u(r.read(base+Layout.projectile_count,4),0)
+        local at=r.i(r.read(base+Layout.projectile_disp,4),0)
+        assert(count>=0x15f and count<0x15f+0x1000,'projectile list count unrecognised')
+        assert(at==0x37c7670 or at%8==0 and (at>=IMAGE_SIZE or at+count*8<=0),'projectile list unrecognised')
+        return count,base+at
+    end
     local function entity(owner,id)
         if not id or id==0 or id==0xffffffff then return nil end
         local index=r.map(owner+Layout.entity_map,id,1048576)
         if not index then return nil end
         assert(index<1048576,'entity index')
-        local rec=r.read(owner+Layout.records+index*24,24)
-        assert(r.u(rec,8)==id,'entity identity');return rec,owner+Layout.records+index*24
+        local at=owner+records()+index*24
+        local rec=r.read(at,24)
+        assert(r.u(rec,8)==id,'entity identity');return rec,at
     end
     -- Native definition maps: 16-byte hash slots followed by fixed-size rows.
     -- Keys stay as eight bytes; no uint64 resource ID is rounded through a double.
@@ -209,8 +235,9 @@ local function weapon_reader(backend, bridge)
             end
             assert(data,'programmable projectile definition missing')
             projectile=r.u(data,rounds and (0x40+selected*4) or (selected==0 and 0 or 0x240))
-            assert(projectile<0x15f,'programmable projectile out of range')
-            local at=projectile==0 and base+0x37c7560 or r.p(base+0x37c7670+projectile*8)
+            local count,list=projectiles()
+            assert(projectile<count,'programmable projectile out of range')
+            local at=projectile==0 and base+0x37c7560 or r.p(list+projectile*8)
             data=r.read(at+0x10,8);offset=0
             assert(r.p(base+global)==m and component(m,map,registry,id,rec)==component_index,
                 'programmable projectile component changed')
@@ -275,7 +302,8 @@ local function weapon_reader(backend, bridge)
         local owner=global('owner');local ai=r.map(owner+Layout.unit_map,unit,1048576)
         if not ai then return nil,'no avatar entity' end
         assert(ai<1048576,'avatar index')
-        local avatar=r.read(owner+Layout.records+ai*24,24);local aid=r.u(avatar,8)
+        local avatar_record=owner+records()+ai*24
+        local avatar=r.read(avatar_record,24);local aid=r.u(avatar,8)
         assert(r.u(avatar,16)==unit and flag(avatar:byte(21),1),'avatar identity')
         local inv=global('inventory');local ii=component(inv,0x28,0x40,aid,avatar)
         if not ii then return nil,'no inventory' end
@@ -339,7 +367,7 @@ local function weapon_reader(backend, bridge)
         -- Diagnostic values only. +0x0C is not yet a verified engine/Lua handle.
         -- All bytes below were already read for ownership and ammo selection.
         result.binding={module_base=base,record=main_address,candidate=r.u(main_rec,12),
-            avatar_id=aid,avatar_record=owner+Layout.records+ai*24,avatar_candidate=r.u(avatar,12),driver_state=driver_state}
+            avatar_id=aid,avatar_record=avatar_record,avatar_candidate=r.u(avatar,12),driver_state=driver_state}
 
         result.changeable={}
         local ammo_checks={}

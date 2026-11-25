@@ -263,6 +263,12 @@ bool syn_change_peer(uint64_t peer);
  * the next syn_build). False for the other player's key, the empty key, or before a build. */
 bool syn_respawn_local(uint32_t key);
 
+/* HellForge 0.5.0 moves the registry's keys (the entity maps, "behind the Game block") and rewrites the disp32 that
+ * names them: both players' entries are copied to registry + keys_offset (a multiple of 8), the old ones zeroed, and the
+ * disp32 at game.dll + 0xfd9c53 (inside the owner_map_value witness, which the stub's rewrites then report) becomes
+ * keys_offset / 8. A later syn_respawn_local writes the key there. False before a build or for an unaligned offset. */
+bool syn_move_registry_keys(uint32_t keys_offset);
+
 /* Lays the registry's lookup out again with `capacity` slots (a power of two up to 1024), every slot holding some other
  * key except the local player's network index at probe `position` (from its hash; -1: not there) and the empty key at
  * probe `empty_at` (-1: none). False when the arguments are out of range or a write fails. */

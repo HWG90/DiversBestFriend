@@ -74,7 +74,11 @@ local function terminal_controller(b,bridge,arrow_update)
         local registry=ptr(base+REGISTRY)
         local index=find(registry,0xf22ec8,network)
         assert(index and index<65536,'Local ownership mapping unavailable')
-        return u32(registry+0xf32f20+24*index)
+        -- The keys sit where the game's lea says (0xfd9c53, inside network_owner_map: disp32*8, R46's 0xf32f20).
+        -- HellForge 0.5.0 moves them behind the Game block and rewrites that disp32 (0x1e65e4 -> 0x104c390).
+        local keys=u32(base+0xfd9c53)
+        assert(keys>=0x1e65e4 and keys<0x10000000,'Registry keys unrecognised')
+        return u32(registry+keys*8+24*index)
     end
     -- 4FC110: a per-entity override first, else the resource's definition.
     local function definition(base,manager,entity)

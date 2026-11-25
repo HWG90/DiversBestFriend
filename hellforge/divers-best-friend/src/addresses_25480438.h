@@ -56,6 +56,7 @@
 #define DBF_RVA_PLAYERS 0x3326468u /* R46 input.lua:102 */
 #define DBF_RVA_REGISTRY 0x346bf98u /* R46 input.lua:106 */
 #define DBF_OFF_REGISTRY_KEYS_OFFSET 0xf32f20u /* R46 input.lua:107 */
+#define DBF_RVA_REGISTRY_KEYS_DISPLACEMENT 0xfd9c53u /* owner_map_value+0xa (guards.lua:36): its disp32 0x1e65e4 x 8 = REGISTRY_KEYS_OFFSET in the vanilla code */
 #define DBF_OFF_REGISTRY_LOOKUP_OFFSET 0xf22ec8u /* R46 input.lua:107 */
 #define DBF_RVA_AVATARS 0x3326d20u /* R46 input.lua:108 */
 #define DBF_OFF_AVATAR_FIRST 0x53d8b0u /* R46 input.lua:114 */
@@ -462,7 +463,7 @@ static const uint8_t dbf_w_owner_map[32] = {
     0xc9, 0x81, 0xfa, 0xff, 0x7f, 0x00, 0x00, 0x75, 0x10, 0x8b, 0x05, 0xad, 0xa9, 0x4a, 0x02, 0x89,
 };
 /* owner_map_value: guards.lua:36, unreadable; registry keys at +0xf32f20 + index*24, the local-player lookup
-   (input.lua:107) */
+   (input.lua:107); its disp32 is REGISTRY_KEYS_DISPLACEMENT (HellForge 0.5 rewrites it) */
 static const uint8_t dbf_w_owner_map_value[20] = {
     0x8b, 0x40, 0x04, 0x48, 0x8d, 0x04, 0x40, 0x48, 0x8d, 0x80, 0xe4, 0x65, 0x1e, 0x00, 0x49, 0x8d,
     0x04, 0xc3, 0x8b, 0x00,
